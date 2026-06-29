@@ -2,13 +2,13 @@
 
 ## Purpose
 
-Jig is a CLI tool for working with many related Git repositories. It uses a declarative JSON structure to describe repositories, their metadata, and their dependencies, then uses that structure to clone, inspect, and navigate repository sets.
+Jig is a CLI tool for working with many related Git repositories and workspace files. It uses a declarative `.jig.json` file to describe the desired workspace tree, then clones repositories, materializes files, updates local checkouts, and reports workspace status.
 
-The primary goal is to make it easy to clone one repository together with the other repositories it needs for local development.
+The primary goal is to make it easy to create and maintain a local workspace containing the repositories and support files needed for development.
 
-## Repository Definition File
+## Workspace Definition File
 
-The repository structure is defined in `.jig.json` at the workspace root.
+The shared workspace definition is stored in `.jig.json` at the workspace root.
 
 Initial schema:
 
@@ -19,20 +19,40 @@ Initial schema:
     "type": "git",
     "url": "git@github.com:org/jig-definition.git",
     "ref": "main",
-    "path": "jig.json"
+    "path": ".jig.json"
   },
-  "repos": {
-    "org1.suborg1.repo1": {
-      "id": "repo1",
-      "git": "git@github.com:org1/repo1.git",
-      "web": "https://github.com/org1/repo1",
-      "description": "Service API",
-      "dependsOn": [
-        {
-          "path": "org2.platform",
-          "reason": "runtime platform dependency"
+  "tree": {
+    "platform/auth": {
+      "$repo": {
+        "id": "auth-service",
+        "git": "git@github.com:org/platform-auth.git",
+        "web": "https://github.com/org/platform-auth",
+        "description": "Authentication service"
+      }
+    },
+    "services/checkout": {
+      "$repo": {
+        "id": "checkout-service",
+        "git": "git@github.com:org/checkout.git",
+        "description": "Checkout service",
+        "dependsOn": [
+          {
+            "path": "platform",
+            "reason": "checkout uses shared platform services"
+          }
+        ]
+      }
+    },
+    ".agents/skills/platform": {
+      "$file": {
+        "id": "platform-skill",
+        "src": "git:git@github.com:org/workspace-config.git#agents/skills/platform.md",
+        "description": "Agent skill for platform repositories",
+        "onlyWhen": {
+          "path": "platform",
+          "reason": "Only useful when platform repositories are installed"
         }
-      ]
+      }
     }
   }
 }
@@ -47,32 +67,6 @@ Required integer.
 Identifies the schema version used by the definition file.
 
 Initial supported version: `1`.
-
-### `repos`
-
-Required object.
-
-Maps canonical repository IDs to repository definitions.
-
-Repository IDs are dot-separated paths:
-
-```text
-org.suborg.repo
-platform.auth
-services.checkout
-```
-
-The dot-separated structure is used to infer groups. There is no separate group declaration in the initial schema.
-
-Repository IDs must:
-
-- Be non-empty.
-- Use dot-separated segments.
-- Not contain empty segments.
-- Not start or end with a dot.
-- Not contain slashes.
-
-Segments should use simple filesystem-safe names. Initial recommended characters are letters, numbers, underscores, and hyphens.
 
 ### `source`
 
@@ -89,7 +83,7 @@ Example:
   "type": "git",
   "url": "git@github.com:org/jig-definition.git",
   "ref": "main",
-  "path": "jig.json"
+  "path": ".jig.json"
 }
 ```
 
@@ -98,89 +92,258 @@ Fields:
 - `type`: required string. Initial supported value: `git`.
 - `url`: required string. Git URL of the repository containing the definition file.
 - `ref`: optional string. Branch, tag, or revision to read from. `jig init` records the discovered default branch here.
-- `path`: optional string. Path to the definition file inside the source repository. Default: `.jig.json`.
+- `path`: optional string. Safe source repo file path to the definition file inside the source repository. Default: `.jig.json`.
 
-## Repository Fields
+### `tree`
 
-### `id`
+Required object.
+
+Describes the workspace file tree.
+
+Tree nodes may be directories, repositories, or files.
+
+Repository and file nodes use reserved marker keys:
+
+- `$repo`
+- `$file`
+
+Keys starting with `$` are reserved for Jig.
+
+Tree keys may contain `/` as shorthand for nested directories.
+
+These two definitions are equivalent:
+
+```json
+{
+  "tree": {
+    "platform": {
+      "auth": {
+        "$repo": {
+          "git": "git@github.com:org/platform-auth.git"
+        }
+      }
+    }
+  }
+}
+```
+
+```json
+{
+  "tree": {
+    "platform/auth": {
+      "$repo": {
+        "git": "git@github.com:org/platform-auth.git"
+      }
+    }
+  }
+}
+```
+
+After expansion, `platform/auth` is both the logical repository path and the local checkout path.
+
+## Safe Paths
+
+Jig paths are relative workspace paths using `/` as the separator.
+
+This applies to:
+
+- Expanded tree paths.
+- Repository paths.
+- File destination paths.
+- `dependsOn.path`.
+- `onlyWhen.path`.
+- CLI path arguments.
+- Paths stored in `.jig/state.json`.
+
+Workspace paths must:
+
+- Be non-empty.
+- Be relative.
+- Not start with `/`.
+- Not start with `~`.
+- Not contain empty segments.
+- Not contain `.` or `..` segments.
+
+Hidden directories are allowed. For example, `.agents/skills/platform` is valid.
+
+Invalid examples:
+
+```text
+.
+..
+../outside
+foo/../bar
+~/file
+/tmp/file
+foo//bar
+```
+
+Source repo file paths use the same safety rules, but are interpreted relative to the source Git repository.
+
+## Tree Node Rules
+
+A tree node must be exactly one of:
+
+- Directory node.
+- Repository node containing `$repo`.
+- File node containing `$file`.
+
+A node containing `$repo` or `$file` must not contain child nodes.
+
+A node must not contain both `$repo` and `$file`.
+
+## Repository Nodes
+
+Repository nodes are declared with `$repo`.
+
+Example:
+
+```json
+{
+  "tree": {
+    "platform/auth": {
+      "$repo": {
+        "id": "auth-service",
+        "git": "git@github.com:org/platform-auth.git",
+        "web": "https://github.com/org/platform-auth",
+        "description": "Authentication service",
+        "dependsOn": [
+          {
+            "path": "platform/billing",
+            "reason": "auth emits billing audit events"
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+### `$repo.id`
 
 Optional string.
 
 Stable repository identity.
 
-The repository map key is the current logical path of the repository. The optional `id` field identifies the repository across path changes, renames, and hosting changes.
+The tree path is the current logical path and local path of the repository. The optional `id` field identifies the repository across path changes, renames, and hosting changes.
 
 If `id` is omitted, the repository path is used as the identity.
 
-Repository IDs must be unique after applying this rule. Two repositories cannot resolve to the same identity.
+Repository identities must be unique after applying this rule. Two repositories cannot resolve to the same identity.
 
-The `id` value should be stable and should not be derived from the current hosting provider, organization, or local path.
-
-Example:
-
-```json
-{
-  "version": 1,
-  "repos": {
-    "platform.auth": {
-      "id": "auth-service",
-      "git": "git@github.com:org/platform-auth.git"
-    }
-  }
-}
-```
-
-If this repository later moves, the `id` should stay the same:
-
-```json
-{
-  "version": 1,
-  "repos": {
-    "identity.auth-service": {
-      "id": "auth-service",
-      "git": "git@gitlab.com:org/auth-service.git"
-    }
-  }
-}
-```
-
-### `git`
+### `$repo.git`
 
 Required string.
 
 The Git clone URL for the repository.
 
-Example:
-
-```json
-"git": "git@github.com:org/repo.git"
-```
-
-### `web`
+### `$repo.web`
 
 Optional string.
 
 The web URL for the repository.
 
-Example:
-
-```json
-"web": "https://github.com/org/repo"
-```
-
-### `description`
+### `$repo.description`
 
 Optional string.
 
 A short human-readable description of the repository.
 
-### `dependsOn`
+### `$repo.dependsOn`
 
 Optional array.
 
 Lists dependencies for this repository. Each dependency points to either a specific repository or a group of repositories.
 
 If omitted, the repository has no declared dependencies.
+
+### `$repo.onlyWhen`
+
+Optional object.
+
+Conditionally includes the repository only when another repository path or group is active.
+
+See [Conditional Nodes](#conditional-nodes).
+
+## File Nodes
+
+File nodes are declared with `$file`.
+
+Example:
+
+```json
+{
+  "tree": {
+    "scripts/dev.sh": {
+      "$file": {
+        "id": "dev-script",
+        "src": "git:git@github.com:org/workspace-config.git#scripts/dev.sh",
+        "description": "Starts the local development stack",
+        "executable": true
+      }
+    }
+  }
+}
+```
+
+### `$file.id`
+
+Optional string.
+
+Stable file identity.
+
+If omitted, the file destination path is used as the identity.
+
+File identities must be unique after applying this rule. Two files cannot resolve to the same identity.
+
+### `$file.src`
+
+Required string.
+
+Identifies where the file content comes from.
+
+Initial supported source syntax:
+
+```text
+git:<repo-url>#<safe-source-repo-file-path>
+```
+
+Examples:
+
+```text
+git:git@github.com:org/workspace-config.git#compose/backend.yml
+git:https://github.com/org/workspace-config.git#scripts/dev.sh
+```
+
+Parsing rules:
+
+- `src` must start with `git:`.
+- The remaining string is split at `#`.
+- The left side is the Git URL.
+- The right side is a safe source repo file path.
+- The source repo file path must not contain `#`.
+
+### `$file.description`
+
+Optional string.
+
+A short human-readable description of the file.
+
+### `$file.executable`
+
+Optional boolean.
+
+Default: `false`.
+
+If true, Jig sets executable permissions after writing the file.
+
+### `$file.onlyWhen`
+
+Optional object.
+
+Conditionally includes the file only when another repository path or group is active.
+
+See [Conditional Nodes](#conditional-nodes).
 
 ## Dependency Fields
 
@@ -194,7 +357,7 @@ The path may refer to a specific repository:
 
 ```json
 {
-  "path": "platform.auth"
+  "path": "platform/auth"
 }
 ```
 
@@ -206,32 +369,34 @@ Or it may refer to a group of repositories:
 }
 ```
 
-Group paths are resolved by matching repository IDs on dot-segment boundaries.
+Dependency paths are safe workspace paths.
 
-A dependency path matches a repository ID when either:
+Group paths are resolved by matching repository paths on `/` segment boundaries.
+
+A dependency path matches a repository path when either:
 
 ```text
-repoId == path
+repoPath == path
 ```
 
 or:
 
 ```text
-repoId starts with path + "."
+repoPath starts with path + "/"
 ```
 
 For example, `platform` matches:
 
 ```text
-platform.auth
-platform.billing
-platform.events
+platform/auth
+platform/billing
+platform/events
 ```
 
 But it does not match:
 
 ```text
-platforming.api
+platforming/api
 ```
 
 ### `optional`
@@ -244,16 +409,6 @@ Default: `false`.
 
 Most dependencies should omit this field. Optional dependencies are represented with `optional: true`.
 
-Example:
-
-```json
-{
-  "path": "observability",
-  "optional": true,
-  "reason": "useful when debugging traces locally"
-}
-```
-
 ### `reason`
 
 Optional string.
@@ -262,53 +417,139 @@ Explains why the dependency exists.
 
 This is intended for humans and should not affect dependency resolution.
 
-## Dependency Resolution
+## Conditional Nodes
 
-When resolving dependencies for a repository, Jig expands every dependency path to matching repository IDs.
+`$repo` and `$file` may declare `onlyWhen`.
 
-Example definition:
+Example:
 
 ```json
 {
-  "version": 1,
-  "repos": {
-    "platform.auth": {
-      "git": "git@github.com:org/platform-auth.git"
-    },
-    "platform.billing": {
-      "git": "git@github.com:org/platform-billing.git"
-    },
-    "platform.events": {
-      "git": "git@github.com:org/platform-events.git"
-    },
-    "services.checkout": {
-      "git": "git@github.com:org/checkout.git",
-      "dependsOn": [
-        {
-          "path": "platform",
-          "reason": "checkout uses shared platform services"
-        }
-      ]
-    }
+  "onlyWhen": {
+    "path": "platform",
+    "reason": "Only useful when platform repositories are installed"
   }
 }
 ```
 
-Resolving dependencies for `services.checkout` produces:
+Fields:
 
-```text
-platform.auth
-platform.billing
-platform.events
-```
+- `path`: required safe workspace path. Refers to a repository or repository group.
+- `reason`: optional string. Human explanation for the condition.
 
-Non-optional dependencies are included by default. Optional dependencies are included only when explicitly requested.
+A node with `onlyWhen` is active when `onlyWhen.path` intersects either:
+
+- The repository set being installed or synced in the current operation.
+- The repository set already installed locally.
+
+Conditional activation is resolved to a fixed point:
+
+- Start with the requested repositories and their dependencies, ignoring inactive `onlyWhen` nodes.
+- Activate conditional nodes whose `onlyWhen.path` matches the active or already-installed repository set.
+- If an activated conditional repo has dependencies, include those dependencies.
+- Repeat until no new repositories or files become active.
+
+Files are not dependency graph nodes. Dependencies and `onlyWhen.path` match repositories only.
+
+## Dependency Resolution
+
+When resolving dependencies for a repository, Jig expands every dependency path to matching repository paths.
+
+Non-optional dependencies are included by default. Optional dependencies are included when explicitly requested.
+
+During `jig sync`, optional dependencies are also included when they are already installed locally. This keeps installed optional repositories up to date without causing Jig to clone missing optional repositories by default.
 
 Dependency resolution is recursive by default. If a dependency has its own dependencies, those dependencies are included using the same optional dependency rules.
 
 Dependency resolution should handle cycles safely. A repository should not be processed more than once during a single dependency traversal.
 
 If multiple dependency paths resolve to the same repository, Jig should process that repository once using repository identity.
+
+## Local State
+
+Jig-managed local state is stored under `.jig/` at the workspace root.
+
+Initial state file:
+
+```text
+.jig/state.json
+```
+
+`.jig/state.json` is local workspace metadata. It should not be treated as part of the shared repository definition.
+
+Initial state schema:
+
+```json
+{
+  "version": 1,
+  "repos": {
+    "auth-service": {
+      "path": "platform/auth",
+      "git": "git@github.com:org/platform-auth.git"
+    }
+  },
+  "files": {
+    "dev-script": {
+      "path": "scripts/dev.sh",
+      "src": "git:git@github.com:org/workspace-config.git#scripts/dev.sh",
+      "sha256": "abc123"
+    }
+  }
+}
+```
+
+State fields:
+
+- `version`: required integer. Initial supported value: `1`.
+- `repos`: required object mapping repository identity to local checkout metadata.
+- `files`: required object mapping file identity to local file metadata.
+
+Repository state fields:
+
+- `path`: required safe workspace path relative to the workspace root.
+- `git`: optional string. Git URL recorded when Jig cloned or last synced the repository.
+
+File state fields:
+
+- `path`: required safe workspace path relative to the workspace root.
+- `src`: required string. Source recorded when Jig last wrote the file.
+- `sha256`: required string. Hash of the file contents written by Jig.
+
+The local filesystem remains the authority for whether a repository or file currently exists.
+
+## Workspace Discovery
+
+The workspace root is defined by the presence of a `.jig.json` file.
+
+All commands should work from the workspace root or any subdirectory inside the workspace. When a command starts, Jig walks up from the current working directory until it finds `.jig.json`.
+
+The directory containing `.jig.json` is the workspace root.
+
+If no `.jig.json` file is found, the command should fail with a clear error.
+
+`.jig.json` is the shared, human-editable workspace definition. It may be updated from a remote `source` and should not contain local checkout metadata.
+
+`.jig/` contains Jig-owned local workspace metadata.
+
+## Existing Local Paths
+
+When Jig needs to clone or sync a repository, it should handle the expected local path as follows:
+
+- If the path does not exist, clone the repository.
+- If the path exists, contains a Git repository, and its `origin` remote matches the definition Git URL, adopt it by recording it in `.jig/state.json`.
+- If the path exists, contains a Git repository, and its `origin` remote does not match the definition Git URL, skip it and report the mismatch.
+- If the path exists and is not a Git repository, skip it and report the conflict.
+
+Jig should never overwrite an existing directory during clone or sync.
+
+When Jig needs to write a file, it should handle the expected local path as follows:
+
+- If the file does not exist, write it and record its hash in `.jig/state.json`.
+- If the file exists and is not tracked in state, skip it and report the conflict.
+- If the file exists, is tracked in state, and its current hash matches the state hash, overwrite it with the new source content and update state.
+- If the file exists, is tracked in state, and its current hash differs from the state hash, skip it and report that it was locally modified.
+
+Jig should never overwrite local file modifications.
 
 ## Definition Updates
 
@@ -326,150 +567,41 @@ jig sync [path]  applies the current .jig.json to the local checkout shape
 
 `jig update` should fetch the latest definition from `source`, validate it, compare it to the current local `.jig.json`, and replace the local `.jig.json` only if validation succeeds.
 
-`jig update` should not clone repositories, pull repositories, delete repositories, move directories, or update Git remotes.
+`jig update` should not clone repositories, pull repositories, delete repositories, move directories, write files, or update Git remotes.
 
-When comparing the current and incoming definitions, Jig should use repository identity. Repository identity is `id` when present, otherwise the repository path.
-
-This allows Jig to report changes such as:
-
-- Repository added.
-- Repository removed.
-- Repository path changed.
-- Repository Git URL changed.
-- Repository web URL changed.
-- Repository dependencies changed.
-
-Jig stores local mutable workspace state in `.jig/state.json`. This keeps `.jig.json` clean as the shared definition file while giving Jig enough information to safely track local checkouts across repository moves, renames, and hosting changes.
-
-## Local State
-
-Jig-managed local state is stored under `.jig/` at the workspace root.
-
-Initial state file:
-
-```text
-.jig/state.json
-```
-
-`.jig/state.json` is local workspace metadata. It should not be treated as part of the shared repository definition.
-
-The state file tracks locally installed repositories by repository identity.
-
-Repository identity is `id` when present, otherwise the repository path.
-
-Initial state schema:
-
-```json
-{
-  "version": 1,
-  "repos": {
-    "auth-service": {
-      "path": "platform/auth",
-      "git": "git@github.com:org/platform-auth.git"
-    }
-  }
-}
-```
-
-State fields:
-
-- `version`: required integer. Initial supported value: `1`.
-- `repos`: required object mapping repository identity to local checkout metadata.
-- `path`: required string. Local path relative to the workspace root.
-- `git`: optional string. Git URL recorded when Jig cloned or last synced the repository.
-
-Jig should update `.jig/state.json` when it clones a repository, moves a repository, updates a repository's origin remote, or detects that a tracked repository no longer exists locally.
-
-The local filesystem remains the authority for whether a repository currently exists. If `.jig/state.json` says a repository is installed but the directory no longer exists or is no longer a Git repository, Jig should treat it as missing and update or report stale state.
-
-`.jig/state.json` must not cause Jig to modify a repository that does not exist on disk.
-
-## Workspace Discovery
-
-The workspace root is defined by the presence of a `.jig.json` file.
-
-All commands should work from the workspace root or any subdirectory inside the workspace. When a command starts, Jig walks up from the current working directory until it finds `.jig.json`.
-
-The directory containing `.jig.json` is the workspace root.
-
-If no `.jig.json` file is found, the command should fail with a clear error.
-
-The repository structure is read from `.jig.json`.
-
-`.jig.json` is the shared, human-editable workspace definition. It may be updated from a remote `source` and should not contain local checkout metadata.
-
-`.jig/` contains Jig-owned local workspace metadata. The initial local state file is `.jig/state.json`.
-
-## Clone Layout
-
-By default, repository IDs map to local paths by replacing dots with directory separators.
-
-Example:
-
-```text
-org1.suborg1.repo1 -> org1/suborg1/repo1
-platform.auth -> platform/auth
-services.checkout -> services/checkout
-```
-
-Local repository paths are resolved relative to the workspace root.
-
-## Local Repository Detection
-
-A repository is considered locally installed when Jig can associate its repository identity with a local directory that exists and contains a Git repository.
-
-Jig should first consult `.jig/state.json` for the repository identity. If state exists, the state path is the current known local checkout path.
-
-If no state exists for a repository identity, the expected local directory is derived from the repository path unless a future schema version adds an explicit local path override.
-
-For operations that need to detect repositories not yet recorded in state, Jig may inspect Git repositories inside the workspace and compare their configured remotes to repository definitions.
-
-Jig should only move or modify a local repository when it can confidently identify it from `.jig/state.json`, the current `.jig.json`, or the checked out Git repository itself.
-
-If Jig cannot confidently identify a local repository, it must skip the move or modification and report the ambiguity instead of guessing.
-
-## Existing Local Paths
-
-When Jig needs to clone or sync a repository, it should handle the expected local path as follows:
-
-- If the path does not exist, clone the repository.
-- If the path exists, contains a Git repository, and its `origin` remote matches the definition Git URL, adopt it by recording it in `.jig/state.json`.
-- If the path exists, contains a Git repository, and its `origin` remote does not match the definition Git URL, skip it and report the mismatch.
-- If the path exists and is not a Git repository, skip it and report the conflict.
-
-Jig should never overwrite an existing directory during clone or sync.
-
-Updating a repository's `origin` remote URL during sync is allowed even if the repository has uncommitted changes, because it does not modify the worktree.
+When comparing the current and incoming definitions, Jig should use repository and file identities.
 
 ## Operation Rules
 
 Repository operations should use repository identity to avoid duplicate work.
 
+File operations should use file identity to avoid duplicate work.
+
 Operations may be processed sequentially in the initial implementation.
 
-Output order should be deterministic. When there is no stronger command-specific ordering, repositories should be reported by repository path.
+Output order should be deterministic. When there is no stronger command-specific ordering, entries should be reported by workspace path.
 
 Commands should exit with a non-zero status when they fail. Validation failures should also use a non-zero exit status.
 
 ## Initial CLI Behavior
-
-The initial CLI should focus on validating the definition file, performing dependency-aware clone operations, updating the definition file, and keeping local checkouts aligned with the current definition.
 
 Target MVP commands:
 
 ```text
 jig init <git-url> [workspace-dir]
 jig init <git-url> [workspace-dir] --path <path>
+jig init <git-url> [workspace-dir] --clone <path>
+jig init <git-url> [workspace-dir] --clone <path> --with-optional-deps
 jig validate
 jig list
 jig info <path>
-jig deps <repo>
-jig clone <repo>
+jig deps <path>
+jig clone <path>
 jig pull [path]
 jig status [path]
 jig update
 jig sync [path]
-jig clone <repo> --with-optional-deps
+jig clone <path> --with-optional-deps
 jig sync [path] --with-optional-deps
 ```
 
@@ -491,45 +623,29 @@ The command should:
 - Inject or replace the top-level `source` object in the written `.jig.json`.
 - Create `.jig/state.json` with empty local state.
 
-The command should not clone repositories.
+By default, the command should not clone repositories or write files declared in the tree.
 
-The initial source object should be:
-
-```json
-{
-  "type": "git",
-  "url": "git@github.com:org/jig-definition.git",
-  "ref": "main",
-  "path": ".jig.json"
-}
-```
-
-`ref` is the discovered remote default branch.
-
-`path` defaults to `.jig.json`.
-
-If the remote default branch cannot be determined, initialization should fail with a clear error rather than guessing `main` or `master`.
-
-### `jig init <git-url> [workspace-dir] --path <path>`
-
-Initializes a workspace from a definition file at a custom path inside the source repository.
-
-Example:
-
-```sh
-jig init git@github.com:org/jig-definition.git ~/Code/org --path definitions/jig.json
-```
-
-The written source object should record the custom path:
+Initial state:
 
 ```json
 {
-  "type": "git",
-  "url": "git@github.com:org/jig-definition.git",
-  "ref": "main",
-  "path": "definitions/jig.json"
+  "version": 1,
+  "repos": {},
+  "files": {}
 }
 ```
+
+### `jig init <git-url> [workspace-dir] --clone <path>`
+
+Initializes a workspace, then clones repositories matching `path` and all non-optional dependencies.
+
+The clone step should run only after `.jig.json` and `.jig/state.json` have been written successfully.
+
+The clone behavior is the same as `jig clone <path>`.
+
+### `jig init <git-url> [workspace-dir] --clone <path> --with-optional-deps`
+
+Initializes a workspace, then clones repositories matching `path`, non-optional dependencies, optional dependencies, and active files.
 
 ### `jig validate`
 
@@ -540,45 +656,128 @@ Validation should catch:
 - Invalid JSON.
 - Unsupported schema version.
 - Missing top-level `version`.
-- Missing top-level `repos`.
+- Missing top-level `tree`.
 - Invalid `source` object.
-- Invalid repository IDs.
+- Invalid tree node objects.
+- Invalid safe paths.
+- Invalid `$repo` objects.
+- Invalid `$file` objects.
 - Duplicate repository identities.
-- Repository definitions missing `git`.
-- Invalid dependency objects.
+- Duplicate file identities.
 - Dependency paths that do not resolve to any repository.
+- `onlyWhen.path` values that do not resolve to any repository.
+- Invalid file `src` values.
 
 Dependency cycles should be detected and reported, but they do not necessarily make the file invalid.
 
 ### `jig list`
 
-Lists known repositories.
+Lists known repositories and files.
+
+The output should include the entry type.
+
+Example:
+
+```text
+repo  platform/auth
+repo  services/checkout
+file  .agents/skills/platform
+file  scripts/dev.sh
+```
 
 ### `jig info <path>`
 
-Shows information for a repository or group path.
+Shows information for a repository, file, or group path.
 
 For a repository, it should show metadata such as Git URL, web URL, description, and direct dependencies.
 
-For a group, it should show matching repositories.
+For a file, it should show metadata such as source, description, executable flag, and `onlyWhen` condition.
 
-### `jig deps <repo>`
+For a group, it should show matching repositories and files.
 
-Shows the dependencies for a repository after expanding group paths.
+### `jig deps <path>`
+
+Shows the dependencies for repositories matching a path after expanding group paths.
+
+If `path` matches multiple repositories, Jig resolves dependencies for all matching repositories and deduplicates the result by repository identity.
+
+Files are ignored by `jig deps`.
 
 By default, only non-optional dependencies are included.
 
 Optional dependencies should be included only when requested.
 
-### `jig clone <repo>`
+### `jig clone <path>`
 
-Clones a repository and all non-optional dependencies.
+Clones repositories matching a path and all non-optional dependencies.
 
-After cloning each repository, Jig should record it in `.jig/state.json` using the repository identity.
+If `path` matches multiple repositories, Jig clones all matching repositories and their deduplicated dependencies.
 
-### `jig clone <repo> --with-optional-deps`
+Jig should also write active files whose `onlyWhen` condition matches the resulting active repository set.
 
-Clones a repository, non-optional dependencies, and optional dependencies.
+After cloning each repository or writing each file, Jig should record it in `.jig/state.json` using its identity.
+
+### `jig clone <path> --with-optional-deps`
+
+Clones repositories matching a path, non-optional dependencies, and optional dependencies.
+
+### `jig sync [path]`
+
+Applies the current `.jig.json` to the local checkout shape.
+
+If `path` is provided, Jig syncs repositories matching that path plus their non-optional dependencies, then writes active files.
+
+If a matching repository has optional dependencies that are already installed locally, those optional dependencies are included in the sync set.
+
+If `path` is omitted, Jig syncs locally installed repositories known to the current `.jig.json` plus their non-optional dependencies, then writes active files. Installed optional dependencies are included. It should not clone every repository in `.jig.json` by default.
+
+Sync may perform these actions:
+
+- Clone missing repositories in the sync set.
+- Move a local repository when `.jig/state.json` records a path different from the current expected path.
+- Update a repository's `origin` remote URL when the current definition Git URL differs from the local repository's `origin` remote URL.
+- Write missing active files.
+- Update active files that Jig previously wrote and that have not been locally modified.
+- Move tracked files when the same file identity has a new path and the file has not been locally modified.
+- Update `.jig/state.json` after successful clone, move, origin update, or file write operations.
+- Report repositories and files that exist locally but are no longer defined.
+
+Sync must not delete local repositories or locally modified files.
+
+Sync must skip and report any operation that is ambiguous or unsafe.
+
+### `jig sync [path] --with-optional-deps`
+
+Syncs repositories matching `path`, non-optional dependencies, optional dependencies, and active files.
+
+### `jig pull [path]`
+
+Pulls all locally installed Git repositories matching `path`.
+
+If `path` is omitted, all locally installed repositories in the workspace are matched.
+
+Files are ignored by `jig pull`.
+
+### `jig status [path]`
+
+Shows local checkout status for repositories and files matching `path`.
+
+If `path` is omitted, Jig reports status for all repositories and files known to `.jig.json` plus entries tracked in `.jig/state.json` that are no longer defined.
+
+Status should identify:
+
+- Installed repositories.
+- Missing repositories.
+- Written files.
+- Missing active files.
+- Repositories or files tracked in state but no longer defined.
+- Repositories or files whose state path differs from the current expected path.
+- Repositories whose local `origin` remote URL differs from the current definition Git URL.
+- Repositories with uncommitted changes.
+- Files with local modifications.
+- Expected paths that cannot be adopted because they conflict with existing local content.
+
+The initial implementation may omit ahead/behind information if computing it would require network access. Local-only status should not fetch from remotes.
 
 ### `jig update`
 
@@ -588,92 +787,13 @@ The command should:
 
 - Fetch the incoming definition.
 - Validate the incoming definition.
-- Compare the current and incoming definitions by repository identity.
-- Report added, removed, moved, and changed repositories.
+- Compare the current and incoming definitions by repository and file identity.
+- Report added, removed, moved, and changed repositories and files.
 - Replace `.jig.json` only if the incoming definition is valid.
 
-The command should not change local repository checkouts.
-
-The command should not update `.jig/state.json`.
-
-### `jig sync [path]`
-
-Applies the current `.jig.json` to the local checkout shape.
-
-If `path` is provided, Jig syncs repositories matching that path plus their non-optional dependencies.
-
-If `path` is omitted, Jig syncs locally installed repositories known to the current `.jig.json` plus their non-optional dependencies. It should not clone every repository in `.jig.json` by default.
-
-Sync may perform these actions:
-
-- Clone missing repositories in the sync set.
-- Move a local repository when `.jig/state.json` records a path different from the current expected path.
-- Update a repository's `origin` remote URL when the current definition Git URL differs from the local repository's `origin` remote URL.
-- Update `.jig/state.json` after successful clone, move, or origin update operations.
-- Report repositories that exist locally but are no longer defined.
-
-Sync must not delete local repositories.
-
-Sync must skip and report any operation that is ambiguous or unsafe.
-
-Examples of unsafe operations:
-
-- The target path already exists.
-- The source repository cannot be confidently identified.
-- Multiple local repositories appear to match the same definition.
-- A local repository has uncommitted changes and would need to be moved.
-
-### `jig sync [path] --with-optional-deps`
-
-Syncs repositories matching `path`, non-optional dependencies, and optional dependencies.
-
-### `jig pull [path]`
-
-Pulls all locally installed Git repositories matching `path`.
-
-If `path` is omitted, all locally installed repositories in the workspace are matched.
-
-The path matching semantics are the same as dependency path matching. A path matches a repository ID when either:
-
-```text
-repoId == path
-```
-
-or:
-
-```text
-repoId starts with path + "."
-```
-
-For each matching locally installed repository, Jig runs the equivalent of a standard `git pull` from that repository's local directory.
-
-Repositories that are defined in `.jig.json` but not present locally are ignored.
-
-If pulling a repository would result in a merge conflict, Jig should skip that repository and continue pulling the remaining repositories.
-
-Jig should report which repositories were pulled successfully and which repositories were skipped.
-
-### `jig status [path]`
-
-Shows local checkout status for repositories matching `path`.
-
-If `path` is omitted, Jig reports status for all repositories known to `.jig.json` plus any repositories tracked in `.jig/state.json` that are no longer defined.
-
-The path matching semantics are the same as dependency path matching.
-
-Status should identify:
-
-- Installed repositories.
-- Missing repositories.
-- Repositories tracked in state but no longer defined.
-- Repositories whose state path differs from the current expected path.
-- Repositories whose local `origin` remote URL differs from the current definition Git URL.
-- Repositories with uncommitted changes.
-- Repositories whose expected path exists but cannot be adopted because it is not a Git repository or has a different origin.
-
-The initial implementation may omit ahead/behind information if computing it would require network access. Local-only status should not fetch from remotes.
+The command should not change local repository checkouts, write files, or update `.jig/state.json`.
 
 ## Open Questions
 
-- Should repository definitions support an explicit local path override?
-- Should `jig clone <group>` be supported in the MVP?
+- Should repository and file definitions support explicit local path overrides, or is tree position always the local path?
+- Should inactive `onlyWhen` files that were previously written be reported only, or should a future `prune` command remove them if unmodified?
