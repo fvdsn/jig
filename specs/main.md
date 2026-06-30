@@ -43,6 +43,21 @@ Initial schema:
         ]
       }
     },
+    "tools": {
+      "$group": {
+        "description": "Developer tools",
+        "onlyWhen": {
+          "path": "platform",
+          "reason": "Only useful when platform repositories are installed"
+        }
+      },
+      "platform-debug": {
+        "$repo": {
+          "id": "platform-debug-tools",
+          "git": "git@github.com:org/platform-debug-tools.git"
+        }
+      }
+    },
     ".agents/skills/platform": {
       "$file": {
         "id": "platform-skill",
@@ -106,6 +121,7 @@ Repository and file nodes use reserved marker keys:
 
 - `$repo`
 - `$file`
+- `$group`
 
 Keys starting with `$` are reserved for Jig.
 
@@ -182,15 +198,99 @@ Source repo file paths use the same safety rules, but are interpreted relative t
 
 ## Tree Node Rules
 
-A tree node must be exactly one of:
+A tree node must be one of:
 
 - Directory node.
 - Repository node containing `$repo`.
 - File node containing `$file`.
 
+A directory node may contain `$group` alongside child nodes.
+
 A node containing `$repo` or `$file` must not contain child nodes.
 
 A node must not contain both `$repo` and `$file`.
+
+## Group Nodes
+
+Group nodes are declared with `$group` on directory nodes.
+
+`$group` describes the group and provides inherited metadata and behavior for descendant `$repo` and `$file` nodes.
+
+Example:
+
+```json
+{
+  "tree": {
+    "platform": {
+      "$group": {
+        "description": "Shared platform services",
+        "web": "https://github.com/acme/platform",
+        "dependsOn": [
+          {
+            "path": "shared/config",
+            "reason": "all platform repos use shared config"
+          }
+        ]
+      },
+      "auth": {
+        "$repo": {
+          "id": "auth-service",
+          "git": "git@github.com:acme/platform-auth.git"
+        }
+      }
+    }
+  }
+}
+```
+
+### `$group.description`
+
+Optional string.
+
+Human-readable group description.
+
+Descendant repositories and files inherit this description when they do not define their own description.
+
+Nearest ancestor wins.
+
+### `$group.web`
+
+Optional string.
+
+Web URL for the group.
+
+Descendant repositories inherit this value when they do not define their own `web` value.
+
+Nearest ancestor wins.
+
+### `$group.dependsOn`
+
+Optional array.
+
+Dependencies inherited by all descendant repositories.
+
+Inherited dependencies are additive. Ancestor dependencies are applied before repository-local dependencies.
+
+Files do not inherit dependencies because files are not dependency graph nodes.
+
+### `$group.onlyWhen`
+
+Optional object.
+
+Condition inherited by all descendant repositories and files.
+
+Inherited `onlyWhen` conditions are additive. A descendant is active only when all inherited and local conditions match.
+
+## Group Inheritance
+
+When flattening the tree:
+
+- `description` is inherited by descendant repositories and files when they do not define one locally. The nearest value wins.
+- `web` is inherited by descendant repositories when they do not define one locally. The nearest value wins.
+- `dependsOn` is inherited additively by descendant repositories. Ancestor dependencies come before local dependencies.
+- `onlyWhen` is inherited additively by descendant repositories and files. All conditions must match.
+
+`jig info <group>` should show `$group` metadata when present.
 
 ## Repository Nodes
 
@@ -262,6 +362,8 @@ If omitted, the repository has no declared dependencies.
 Optional object.
 
 Conditionally includes the repository only when another repository path or group is active.
+
+If inherited `onlyWhen` conditions are present, all inherited conditions and the local condition must match.
 
 See [Conditional Nodes](#conditional-nodes).
 
@@ -343,6 +445,8 @@ Optional object.
 
 Conditionally includes the file only when another repository path or group is active.
 
+If inherited `onlyWhen` conditions are present, all inherited conditions and the local condition must match.
+
 See [Conditional Nodes](#conditional-nodes).
 
 ## Dependency Fields
@@ -419,7 +523,7 @@ This is intended for humans and should not affect dependency resolution.
 
 ## Conditional Nodes
 
-`$repo` and `$file` may declare `onlyWhen`.
+`$group`, `$repo`, and `$file` may declare `onlyWhen`.
 
 Example:
 
@@ -437,7 +541,7 @@ Fields:
 - `path`: required safe workspace path. Refers to a repository or repository group.
 - `reason`: optional string. Human explanation for the condition.
 
-A node with `onlyWhen` is active when `onlyWhen.path` intersects either:
+A condition matches when `onlyWhen.path` intersects either:
 
 - The repository set being installed or synced in the current operation.
 - The repository set already installed locally.
@@ -445,7 +549,7 @@ A node with `onlyWhen` is active when `onlyWhen.path` intersects either:
 Conditional activation is resolved to a fixed point:
 
 - Start with the requested repositories and their dependencies, ignoring inactive `onlyWhen` nodes.
-- Activate conditional nodes whose `onlyWhen.path` matches the active or already-installed repository set.
+- Activate conditional nodes whose inherited and local `onlyWhen` conditions all match the active or already-installed repository set.
 - If an activated conditional repo has dependencies, include those dependencies.
 - Repeat until no new repositories or files become active.
 
@@ -588,26 +692,30 @@ Commands should exit with a non-zero status when they fail. Validation failures 
 Target MVP commands:
 
 ```text
-jig init <git-url> [workspace-dir]
+jig init <git-url-or-file> [workspace-dir]
 jig init <git-url> [workspace-dir] --path <path>
-jig init <git-url> [workspace-dir] --clone <path>
-jig init <git-url> [workspace-dir] --clone <path> --with-optional-deps
+jig init <git-url-or-file> [workspace-dir] --clone [path]
+jig init <git-url-or-file> [workspace-dir] --clone [path] --with-optional-deps
 jig validate
 jig list
 jig info <path>
 jig deps <path>
-jig clone <path>
+jig clone [path]
 jig pull [path]
 jig status [path]
 jig update
 jig sync [path]
-jig clone <path> --with-optional-deps
+jig clone [path] --with-optional-deps
 jig sync [path] --with-optional-deps
 ```
 
-### `jig init <git-url> [workspace-dir]`
+### `jig init <git-url-or-file> [workspace-dir]`
 
-Initializes a Jig workspace from a Git-hosted definition file.
+Initializes a Jig workspace from a Git-hosted or local definition file.
+
+If the first argument is an existing local file, Jig reads that file as the definition. The written workspace `.jig.json` does not get a `source` object. This is useful for testing a definition before pushing it to a Git repository.
+
+If the first argument is not an existing local file, Jig treats it as a Git URL.
 
 If `workspace-dir` is omitted, the current working directory is used.
 
@@ -635,17 +743,21 @@ Initial state:
 }
 ```
 
-### `jig init <git-url> [workspace-dir] --clone <path>`
+### `jig init <git-url-or-file> [workspace-dir] --clone [path]`
 
-Initializes a workspace, then clones repositories matching `path` and all non-optional dependencies.
+Initializes a workspace, then clones repositories.
+
+If `path` is omitted, Jig clones all repositories.
+
+If `path` is provided, Jig clones repositories matching `path` and all non-optional dependencies.
 
 The clone step should run only after `.jig.json` and `.jig/state.json` have been written successfully.
 
 The clone behavior is the same as `jig clone <path>`.
 
-### `jig init <git-url> [workspace-dir] --clone <path> --with-optional-deps`
+### `jig init <git-url-or-file> [workspace-dir] --clone [path] --with-optional-deps`
 
-Initializes a workspace, then clones repositories matching `path`, non-optional dependencies, optional dependencies, and active files.
+Initializes a workspace, then clones all repositories, or repositories matching `path`, including non-optional dependencies, optional dependencies, and active files.
 
 ### `jig validate`
 
@@ -695,6 +807,8 @@ For a file, it should show metadata such as source, description, executable flag
 
 For a group, it should show matching repositories and files.
 
+If the group has `$group` metadata, it should also show that metadata.
+
 ### `jig deps <path>`
 
 Shows the dependencies for repositories matching a path after expanding group paths.
@@ -707,9 +821,11 @@ By default, only non-optional dependencies are included.
 
 Optional dependencies should be included only when requested.
 
-### `jig clone <path>`
+### `jig clone [path]`
 
-Clones repositories matching a path and all non-optional dependencies.
+If `path` is omitted, clones all repositories and active files.
+
+If `path` is provided, clones repositories matching that path and all non-optional dependencies.
 
 If `path` matches multiple repositories, Jig clones all matching repositories and their deduplicated dependencies.
 
@@ -717,9 +833,9 @@ Jig should also write active files whose `onlyWhen` condition matches the result
 
 After cloning each repository or writing each file, Jig should record it in `.jig/state.json` using its identity.
 
-### `jig clone <path> --with-optional-deps`
+### `jig clone [path] --with-optional-deps`
 
-Clones repositories matching a path, non-optional dependencies, and optional dependencies.
+Clones all repositories, or repositories matching a path, including non-optional dependencies and optional dependencies.
 
 ### `jig sync [path]`
 

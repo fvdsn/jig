@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,7 +14,6 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"unicode"
 )
 
 const (
@@ -21,9 +22,11 @@ const (
 )
 
 type Definition struct {
-	Version int             `json:"version"`
-	Source  *Source         `json:"source,omitempty"`
-	Repos   map[string]Repo `json:"repos"`
+	Version int                        `json:"version"`
+	Source  *Source                    `json:"source,omitempty"`
+	Tree    map[string]json.RawMessage `json:"tree"`
+	Repos   map[string]Repo            `json:"repos,omitempty"` // legacy input is rejected by validation; kept so old files parse clearly.
+	Extra   map[string]json.RawMessage `json:"-"`
 }
 
 type Source struct {
@@ -39,6 +42,22 @@ type Repo struct {
 	Web         string       `json:"web,omitempty"`
 	Description string       `json:"description,omitempty"`
 	DependsOn   []Dependency `json:"dependsOn,omitempty"`
+	OnlyWhen    *Condition   `json:"onlyWhen,omitempty"`
+}
+
+type File struct {
+	ID          string     `json:"id,omitempty"`
+	Src         string     `json:"src"`
+	Description string     `json:"description,omitempty"`
+	Executable  bool       `json:"executable,omitempty"`
+	OnlyWhen    *Condition `json:"onlyWhen,omitempty"`
+}
+
+type Group struct {
+	Description string       `json:"description,omitempty"`
+	Web         string       `json:"web,omitempty"`
+	DependsOn   []Dependency `json:"dependsOn,omitempty"`
+	OnlyWhen    *Condition   `json:"onlyWhen,omitempty"`
 }
 
 type Dependency struct {
@@ -47,9 +66,48 @@ type Dependency struct {
 	Reason   string `json:"reason,omitempty"`
 }
 
+type Condition struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason,omitempty"`
+}
+
+type Model struct {
+	Repos  map[string]RepoEntry
+	Files  map[string]FileEntry
+	Groups map[string]GroupEntry
+}
+
+type RepoEntry struct {
+	Path       string
+	Identity   string
+	Repo       Repo
+	Conditions []Condition
+}
+
+type FileEntry struct {
+	Path       string
+	Identity   string
+	File       File
+	Conditions []Condition
+}
+
+type GroupEntry struct {
+	Path       string
+	Group      Group
+	Conditions []Condition
+}
+
+type inheritedGroup struct {
+	Description string
+	Web         string
+	DependsOn   []Dependency
+	Conditions  []Condition
+}
+
 type State struct {
 	Version int                  `json:"version"`
 	Repos   map[string]StateRepo `json:"repos"`
+	Files   map[string]StateFile `json:"files"`
 }
 
 type StateRepo struct {
@@ -57,9 +115,16 @@ type StateRepo struct {
 	Git  string `json:"git,omitempty"`
 }
 
+type StateFile struct {
+	Path   string `json:"path"`
+	Src    string `json:"src"`
+	SHA256 string `json:"sha256"`
+}
+
 type Workspace struct {
 	Root  string
 	Def   Definition
+	Model Model
 	State State
 }
 
@@ -111,48 +176,46 @@ func run(args []string, out io.Writer, errOut io.Writer) error {
 }
 
 func printUsage(out io.Writer) {
-	fmt.Fprintln(out, "Jig is a workspace CLI for managing many related Git repositories from a shared .jig.json definition.")
-	fmt.Fprintln(out)
-	fmt.Fprintln(out, "It can clone repositories with their dependencies, keep local checkouts aligned with the definition, pull installed repositories, and report workspace status.")
+	fmt.Fprintln(out, "Jig is a workspace CLI for managing many related Git repositories and generated files from a shared .jig.json definition.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Usage:")
 	fmt.Fprintln(out, "  jig <command> [args]")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Commands:")
-	fmt.Fprintln(out, "  init <git-url> [workspace-dir] [--path <path>] [--clone <path>] [--with-optional-deps]")
-	fmt.Fprintln(out, "      Initialize a workspace from a Git-hosted Jig definition, optionally cloning a path.")
+	fmt.Fprintln(out, "  init <git-url-or-file> [workspace-dir] [--path <path>] [--clone [path]] [--with-optional-deps]")
+	fmt.Fprintln(out, "      Initialize a workspace from a Git-hosted or local Jig definition, optionally cloning a path.")
 	fmt.Fprintln(out, "  validate")
 	fmt.Fprintln(out, "      Validate the current workspace .jig.json file.")
 	fmt.Fprintln(out, "  list")
-	fmt.Fprintln(out, "      List repositories defined in .jig.json.")
+	fmt.Fprintln(out, "      List repositories and files defined in .jig.json.")
 	fmt.Fprintln(out, "  info <path>")
-	fmt.Fprintln(out, "      Show repository metadata or repositories under a group path.")
+	fmt.Fprintln(out, "      Show repository, file, or group metadata.")
 	fmt.Fprintln(out, "  deps <path>")
 	fmt.Fprintln(out, "      Show expanded recursive dependencies for repositories matching a path.")
-	fmt.Fprintln(out, "  clone <path> [--with-optional-deps]")
-	fmt.Fprintln(out, "      Clone repositories matching a path and their non-optional dependencies.")
+	fmt.Fprintln(out, "  clone [path] [--with-optional-deps]")
+	fmt.Fprintln(out, "      Clone all repositories, or repositories matching a path, plus dependencies and active files.")
 	fmt.Fprintln(out, "  sync [path] [--with-optional-deps]")
-	fmt.Fprintln(out, "      Clone missing repos, move renamed repos, update origins, and refresh local state.")
+	fmt.Fprintln(out, "      Clone missing repos, move renamed repos/files, update origins/files, and refresh local state.")
 	fmt.Fprintln(out, "  pull [path]")
 	fmt.Fprintln(out, "      Run git pull in installed repositories matching a path or group.")
 	fmt.Fprintln(out, "  status [path]")
-	fmt.Fprintln(out, "      Show installed, missing, moved, dirty, stale, and remote-changed repositories.")
+	fmt.Fprintln(out, "      Show installed, missing, moved, dirty, stale, modified, and remote-changed entries.")
 	fmt.Fprintln(out, "  update")
 	fmt.Fprintln(out, "      Update .jig.json from its configured source without changing local checkouts.")
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Paths identify repositories or groups. Current specs use slash paths such as services/checkout or platform.")
+	fmt.Fprintln(out, "Paths identify repositories, files, or groups using slash paths such as services/checkout or platform.")
 }
 
 func cmdInit(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]bool{"--path": true, "--clone": true}, map[string]bool{"--with-optional-deps": true})
+	parsed, err := parseInitArgs(args)
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) == 0 || len(parsed.Positionals) > 2 {
-		return errors.New("usage: jig init <git-url> [workspace-dir] [--path <path>] [--clone <path>] [--with-optional-deps]")
+		return errors.New("usage: jig init <git-url-or-file> [workspace-dir] [--path <path>] [--clone [path]] [--with-optional-deps]")
 	}
 
-	gitURL := parsed.Positionals[0]
+	sourceArg := parsed.Positionals[0]
 	workspaceDir := "."
 	if len(parsed.Positionals) == 2 {
 		workspaceDir = parsed.Positionals[1]
@@ -166,6 +229,9 @@ func cmdInit(args []string, out io.Writer) error {
 	if definitionPath == "" {
 		definitionPath = definitionFile
 	}
+	if err := validateSafePath(definitionPath); err != nil {
+		return fmt.Errorf("invalid definition path: %s", err)
+	}
 
 	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
 		return err
@@ -177,20 +243,18 @@ func cmdInit(args []string, out io.Writer) error {
 		return err
 	}
 
-	ref, err := discoverDefaultBranch(gitURL)
-	if err != nil {
-		return fmt.Errorf("could not determine default branch for %s", gitURL)
-	}
-
-	def, err := fetchDefinition(gitURL, ref, definitionPath)
+	def, err := loadInitDefinition(sourceArg, definitionPath)
 	if err != nil {
 		return err
 	}
-	def.Source = &Source{Type: "git", URL: gitURL, Ref: ref, Path: definitionPath}
 
 	validation := validateDefinition(def)
 	if len(validation.Errors) > 0 {
 		return validation.asError("invalid fetched definition")
+	}
+	model, err := flattenDefinition(def)
+	if err != nil {
+		return err
 	}
 
 	if err := writeJSON(localDefinitionPath, def); err != nil {
@@ -201,12 +265,13 @@ func cmdInit(args []string, out io.Writer) error {
 	}
 
 	fmt.Fprintf(out, "initialized workspace at %s\n", workspaceDir)
-	if clonePath := parsed.Values["--clone"]; clonePath != "" {
+	if parsed.Flags["--clone"] {
+		clonePath := parsed.Values["--clone"]
 		state, err := loadState(workspaceDir)
 		if err != nil {
 			return err
 		}
-		ws := Workspace{Root: workspaceDir, Def: *def, State: state}
+		ws := Workspace{Root: workspaceDir, Def: *def, Model: model, State: state}
 		if err := clonePathIntoWorkspace(out, &ws, clonePath, parsed.Flags["--with-optional-deps"]); err != nil {
 			return err
 		}
@@ -215,6 +280,33 @@ func cmdInit(args []string, out io.Writer) error {
 		}
 	}
 	return nil
+}
+
+func loadInitDefinition(sourceArg string, definitionPath string) (*Definition, error) {
+	if info, err := os.Stat(sourceArg); err == nil && !info.IsDir() {
+		if definitionPath != definitionFile {
+			return nil, errors.New("--path can only be used with Git sources")
+		}
+		def, err := loadDefinition(sourceArg)
+		if err != nil {
+			return nil, err
+		}
+		def.Source = nil
+		return def, nil
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+
+	ref, err := discoverDefaultBranch(sourceArg)
+	if err != nil {
+		return nil, fmt.Errorf("could not determine default branch for %s", sourceArg)
+	}
+	def, err := fetchDefinition(sourceArg, ref, definitionPath)
+	if err != nil {
+		return nil, err
+	}
+	def.Source = &Source{Type: "git", URL: sourceArg, Ref: ref, Path: definitionPath}
+	return def, nil
 }
 
 func cmdValidate(out io.Writer) error {
@@ -244,13 +336,21 @@ func cmdList(out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	for _, repoPath := range sortedRepoPaths(&ws.Def) {
-		repo := ws.Def.Repos[repoPath]
-		if repo.Description == "" {
-			fmt.Fprintln(out, repoPath)
-		} else {
-			fmt.Fprintf(out, "%s\t%s\n", repoPath, repo.Description)
+	for _, repoPath := range sortedRepoPaths(&ws.Model) {
+		repo := ws.Model.Repos[repoPath].Repo
+		fmt.Fprintf(out, "repo  %s", repoPath)
+		if repo.Description != "" {
+			fmt.Fprintf(out, "\t%s", repo.Description)
 		}
+		fmt.Fprintln(out)
+	}
+	for _, filePath := range sortedFilePaths(&ws.Model) {
+		file := ws.Model.Files[filePath].File
+		fmt.Fprintf(out, "file  %s", filePath)
+		if file.Description != "" {
+			fmt.Fprintf(out, "\t%s", file.Description)
+		}
+		fmt.Fprintln(out)
 	}
 	return nil
 }
@@ -264,15 +364,23 @@ func cmdInfo(args []string, out io.Writer) error {
 		return err
 	}
 	path := args[0]
-	if repo, ok := ws.Def.Repos[path]; ok {
+	if err := validateSafePath(path); err != nil {
+		return err
+	}
+	if entry, ok := ws.Model.Repos[path]; ok {
+		repo := entry.Repo
 		fmt.Fprintf(out, "path: %s\n", path)
-		fmt.Fprintf(out, "identity: %s\n", repoIdentity(path, repo))
+		fmt.Fprintln(out, "type: repo")
+		fmt.Fprintf(out, "identity: %s\n", entry.Identity)
 		fmt.Fprintf(out, "git: %s\n", repo.Git)
 		if repo.Web != "" {
 			fmt.Fprintf(out, "web: %s\n", repo.Web)
 		}
 		if repo.Description != "" {
 			fmt.Fprintf(out, "description: %s\n", repo.Description)
+		}
+		if len(entry.Conditions) > 0 {
+			printConditions(out, "onlyWhen", entry.Conditions)
 		}
 		if len(repo.DependsOn) > 0 {
 			fmt.Fprintln(out, "dependsOn:")
@@ -290,17 +398,97 @@ func cmdInfo(args []string, out io.Writer) error {
 		}
 		return nil
 	}
+	if entry, ok := ws.Model.Files[path]; ok {
+		file := entry.File
+		fmt.Fprintf(out, "path: %s\n", path)
+		fmt.Fprintln(out, "type: file")
+		fmt.Fprintf(out, "identity: %s\n", entry.Identity)
+		fmt.Fprintf(out, "src: %s\n", file.Src)
+		if file.Description != "" {
+			fmt.Fprintf(out, "description: %s\n", file.Description)
+		}
+		fmt.Fprintf(out, "executable: %v\n", file.Executable)
+		if len(entry.Conditions) > 0 {
+			printConditions(out, "onlyWhen", entry.Conditions)
+		}
+		return nil
+	}
 
-	matches := matchingRepos(&ws.Def, path)
-	if len(matches) == 0 {
-		return fmt.Errorf("no repository or group matches %q", path)
+	repos := matchingRepos(&ws.Model, path)
+	files := matchingFiles(&ws.Model, path)
+	group, hasGroup := ws.Model.Groups[path]
+	if len(repos) == 0 && len(files) == 0 && !hasGroup {
+		return fmt.Errorf("no repository, file, or group matches %q", path)
 	}
 	fmt.Fprintf(out, "group: %s\n", path)
-	fmt.Fprintln(out, "repos:")
-	for _, repoPath := range matches {
-		fmt.Fprintf(out, "  %s\n", repoPath)
+	if hasGroup {
+		if group.Group.Description != "" {
+			fmt.Fprintf(out, "description: %s\n", group.Group.Description)
+		}
+		if group.Group.Web != "" {
+			fmt.Fprintf(out, "web: %s\n", group.Group.Web)
+		}
+		if len(group.Conditions) > 0 {
+			printConditions(out, "onlyWhen", group.Conditions)
+		}
+		if len(group.Group.DependsOn) > 0 {
+			fmt.Fprintln(out, "dependsOn:")
+			for _, dep := range group.Group.DependsOn {
+				printDependency(out, dep)
+			}
+		}
+	}
+	if len(repos) > 0 {
+		fmt.Fprintln(out, "repos:")
+		for _, repoPath := range repos {
+			fmt.Fprintf(out, "  %s\n", repoPath)
+		}
+	}
+	if len(files) > 0 {
+		fmt.Fprintln(out, "files:")
+		for _, filePath := range files {
+			fmt.Fprintf(out, "  %s\n", filePath)
+		}
 	}
 	return nil
+}
+
+func printCondition(out io.Writer, label string, condition *Condition) {
+	if condition == nil {
+		return
+	}
+	if condition.Reason == "" {
+		fmt.Fprintf(out, "%s: %s\n", label, condition.Path)
+	} else {
+		fmt.Fprintf(out, "%s: %s: %s\n", label, condition.Path, condition.Reason)
+	}
+}
+
+func printConditions(out io.Writer, label string, conditions []Condition) {
+	if len(conditions) == 1 {
+		printCondition(out, label, &conditions[0])
+		return
+	}
+	fmt.Fprintf(out, "%s:\n", label)
+	for _, condition := range conditions {
+		if condition.Reason == "" {
+			fmt.Fprintf(out, "  %s\n", condition.Path)
+		} else {
+			fmt.Fprintf(out, "  %s: %s\n", condition.Path, condition.Reason)
+		}
+	}
+}
+
+func printDependency(out io.Writer, dep Dependency) {
+	optional := ""
+	if dep.Optional {
+		optional = " optional"
+	}
+	if dep.Reason == "" {
+		fmt.Fprintf(out, "  %s%s\n", dep.Path, optional)
+	} else {
+		fmt.Fprintf(out, "  %s%s: %s\n", dep.Path, optional, dep.Reason)
+	}
 }
 
 func cmdDeps(args []string, out io.Writer) error {
@@ -316,15 +504,18 @@ func cmdDeps(args []string, out io.Writer) error {
 		return err
 	}
 	path := parsed.Positionals[0]
-	roots := matchingRepos(&ws.Def, path)
+	if err := validateSafePath(path); err != nil {
+		return err
+	}
+	roots := matchingRepos(&ws.Model, path)
 	if len(roots) == 0 {
 		return fmt.Errorf("no repositories match %q", path)
 	}
-	deps, err := resolveRepoSet(&ws.Def, roots, parsed.Flags["--with-optional-deps"], false)
+	plan, err := resolvePlan(&ws.Model, roots, planOptions{IncludeOptional: parsed.Flags["--with-optional-deps"], IncludeRoots: false})
 	if err != nil {
 		return err
 	}
-	for _, dep := range deps {
+	for _, dep := range plan.Repos {
 		fmt.Fprintln(out, dep)
 	}
 	return nil
@@ -335,33 +526,42 @@ func cmdClone(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if len(parsed.Positionals) != 1 {
-		return errors.New("usage: jig clone <path> [--with-optional-deps]")
+	if len(parsed.Positionals) > 1 {
+		return errors.New("usage: jig clone [path] [--with-optional-deps]")
 	}
 	ws, err := loadWorkspace(true)
 	if err != nil {
 		return err
 	}
-	if err := clonePathIntoWorkspace(out, ws, parsed.Positionals[0], parsed.Flags["--with-optional-deps"]); err != nil {
+	path := ""
+	if len(parsed.Positionals) == 1 {
+		path = parsed.Positionals[0]
+	}
+	if err := clonePathIntoWorkspace(out, ws, path, parsed.Flags["--with-optional-deps"]); err != nil {
 		return err
 	}
 	return saveState(ws.Root, ws.State)
 }
 
 func clonePathIntoWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bool) error {
-	roots := matchingRepos(&ws.Def, path)
+	roots := sortedRepoPaths(&ws.Model)
+	if path != "" {
+		if err := validateSafePath(path); err != nil {
+			return err
+		}
+		roots = matchingRepos(&ws.Model, path)
+	}
 	if len(roots) == 0 {
+		if path == "" {
+			return errors.New("no repositories defined")
+		}
 		return fmt.Errorf("no repositories match %q", path)
 	}
-	set, err := resolveRepoSet(&ws.Def, roots, includeOptional, true)
+	plan, err := resolvePlan(&ws.Model, roots, planOptions{IncludeOptional: includeOptional, IncludeRoots: true, Installed: installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State)})
 	if err != nil {
 		return err
 	}
-	for _, repoPath := range set {
-		if err := ensureRepo(out, ws.Root, &ws.Def, &ws.State, repoPath, false); err != nil {
-			fmt.Fprintf(out, "skipped:\n  %s: %s\n", repoPath, err)
-		}
-	}
+	applyPlan(out, ws, plan, false)
 	return nil
 }
 
@@ -380,25 +580,38 @@ func cmdSync(args []string, out io.Writer) error {
 
 	var roots []string
 	if len(parsed.Positionals) == 1 {
-		roots = matchingRepos(&ws.Def, parsed.Positionals[0])
+		path := parsed.Positionals[0]
+		if err := validateSafePath(path); err != nil {
+			return err
+		}
+		roots = matchingRepos(&ws.Model, path)
 		if len(roots) == 0 {
-			return fmt.Errorf("no repositories match %q", parsed.Positionals[0])
+			return fmt.Errorf("no repositories match %q", path)
 		}
 	} else {
-		roots = installedDefinedRepos(ws.Root, &ws.Def, &ws.State)
+		roots = installedDefinedRepos(ws.Root, &ws.Model, &ws.State)
 	}
 
-	set, err := resolveRepoSetForSync(ws.Root, &ws.Def, &ws.State, roots, parsed.Flags["--with-optional-deps"])
+	plan, err := resolvePlan(&ws.Model, roots, planOptions{IncludeOptional: parsed.Flags["--with-optional-deps"], IncludeInstalledOptional: true, IncludeRoots: true, Installed: installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State)})
 	if err != nil {
 		return err
 	}
-	for _, path := range set {
-		if err := ensureRepo(out, ws.Root, &ws.Def, &ws.State, path, true); err != nil {
-			fmt.Fprintf(out, "skipped:\n  %s: %s\n", path, err)
+	applyPlan(out, ws, plan, true)
+	reportStale(out, ws.Root, &ws.Model, &ws.State)
+	return saveState(ws.Root, ws.State)
+}
+
+func applyPlan(out io.Writer, ws *Workspace, plan plan, allowMove bool) {
+	for _, repoPath := range plan.Repos {
+		if err := ensureRepo(out, ws.Root, &ws.Model, &ws.State, repoPath, allowMove); err != nil {
+			fmt.Fprintf(out, "skipped:\n  %s: %s\n", repoPath, err)
 		}
 	}
-	reportStale(out, ws.Root, &ws.Def, &ws.State)
-	return saveState(ws.Root, ws.State)
+	for _, filePath := range plan.Files {
+		if err := ensureFile(out, ws.Root, &ws.Model, &ws.State, filePath, allowMove); err != nil {
+			fmt.Fprintf(out, "skipped:\n  %s: %s\n", filePath, err)
+		}
+	}
 }
 
 func cmdPull(args []string, out io.Writer) error {
@@ -412,15 +625,18 @@ func cmdPull(args []string, out io.Writer) error {
 	filter := ""
 	if len(args) == 1 {
 		filter = args[0]
+		if err := validateSafePath(filter); err != nil {
+			return err
+		}
 	}
 
 	var pulled []string
 	var skipped []string
-	for _, repoPath := range sortedRepoPaths(&ws.Def) {
+	for _, repoPath := range sortedRepoPaths(&ws.Model) {
 		if filter != "" && !pathMatches(filter, repoPath) {
 			continue
 		}
-		local, ok := installedPath(ws.Root, &ws.Def, &ws.State, repoPath)
+		local, ok := installedPath(ws.Root, &ws.Model, &ws.State, repoPath)
 		if !ok {
 			continue
 		}
@@ -446,34 +662,37 @@ func cmdStatus(args []string, out io.Writer) error {
 	filter := ""
 	if len(args) == 1 {
 		filter = args[0]
+		if err := validateSafePath(filter); err != nil {
+			return err
+		}
 	}
+
+	installedIDs := installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State)
+	activeFiles := activeFiles(&ws.Model, installedIDs)
 
 	var installed []string
 	var missing []string
 	var moved []string
 	var remoteChanged []string
 	var dirty []string
+	var written []string
+	var modified []string
 	var conflicts []string
-	identityToPath := repoIdentityToPath(&ws.Def)
 
-	for _, repoPath := range sortedRepoPaths(&ws.Def) {
+	for _, repoPath := range sortedRepoPaths(&ws.Model) {
 		if filter != "" && !pathMatches(filter, repoPath) {
 			continue
 		}
-		repo := ws.Def.Repos[repoPath]
-		identity := repoIdentity(repoPath, repo)
-		expectedRel := repoLocalPath(repoPath)
-		expectedAbs := filepath.Join(ws.Root, expectedRel)
-		stateRepo, hasState := ws.State.Repos[identity]
-
-		if hasState && stateRepo.Path != expectedRel && isGitRepo(filepath.Join(ws.Root, stateRepo.Path)) {
-			moved = append(moved, fmt.Sprintf("%s: %s -> %s", repoPath, stateRepo.Path, expectedRel))
+		entry := ws.Model.Repos[repoPath]
+		expectedAbs := filepath.Join(ws.Root, entry.Path)
+		stateRepo, hasState := ws.State.Repos[entry.Identity]
+		if hasState && stateRepo.Path != entry.Path && isGitRepo(filepath.Join(ws.Root, stateRepo.Path)) {
+			moved = append(moved, fmt.Sprintf("%s: %s -> %s", repoPath, stateRepo.Path, entry.Path))
 			if isDirty(filepath.Join(ws.Root, stateRepo.Path)) {
 				dirty = append(dirty, repoPath)
 			}
 			continue
 		}
-
 		if !pathExists(expectedAbs) {
 			missing = append(missing, repoPath)
 			continue
@@ -483,8 +702,8 @@ func cmdStatus(args []string, out io.Writer) error {
 			continue
 		}
 		origin, err := gitOrigin(expectedAbs)
-		if err != nil || origin != repo.Git {
-			remoteChanged = append(remoteChanged, fmt.Sprintf("%s: %s -> %s", repoPath, origin, repo.Git))
+		if err != nil || origin != entry.Repo.Git {
+			remoteChanged = append(remoteChanged, fmt.Sprintf("%s: %s -> %s", repoPath, origin, entry.Repo.Git))
 		}
 		if isDirty(expectedAbs) {
 			dirty = append(dirty, repoPath)
@@ -492,21 +711,61 @@ func cmdStatus(args []string, out io.Writer) error {
 		installed = append(installed, repoPath)
 	}
 
+	for _, filePath := range sortedFilePaths(&ws.Model) {
+		if filter != "" && !pathMatches(filter, filePath) {
+			continue
+		}
+		if !activeFiles[filePath] {
+			continue
+		}
+		entry := ws.Model.Files[filePath]
+		stateFile, hasState := ws.State.Files[entry.Identity]
+		expectedAbs := filepath.Join(ws.Root, entry.Path)
+		if hasState && stateFile.Path != entry.Path && pathExists(filepath.Join(ws.Root, stateFile.Path)) {
+			moved = append(moved, fmt.Sprintf("%s: %s -> %s", filePath, stateFile.Path, entry.Path))
+			continue
+		}
+		if !pathExists(expectedAbs) {
+			missing = append(missing, filePath)
+			continue
+		}
+		if !hasState {
+			conflicts = append(conflicts, fmt.Sprintf("%s: existing file is not tracked", filePath))
+			continue
+		}
+		currentHash, err := fileSHA256(expectedAbs)
+		if err != nil {
+			conflicts = append(conflicts, fmt.Sprintf("%s: %s", filePath, err))
+			continue
+		}
+		if currentHash != stateFile.SHA256 {
+			modified = append(modified, filePath)
+		} else {
+			written = append(written, filePath)
+		}
+	}
+
 	var stale []string
 	if filter == "" {
 		for identity, stateRepo := range ws.State.Repos {
-			if _, ok := identityToPath[identity]; !ok {
+			if _, ok := repoIdentityToPath(&ws.Model)[identity]; !ok {
 				stale = append(stale, fmt.Sprintf("%s at %s is no longer defined", identity, stateRepo.Path))
 			}
 		}
-		sort.Strings(stale)
+		for identity, stateFile := range ws.State.Files {
+			if _, ok := fileIdentityToPath(&ws.Model)[identity]; !ok {
+				stale = append(stale, fmt.Sprintf("%s at %s is no longer defined", identity, stateFile.Path))
+			}
+		}
 	}
 
 	printGroup(out, "installed", installed)
+	printGroup(out, "written", written)
 	printGroup(out, "moved", moved)
 	printGroup(out, "missing", missing)
 	printGroup(out, "remote-changed", remoteChanged)
 	printGroup(out, "dirty", dirty)
+	printGroup(out, "modified", modified)
 	printGroup(out, "conflicts", conflicts)
 	printGroup(out, "stale", stale)
 	return nil
@@ -527,6 +786,9 @@ func cmdUpdate(out io.Writer) error {
 	if source.Path == "" {
 		source.Path = definitionFile
 	}
+	if err := validateSafePath(source.Path); err != nil {
+		return fmt.Errorf("invalid source path: %s", err)
+	}
 	if source.Ref == "" {
 		ref, err := discoverDefaultBranch(source.URL)
 		if err != nil {
@@ -544,7 +806,11 @@ func cmdUpdate(out io.Writer) error {
 	if len(validation.Errors) > 0 {
 		return validation.asError("invalid incoming definition")
 	}
-	printDefinitionChanges(out, &ws.Def, incoming)
+	incomingModel, err := flattenDefinition(incoming)
+	if err != nil {
+		return err
+	}
+	printDefinitionChanges(out, &ws.Model, &incomingModel)
 	return writeJSON(filepath.Join(ws.Root, definitionFile), incoming)
 }
 
@@ -553,8 +819,11 @@ func validateDefinition(def *Definition) validationResult {
 	if def.Version != 1 {
 		result.Errors = append(result.Errors, "unsupported or missing version")
 	}
-	if def.Repos == nil {
-		result.Errors = append(result.Errors, "missing repos")
+	if def.Tree == nil {
+		result.Errors = append(result.Errors, "missing tree")
+	}
+	if len(def.Repos) > 0 {
+		result.Errors = append(result.Errors, "legacy repos field is not supported; use tree with $repo nodes")
 	}
 	if def.Source != nil {
 		if def.Source.Type != "git" {
@@ -563,37 +832,98 @@ func validateDefinition(def *Definition) validationResult {
 		if def.Source.URL == "" {
 			result.Errors = append(result.Errors, "source.url is required")
 		}
+		if def.Source.Path != "" {
+			if err := validateSafePath(def.Source.Path); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("invalid source.path: %s", err))
+			}
+		}
 	}
 
-	identityToPath := map[string]string{}
-	for repoPath, repo := range def.Repos {
-		if err := validateRepoPath(repoPath); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("invalid repository path %q: %s", repoPath, err))
+	model, err := flattenDefinition(def)
+	if err != nil {
+		result.Errors = append(result.Errors, err.Error())
+		return result
+	}
+
+	repoIDs := map[string]string{}
+	for _, path := range sortedRepoPaths(&model) {
+		entry := model.Repos[path]
+		if entry.Repo.Git == "" {
+			result.Errors = append(result.Errors, fmt.Sprintf("repository %s missing git", path))
 		}
-		if repo.Git == "" {
-			result.Errors = append(result.Errors, fmt.Sprintf("repository %s missing git", repoPath))
-		}
-		identity := repoIdentity(repoPath, repo)
-		if prev, ok := identityToPath[identity]; ok {
-			result.Errors = append(result.Errors, fmt.Sprintf("duplicate repository identity %s: %s and %s", identity, prev, repoPath))
+		if prev, ok := repoIDs[entry.Identity]; ok {
+			result.Errors = append(result.Errors, fmt.Sprintf("duplicate repository identity %s: %s and %s", entry.Identity, prev, path))
 		} else {
-			identityToPath[identity] = repoPath
+			repoIDs[entry.Identity] = path
 		}
-		for _, dep := range repo.DependsOn {
-			if dep.Path == "" {
-				result.Errors = append(result.Errors, fmt.Sprintf("repository %s has dependency with empty path", repoPath))
+		for _, condition := range entry.Conditions {
+			condition := condition
+			validateCondition(&result, model, path, &condition)
+		}
+		for _, dep := range entry.Repo.DependsOn {
+			if err := validateSafePath(dep.Path); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("repository %s has invalid dependency path %q: %s", path, dep.Path, err))
 				continue
 			}
-			if len(matchingRepos(def, dep.Path)) == 0 {
-				result.Errors = append(result.Errors, fmt.Sprintf("repository %s dependency %s does not resolve to any repository", repoPath, dep.Path))
+			if len(matchingRepos(&model, dep.Path)) == 0 {
+				result.Errors = append(result.Errors, fmt.Sprintf("repository %s dependency %s does not resolve to any repository", path, dep.Path))
 			}
 		}
 	}
 
-	for _, cycle := range detectCycles(def) {
+	fileIDs := map[string]string{}
+	for _, path := range sortedFilePaths(&model) {
+		entry := model.Files[path]
+		if entry.File.Src == "" {
+			result.Errors = append(result.Errors, fmt.Sprintf("file %s missing src", path))
+		} else if _, err := parseFileSrc(entry.File.Src); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("file %s invalid src: %s", path, err))
+		}
+		if prev, ok := fileIDs[entry.Identity]; ok {
+			result.Errors = append(result.Errors, fmt.Sprintf("duplicate file identity %s: %s and %s", entry.Identity, prev, path))
+		} else {
+			fileIDs[entry.Identity] = path
+		}
+		for _, condition := range entry.Conditions {
+			condition := condition
+			validateCondition(&result, model, path, &condition)
+		}
+	}
+
+	for path, entry := range model.Groups {
+		for _, dep := range entry.Group.DependsOn {
+			if err := validateSafePath(dep.Path); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("group %s has invalid dependency path %q: %s", path, dep.Path, err))
+				continue
+			}
+			if len(matchingRepos(&model, dep.Path)) == 0 {
+				result.Errors = append(result.Errors, fmt.Sprintf("group %s dependency %s does not resolve to any repository", path, dep.Path))
+			}
+		}
+		for _, condition := range entry.Conditions {
+			condition := condition
+			validateCondition(&result, model, path, &condition)
+		}
+	}
+
+	for _, cycle := range detectCycles(&model) {
 		result.Warnings = append(result.Warnings, "dependency cycle detected: "+strings.Join(cycle, " -> "))
 	}
 	return result
+}
+
+func validateCondition(result *validationResult, model Model, ownerPath string, condition *Condition) {
+	if condition.Path == "" {
+		result.Errors = append(result.Errors, fmt.Sprintf("%s has onlyWhen with empty path", ownerPath))
+		return
+	}
+	if err := validateSafePath(condition.Path); err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("%s has invalid onlyWhen path %q: %s", ownerPath, condition.Path, err))
+		return
+	}
+	if len(matchingRepos(&model, condition.Path)) == 0 {
+		result.Errors = append(result.Errors, fmt.Sprintf("%s onlyWhen path %s does not resolve to any repository", ownerPath, condition.Path))
+	}
 }
 
 func (v validationResult) asError(prefix string) error {
@@ -606,31 +936,204 @@ func (v validationResult) asError(prefix string) error {
 	return errors.New(b.String())
 }
 
-func validateRepoPath(path string) error {
-	if path == "" {
-		return errors.New("empty path")
+func flattenDefinition(def *Definition) (Model, error) {
+	model := Model{Repos: map[string]RepoEntry{}, Files: map[string]FileEntry{}, Groups: map[string]GroupEntry{}}
+	if def.Tree == nil {
+		return model, errors.New("missing tree")
 	}
-	if strings.Contains(path, "/") || strings.Contains(path, string(os.PathSeparator)) {
-		return errors.New("must not contain slashes")
+	if err := flattenTreeMap(def.Tree, "", inheritedGroup{}, &model); err != nil {
+		return model, err
 	}
-	if strings.HasPrefix(path, ".") || strings.HasSuffix(path, ".") {
-		return errors.New("must not start or end with a dot")
+	return model, nil
+}
+
+func flattenTreeMap(nodes map[string]json.RawMessage, prefix string, inherited inheritedGroup, model *Model) error {
+	keys := make([]string, 0, len(nodes))
+	for key := range nodes {
+		keys = append(keys, key)
 	}
-	for _, segment := range strings.Split(path, ".") {
-		if segment == "" {
-			return errors.New("must not contain empty segments")
+	sort.Strings(keys)
+	for _, key := range keys {
+		if strings.HasPrefix(key, "$") {
+			return fmt.Errorf("reserved tree key %q cannot be used as a path segment", key)
 		}
-		for _, r := range segment {
-			if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '-' {
-				continue
-			}
-			return fmt.Errorf("invalid character %q", r)
+		path, err := joinTreePath(prefix, key)
+		if err != nil {
+			return err
+		}
+		if err := flattenTreeNode(path, nodes[key], inherited, model); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-func detectCycles(def *Definition) [][]string {
+func flattenTreeNode(path string, raw json.RawMessage, inherited inheritedGroup, model *Model) error {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return fmt.Errorf("invalid tree node %s: %s", path, err)
+	}
+	_, hasRepo := obj["$repo"]
+	_, hasFile := obj["$file"]
+	groupRaw, hasGroup := obj["$group"]
+	if hasRepo && hasFile {
+		return fmt.Errorf("tree node %s cannot contain both $repo and $file", path)
+	}
+	if hasRepo || hasFile {
+		if len(obj) != 1 {
+			return fmt.Errorf("tree node %s cannot contain child nodes with $repo or $file", path)
+		}
+		if err := validateSafePath(path); err != nil {
+			return fmt.Errorf("invalid tree path %q: %s", path, err)
+		}
+		if hasRepo {
+			var repo Repo
+			if err := json.Unmarshal(obj["$repo"], &repo); err != nil {
+				return fmt.Errorf("invalid $repo at %s: %s", path, err)
+			}
+			identity := repo.ID
+			if identity == "" {
+				identity = path
+			}
+			repo = applyInheritedRepo(repo, inherited)
+			conditions := append([]Condition{}, inherited.Conditions...)
+			if repo.OnlyWhen != nil {
+				conditions = append(conditions, *repo.OnlyWhen)
+			}
+			model.Repos[path] = RepoEntry{Path: path, Identity: identity, Repo: repo, Conditions: conditions}
+			return nil
+		}
+		var file File
+		if err := json.Unmarshal(obj["$file"], &file); err != nil {
+			return fmt.Errorf("invalid $file at %s: %s", path, err)
+		}
+		identity := file.ID
+		if identity == "" {
+			identity = path
+		}
+		file = applyInheritedFile(file, inherited)
+		conditions := append([]Condition{}, inherited.Conditions...)
+		if file.OnlyWhen != nil {
+			conditions = append(conditions, *file.OnlyWhen)
+		}
+		model.Files[path] = FileEntry{Path: path, Identity: identity, File: file, Conditions: conditions}
+		return nil
+	}
+	if hasGroup {
+		var group Group
+		if err := json.Unmarshal(groupRaw, &group); err != nil {
+			return fmt.Errorf("invalid $group at %s: %s", path, err)
+		}
+		delete(obj, "$group")
+		inherited = mergeGroup(inherited, group)
+		model.Groups[path] = GroupEntry{Path: path, Group: group, Conditions: append([]Condition{}, inherited.Conditions...)}
+	}
+	return flattenTreeMap(obj, path, inherited, model)
+}
+
+func applyInheritedRepo(repo Repo, inherited inheritedGroup) Repo {
+	if repo.Description == "" {
+		repo.Description = inherited.Description
+	}
+	if repo.Web == "" {
+		repo.Web = inherited.Web
+	}
+	if len(inherited.DependsOn) > 0 {
+		deps := append([]Dependency{}, inherited.DependsOn...)
+		repo.DependsOn = append(deps, repo.DependsOn...)
+	}
+	return repo
+}
+
+func applyInheritedFile(file File, inherited inheritedGroup) File {
+	if file.Description == "" {
+		file.Description = inherited.Description
+	}
+	return file
+}
+
+func mergeGroup(inherited inheritedGroup, group Group) inheritedGroup {
+	merged := inheritedGroup{
+		Description: inherited.Description,
+		Web:         inherited.Web,
+		DependsOn:   append([]Dependency{}, inherited.DependsOn...),
+		Conditions:  append([]Condition{}, inherited.Conditions...),
+	}
+	if group.Description != "" {
+		merged.Description = group.Description
+	}
+	if group.Web != "" {
+		merged.Web = group.Web
+	}
+	if len(group.DependsOn) > 0 {
+		merged.DependsOn = append(merged.DependsOn, group.DependsOn...)
+	}
+	if group.OnlyWhen != nil {
+		merged.Conditions = append(merged.Conditions, *group.OnlyWhen)
+	}
+	return merged
+}
+
+func joinTreePath(prefix, key string) (string, error) {
+	if err := validateSafePath(key); err != nil {
+		return "", fmt.Errorf("invalid tree key %q: %s", key, err)
+	}
+	if prefix == "" {
+		return key, nil
+	}
+	return prefix + "/" + key, nil
+}
+
+func validateSafePath(path string) error {
+	if path == "" {
+		return errors.New("path is empty")
+	}
+	if filepath.IsAbs(path) || strings.HasPrefix(path, "/") {
+		return errors.New("path must be relative")
+	}
+	if strings.HasPrefix(path, "~") {
+		return errors.New("path must not start with ~")
+	}
+	if strings.Contains(path, "\\") {
+		return errors.New("path must use / separators")
+	}
+	segments := strings.Split(path, "/")
+	for _, segment := range segments {
+		if segment == "" {
+			return errors.New("path must not contain empty segments")
+		}
+		if segment == "." || segment == ".." {
+			return errors.New("path must not contain . or .. segments")
+		}
+	}
+	return nil
+}
+
+type fileSrc struct {
+	GitURL string
+	Path   string
+}
+
+func parseFileSrc(src string) (fileSrc, error) {
+	if !strings.HasPrefix(src, "git:") {
+		return fileSrc{}, errors.New("src must start with git:")
+	}
+	value := strings.TrimPrefix(src, "git:")
+	idx := strings.LastIndex(value, "#")
+	if idx <= 0 || idx == len(value)-1 {
+		return fileSrc{}, errors.New("src must be git:<repo-url>#<file-path>")
+	}
+	parsed := fileSrc{GitURL: value[:idx], Path: value[idx+1:]}
+	if strings.Contains(parsed.Path, "#") {
+		return fileSrc{}, errors.New("source file path must not contain #")
+	}
+	if err := validateSafePath(parsed.Path); err != nil {
+		return fileSrc{}, err
+	}
+	return parsed, nil
+}
+
+func detectCycles(model *Model) [][]string {
 	visited := map[string]int{}
 	var stack []string
 	var cycles [][]string
@@ -656,8 +1159,8 @@ func detectCycles(def *Definition) [][]string {
 		}
 		visited[repoPath] = 1
 		stack = append(stack, repoPath)
-		for _, dep := range def.Repos[repoPath].DependsOn {
-			for _, match := range matchingRepos(def, dep.Path) {
+		for _, dep := range model.Repos[repoPath].Repo.DependsOn {
+			for _, match := range matchingRepos(model, dep.Path) {
 				visit(match)
 			}
 		}
@@ -665,7 +1168,7 @@ func detectCycles(def *Definition) [][]string {
 		visited[repoPath] = 2
 	}
 
-	for _, repoPath := range sortedRepoPaths(def) {
+	for _, repoPath := range sortedRepoPaths(model) {
 		visit(repoPath)
 	}
 	return cycles
@@ -680,148 +1183,141 @@ func indexOf(items []string, value string) int {
 	return -1
 }
 
-func resolveDependencies(def *Definition, repoPath string, includeOptional bool) ([]string, error) {
-	set, err := resolveRepoSet(def, []string{repoPath}, includeOptional, false)
-	if err != nil {
-		return nil, err
-	}
-	return set, nil
+type planOptions struct {
+	IncludeOptional          bool
+	IncludeInstalledOptional bool
+	IncludeRoots             bool
+	Installed                map[string]bool
 }
 
-func resolveRepoSet(def *Definition, roots []string, includeOptional bool, includeRoots bool) ([]string, error) {
-	visited := map[string]bool{}
-	resultSet := map[string]bool{}
-	excludedIdentities := map[string]bool{}
-	if !includeRoots {
-		for _, root := range roots {
-			if repo, ok := def.Repos[root]; ok {
-				excludedIdentities[repoIdentity(root, repo)] = true
-			}
+type plan struct {
+	Repos []string
+	Files []string
+}
+
+func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
+	if opts.Installed == nil {
+		opts.Installed = map[string]bool{}
+	}
+	active := map[string]bool{}
+	rootIDs := map[string]bool{}
+	for _, root := range roots {
+		entry, ok := model.Repos[root]
+		if !ok {
+			return plan{}, fmt.Errorf("unknown repository %q", root)
+		}
+		rootIDs[entry.Identity] = true
+		if opts.IncludeRoots {
+			active[root] = true
 		}
 	}
 
-	var visit func(string) error
-	visit = func(repoPath string) error {
-		repo, ok := def.Repos[repoPath]
-		if !ok {
-			return fmt.Errorf("unknown repository %q", repoPath)
+	changed := true
+	for changed {
+		changed = false
+		for _, root := range roots {
+			if !opts.IncludeRoots {
+				if changedRoot, err := addDependencies(model, root, active, opts, rootIDs); err != nil {
+					return plan{}, err
+				} else if changedRoot {
+					changed = true
+				}
+			}
 		}
-		identity := repoIdentity(repoPath, repo)
-		if visited[identity] {
-			return nil
-		}
-		visited[identity] = true
-		for _, dep := range repo.DependsOn {
-			if dep.Optional && !includeOptional {
+		for _, repoPath := range sortedRepoPaths(model) {
+			entry := model.Repos[repoPath]
+			if active[repoPath] {
+				if changedDeps, err := addDependencies(model, repoPath, active, opts, rootIDs); err != nil {
+					return plan{}, err
+				} else if changedDeps {
+					changed = true
+				}
 				continue
 			}
-			matches := matchingRepos(def, dep.Path)
-			if len(matches) == 0 {
-				return fmt.Errorf("dependency %s for %s does not resolve to any repository", dep.Path, repoPath)
+			if len(entry.Conditions) > 0 && conditionsMatch(entry.Conditions, active, opts.Installed, model) {
+				active[repoPath] = true
+				changed = true
 			}
-			for _, match := range matches {
-				matchIdentity := repoIdentity(match, def.Repos[match])
-				if !excludedIdentities[matchIdentity] {
-					resultSet[match] = true
-				}
-				if err := visit(match); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	}
-
-	for _, root := range roots {
-		if includeRoots {
-			resultSet[root] = true
-		}
-		if err := visit(root); err != nil {
-			return nil, err
 		}
 	}
 
-	var result []string
-	for repoPath := range resultSet {
-		result = append(result, repoPath)
-	}
-	sort.Strings(result)
-	return result, nil
+	activeFilesSet := activeFilesForRepoSet(model, active, opts.Installed)
+	return plan{Repos: sortedKeys(active), Files: sortedKeys(activeFilesSet)}, nil
 }
 
-func resolveRepoSetForSync(root string, def *Definition, state *State, roots []string, includeOptional bool) ([]string, error) {
-	installed := installedRepoIdentitySet(root, def, state)
-	visited := map[string]bool{}
-	resultSet := map[string]bool{}
-
-	var visit func(string) error
-	visit = func(repoPath string) error {
-		repo, ok := def.Repos[repoPath]
-		if !ok {
-			return fmt.Errorf("unknown repository %q", repoPath)
+func addDependencies(model *Model, repoPath string, active map[string]bool, opts planOptions, excludedIDs map[string]bool) (bool, error) {
+	entry := model.Repos[repoPath]
+	changed := false
+	for _, dep := range entry.Repo.DependsOn {
+		matches := matchingRepos(model, dep.Path)
+		if len(matches) == 0 {
+			return false, fmt.Errorf("dependency %s for %s does not resolve to any repository", dep.Path, repoPath)
 		}
-		identity := repoIdentity(repoPath, repo)
-		if visited[identity] {
-			return nil
-		}
-		visited[identity] = true
-		for _, dep := range repo.DependsOn {
-			matches := matchingRepos(def, dep.Path)
-			if len(matches) == 0 {
-				return fmt.Errorf("dependency %s for %s does not resolve to any repository", dep.Path, repoPath)
+		for _, match := range matches {
+			matchEntry := model.Repos[match]
+			if dep.Optional && !opts.IncludeOptional && !(opts.IncludeInstalledOptional && opts.Installed[matchEntry.Identity]) {
+				continue
 			}
-			for _, match := range matches {
-				matchIdentity := repoIdentity(match, def.Repos[match])
-				if dep.Optional && !includeOptional && !installed[matchIdentity] {
-					continue
-				}
-				resultSet[match] = true
-				if err := visit(match); err != nil {
-					return err
-				}
+			if excludedIDs[matchEntry.Identity] {
+				continue
+			}
+			if len(matchEntry.Conditions) > 0 && !conditionsMatch(matchEntry.Conditions, active, opts.Installed, model) {
+				continue
+			}
+			if !active[match] {
+				active[match] = true
+				changed = true
 			}
 		}
-		return nil
 	}
-
-	for _, rootRepo := range roots {
-		resultSet[rootRepo] = true
-		if err := visit(rootRepo); err != nil {
-			return nil, err
-		}
-	}
-
-	var result []string
-	for repoPath := range resultSet {
-		result = append(result, repoPath)
-	}
-	sort.Strings(result)
-	return result, nil
+	return changed, nil
 }
 
-func installedRepoIdentitySet(root string, def *Definition, state *State) map[string]bool {
-	installed := map[string]bool{}
-	identityToPath := repoIdentityToPath(def)
-	for identity, stateRepo := range state.Repos {
-		if _, ok := identityToPath[identity]; !ok {
-			continue
-		}
-		if isGitRepo(filepath.Join(root, stateRepo.Path)) {
-			installed[identity] = true
-		}
-	}
-	for _, repoPath := range sortedRepoPaths(def) {
-		repo := def.Repos[repoPath]
-		if isGitRepo(filepath.Join(root, repoLocalPath(repoPath))) {
-			installed[repoIdentity(repoPath, repo)] = true
-		}
-	}
-	return installed
+func activeFiles(model *Model, installed map[string]bool) map[string]bool {
+	return activeFilesForRepoSet(model, map[string]bool{}, installed)
 }
 
-func matchingRepos(def *Definition, path string) []string {
+func activeFilesForRepoSet(model *Model, activeRepos map[string]bool, installed map[string]bool) map[string]bool {
+	files := map[string]bool{}
+	for _, filePath := range sortedFilePaths(model) {
+		entry := model.Files[filePath]
+		if len(entry.Conditions) == 0 || conditionsMatch(entry.Conditions, activeRepos, installed, model) {
+			files[filePath] = true
+		}
+	}
+	return files
+}
+
+func conditionsMatch(conditions []Condition, activeRepos map[string]bool, installed map[string]bool, model *Model) bool {
+	for _, condition := range conditions {
+		condition := condition
+		if !conditionMatches(&condition, activeRepos, installed, model) {
+			return false
+		}
+	}
+	return true
+}
+
+func conditionMatches(condition *Condition, activeRepos map[string]bool, installed map[string]bool, model *Model) bool {
+	if condition == nil {
+		return true
+	}
+	for repoPath := range activeRepos {
+		if pathMatches(condition.Path, repoPath) {
+			return true
+		}
+	}
+	for identity := range installed {
+		if repoPath, ok := repoIdentityToPath(model)[identity]; ok && pathMatches(condition.Path, repoPath) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchingRepos(model *Model, path string) []string {
 	var matches []string
-	for _, repoPath := range sortedRepoPaths(def) {
+	for _, repoPath := range sortedRepoPaths(model) {
 		if pathMatches(path, repoPath) {
 			matches = append(matches, repoPath)
 		}
@@ -829,36 +1325,61 @@ func matchingRepos(def *Definition, path string) []string {
 	return matches
 }
 
-func pathMatches(path string, repoPath string) bool {
-	return repoPath == path || strings.HasPrefix(repoPath, path+".")
+func matchingFiles(model *Model, path string) []string {
+	var matches []string
+	for _, filePath := range sortedFilePaths(model) {
+		if pathMatches(path, filePath) {
+			matches = append(matches, filePath)
+		}
+	}
+	return matches
 }
 
-func sortedRepoPaths(def *Definition) []string {
-	paths := make([]string, 0, len(def.Repos))
-	for path := range def.Repos {
+func pathMatches(path string, entryPath string) bool {
+	return entryPath == path || strings.HasPrefix(entryPath, path+"/")
+}
+
+func sortedRepoPaths(model *Model) []string {
+	paths := make([]string, 0, len(model.Repos))
+	for path := range model.Repos {
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
 	return paths
 }
 
-func repoIdentity(path string, repo Repo) string {
-	if repo.ID != "" {
-		return repo.ID
+func sortedFilePaths(model *Model) []string {
+	paths := make([]string, 0, len(model.Files))
+	for path := range model.Files {
+		paths = append(paths, path)
 	}
-	return path
+	sort.Strings(paths)
+	return paths
 }
 
-func repoIdentityToPath(def *Definition) map[string]string {
+func sortedKeys(values map[string]bool) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func repoIdentityToPath(model *Model) map[string]string {
 	result := map[string]string{}
-	for path, repo := range def.Repos {
-		result[repoIdentity(path, repo)] = path
+	for path, entry := range model.Repos {
+		result[entry.Identity] = path
 	}
 	return result
 }
 
-func repoLocalPath(repoPath string) string {
-	return filepath.Join(strings.Split(repoPath, ".")...)
+func fileIdentityToPath(model *Model) map[string]string {
+	result := map[string]string{}
+	for path, entry := range model.Files {
+		result[entry.Identity] = path
+	}
+	return result
 }
 
 func loadWorkspace(withState bool) (*Workspace, error) {
@@ -874,6 +1395,10 @@ func loadWorkspace(withState bool) (*Workspace, error) {
 	if err != nil {
 		return nil, err
 	}
+	model, err := flattenDefinition(def)
+	if err != nil {
+		return nil, err
+	}
 	state := emptyState()
 	if withState {
 		state, err = loadState(root)
@@ -883,7 +1408,7 @@ func loadWorkspace(withState bool) (*Workspace, error) {
 	} else {
 		state, _ = loadState(root)
 	}
-	return &Workspace{Root: root, Def: *def, State: state}, nil
+	return &Workspace{Root: root, Def: *def, Model: model, State: state}, nil
 }
 
 func findWorkspace(start string) (string, error) {
@@ -916,7 +1441,7 @@ func loadDefinition(path string) (*Definition, error) {
 }
 
 func emptyState() State {
-	return State{Version: 1, Repos: map[string]StateRepo{}}
+	return State{Version: 1, Repos: map[string]StateRepo{}, Files: map[string]StateFile{}}
 }
 
 func loadState(root string) (State, error) {
@@ -938,6 +1463,9 @@ func loadState(root string) (State, error) {
 	if state.Repos == nil {
 		state.Repos = map[string]StateRepo{}
 	}
+	if state.Files == nil {
+		state.Files = map[string]StateFile{}
+	}
 	return state, nil
 }
 
@@ -947,6 +1475,9 @@ func saveState(root string, state State) error {
 	}
 	if state.Repos == nil {
 		state.Repos = map[string]StateRepo{}
+	}
+	if state.Files == nil {
+		state.Files = map[string]StateFile{}
 	}
 	return writeJSON(filepath.Join(root, stateFile), &state)
 }
@@ -984,8 +1515,23 @@ func discoverDefaultBranch(gitURL string) (string, error) {
 }
 
 func fetchDefinition(gitURL, ref, definitionPath string) (*Definition, error) {
-	if definitionPath == "" {
-		definitionPath = definitionFile
+	data, err := fetchGitFile(gitURL, ref, definitionPath)
+	if err != nil {
+		return nil, err
+	}
+	var def Definition
+	if err := json.Unmarshal(data, &def); err != nil {
+		return nil, err
+	}
+	return &def, nil
+}
+
+func fetchGitFile(gitURL, ref, sourcePath string) ([]byte, error) {
+	if sourcePath == "" {
+		sourcePath = definitionFile
+	}
+	if err := validateSafePath(sourcePath); err != nil {
+		return nil, err
 	}
 	tmp, err := os.MkdirTemp("", "jig-source-*")
 	if err != nil {
@@ -1001,15 +1547,15 @@ func fetchDefinition(gitURL, ref, definitionPath string) (*Definition, error) {
 	if _, err := git("", args...); err != nil {
 		return nil, err
 	}
-	return loadDefinition(filepath.Join(repoDir, definitionPath))
+	return os.ReadFile(filepath.Join(repoDir, sourcePath))
 }
 
-func ensureRepo(out io.Writer, root string, def *Definition, state *State, repoPath string, allowMove bool) error {
-	repo := def.Repos[repoPath]
-	identity := repoIdentity(repoPath, repo)
-	expectedRel := repoLocalPath(repoPath)
+func ensureRepo(out io.Writer, root string, model *Model, state *State, repoPath string, allowMove bool) error {
+	entry := model.Repos[repoPath]
+	repo := entry.Repo
+	expectedRel := entry.Path
 	expectedAbs := filepath.Join(root, expectedRel)
-	stateRepo, hasState := state.Repos[identity]
+	stateRepo, hasState := state.Repos[entry.Identity]
 
 	if hasState && stateRepo.Path != expectedRel {
 		oldAbs := filepath.Join(root, stateRepo.Path)
@@ -1031,10 +1577,10 @@ func ensureRepo(out io.Writer, root string, def *Definition, state *State, repoP
 			}
 			fmt.Fprintf(out, "moved: %s: %s -> %s\n", repoPath, stateRepo.Path, expectedRel)
 			stateRepo.Path = expectedRel
-			state.Repos[identity] = stateRepo
+			state.Repos[entry.Identity] = stateRepo
 			hasState = true
 		} else {
-			delete(state.Repos, identity)
+			delete(state.Repos, entry.Identity)
 			hasState = false
 		}
 	}
@@ -1046,7 +1592,7 @@ func ensureRepo(out io.Writer, root string, def *Definition, state *State, repoP
 		if _, err := git("", "clone", repo.Git, expectedAbs); err != nil {
 			return err
 		}
-		state.Repos[identity] = StateRepo{Path: expectedRel, Git: repo.Git}
+		state.Repos[entry.Identity] = StateRepo{Path: expectedRel, Git: repo.Git}
 		fmt.Fprintf(out, "cloned: %s\n", repoPath)
 		return nil
 	}
@@ -1054,30 +1600,121 @@ func ensureRepo(out io.Writer, root string, def *Definition, state *State, repoP
 	if !isGitRepo(expectedAbs) {
 		return fmt.Errorf("expected path exists and is not a Git repository: %s", expectedRel)
 	}
-
 	origin, err := gitOrigin(expectedAbs)
 	if err != nil {
 		return err
 	}
 	if origin != repo.Git {
-		if allowMove && hasState && state.Repos[identity].Path == expectedRel {
+		if allowMove && hasState && state.Repos[entry.Identity].Path == expectedRel {
 			if _, err := git(expectedAbs, "remote", "set-url", "origin", repo.Git); err != nil {
 				return err
 			}
-			state.Repos[identity] = StateRepo{Path: expectedRel, Git: repo.Git}
+			state.Repos[entry.Identity] = StateRepo{Path: expectedRel, Git: repo.Git}
 			fmt.Fprintf(out, "updated-origin: %s\n", repoPath)
 			return nil
 		}
 		return fmt.Errorf("existing Git repository has different origin at %s", expectedRel)
 	}
-
-	state.Repos[identity] = StateRepo{Path: expectedRel, Git: repo.Git}
+	state.Repos[entry.Identity] = StateRepo{Path: expectedRel, Git: repo.Git}
 	fmt.Fprintf(out, "present: %s\n", repoPath)
 	return nil
 }
 
-func installedDefinedRepos(root string, def *Definition, state *State) []string {
-	identityToPath := repoIdentityToPath(def)
+func ensureFile(out io.Writer, root string, model *Model, state *State, filePath string, allowMove bool) error {
+	entry := model.Files[filePath]
+	file := entry.File
+	stateFile, hasState := state.Files[entry.Identity]
+	expectedRel := entry.Path
+	expectedAbs := filepath.Join(root, expectedRel)
+
+	if hasState && stateFile.Path != expectedRel {
+		oldAbs := filepath.Join(root, stateFile.Path)
+		if pathExists(oldAbs) {
+			currentHash, err := fileSHA256(oldAbs)
+			if err != nil {
+				return err
+			}
+			if currentHash != stateFile.SHA256 {
+				return fmt.Errorf("locally modified")
+			}
+			if !allowMove {
+				return fmt.Errorf("already written at %s; run jig sync to move it", stateFile.Path)
+			}
+			if pathExists(expectedAbs) {
+				return fmt.Errorf("target path already exists: %s", expectedRel)
+			}
+			if err := os.MkdirAll(filepath.Dir(expectedAbs), 0o755); err != nil {
+				return err
+			}
+			if err := os.Rename(oldAbs, expectedAbs); err != nil {
+				return err
+			}
+			fmt.Fprintf(out, "moved-file: %s: %s -> %s\n", filePath, stateFile.Path, expectedRel)
+			stateFile.Path = expectedRel
+			state.Files[entry.Identity] = stateFile
+			hasState = true
+		} else {
+			delete(state.Files, entry.Identity)
+			hasState = false
+		}
+	}
+
+	if pathExists(expectedAbs) {
+		info, err := os.Stat(expectedAbs)
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return fmt.Errorf("expected file path is a directory: %s", expectedRel)
+		}
+		if !hasState {
+			return fmt.Errorf("existing file is not tracked")
+		}
+		currentHash, err := fileSHA256(expectedAbs)
+		if err != nil {
+			return err
+		}
+		if currentHash != stateFile.SHA256 {
+			return fmt.Errorf("locally modified")
+		}
+	} else if hasState {
+		delete(state.Files, entry.Identity)
+	}
+
+	content, err := fetchFileContent(file.Src)
+	if err != nil {
+		return err
+	}
+	newHash := sha256Hex(content)
+
+	if err := os.MkdirAll(filepath.Dir(expectedAbs), 0o755); err != nil {
+		return err
+	}
+	mode := os.FileMode(0o644)
+	if file.Executable {
+		mode = 0o755
+	}
+	if err := os.WriteFile(expectedAbs, content, mode); err != nil {
+		return err
+	}
+	if file.Executable {
+		_ = os.Chmod(expectedAbs, 0o755)
+	}
+	state.Files[entry.Identity] = StateFile{Path: expectedRel, Src: file.Src, SHA256: newHash}
+	fmt.Fprintf(out, "wrote-file: %s\n", filePath)
+	return nil
+}
+
+func fetchFileContent(src string) ([]byte, error) {
+	parsed, err := parseFileSrc(src)
+	if err != nil {
+		return nil, err
+	}
+	return fetchGitFile(parsed.GitURL, "", parsed.Path)
+}
+
+func installedDefinedRepos(root string, model *Model, state *State) []string {
+	identityToPath := repoIdentityToPath(model)
 	resultSet := map[string]bool{}
 	for identity, stateRepo := range state.Repos {
 		repoPath, ok := identityToPath[identity]
@@ -1088,62 +1725,76 @@ func installedDefinedRepos(root string, def *Definition, state *State) []string 
 			resultSet[repoPath] = true
 		}
 	}
-	for _, repoPath := range sortedRepoPaths(def) {
-		expected := filepath.Join(root, repoLocalPath(repoPath))
-		if isGitRepo(expected) {
+	for _, repoPath := range sortedRepoPaths(model) {
+		if isGitRepo(filepath.Join(root, repoPath)) {
 			resultSet[repoPath] = true
 		}
 	}
-	var result []string
-	for repoPath := range resultSet {
-		result = append(result, repoPath)
-	}
-	sort.Strings(result)
-	return result
+	return sortedKeys(resultSet)
 }
 
-func installedPath(root string, def *Definition, state *State, repoPath string) (string, bool) {
-	repo := def.Repos[repoPath]
-	identity := repoIdentity(repoPath, repo)
-	if stateRepo, ok := state.Repos[identity]; ok {
+func installedPath(root string, model *Model, state *State, repoPath string) (string, bool) {
+	entry := model.Repos[repoPath]
+	if stateRepo, ok := state.Repos[entry.Identity]; ok {
 		abs := filepath.Join(root, stateRepo.Path)
 		if isGitRepo(abs) {
 			return abs, true
 		}
 	}
-	expected := filepath.Join(root, repoLocalPath(repoPath))
+	expected := filepath.Join(root, entry.Path)
 	if isGitRepo(expected) {
 		return expected, true
 	}
 	return "", false
 }
 
-func reportStale(out io.Writer, root string, def *Definition, state *State) {
-	identityToPath := repoIdentityToPath(def)
+func installedRepoIdentitySet(root string, model *Model, state *State) map[string]bool {
+	installed := map[string]bool{}
+	identityToPath := repoIdentityToPath(model)
+	for identity, stateRepo := range state.Repos {
+		if _, ok := identityToPath[identity]; !ok {
+			continue
+		}
+		if isGitRepo(filepath.Join(root, stateRepo.Path)) {
+			installed[identity] = true
+		}
+	}
+	for _, repoPath := range sortedRepoPaths(model) {
+		entry := model.Repos[repoPath]
+		if isGitRepo(filepath.Join(root, entry.Path)) {
+			installed[entry.Identity] = true
+		}
+	}
+	return installed
+}
+
+func reportStale(out io.Writer, root string, model *Model, state *State) {
+	repoIdentityToPath := repoIdentityToPath(model)
+	fileIdentityToPath := fileIdentityToPath(model)
 	var stale []string
 	for identity, stateRepo := range state.Repos {
-		if _, ok := identityToPath[identity]; !ok && isGitRepo(filepath.Join(root, stateRepo.Path)) {
+		if _, ok := repoIdentityToPath[identity]; !ok && isGitRepo(filepath.Join(root, stateRepo.Path)) {
 			stale = append(stale, fmt.Sprintf("%s at %s is no longer defined", identity, stateRepo.Path))
+		}
+	}
+	for identity, stateFile := range state.Files {
+		if _, ok := fileIdentityToPath[identity]; !ok && pathExists(filepath.Join(root, stateFile.Path)) {
+			stale = append(stale, fmt.Sprintf("%s at %s is no longer defined", identity, stateFile.Path))
 		}
 	}
 	printGroup(out, "stale", stale)
 }
 
-func printDefinitionChanges(out io.Writer, oldDef *Definition, newDef *Definition) {
-	oldByID := map[string]string{}
-	newByID := map[string]string{}
-	for path, repo := range oldDef.Repos {
-		oldByID[repoIdentity(path, repo)] = path
-	}
-	for path, repo := range newDef.Repos {
-		newByID[repoIdentity(path, repo)] = path
-	}
+func printDefinitionChanges(out io.Writer, oldModel *Model, newModel *Model) {
+	printEntryChanges(out, "repo", repoIdentityToPath(oldModel), repoIdentityToPath(newModel), repoChanged(oldModel, newModel))
+	printEntryChanges(out, "file", fileIdentityToPath(oldModel), fileIdentityToPath(newModel), fileChanged(oldModel, newModel))
+}
 
+func printEntryChanges(out io.Writer, label string, oldByID map[string]string, newByID map[string]string, changedByID map[string]bool) {
 	var added []string
 	var removed []string
 	var moved []string
 	var changed []string
-
 	for identity, newPath := range newByID {
 		oldPath, ok := oldByID[identity]
 		if !ok {
@@ -1153,9 +1804,7 @@ func printDefinitionChanges(out io.Writer, oldDef *Definition, newDef *Definitio
 		if oldPath != newPath {
 			moved = append(moved, fmt.Sprintf("%s: %s -> %s", identity, oldPath, newPath))
 		}
-		oldRepo := oldDef.Repos[oldPath]
-		newRepo := newDef.Repos[newPath]
-		if oldRepo.Git != newRepo.Git || oldRepo.Web != newRepo.Web || !reflect.DeepEqual(oldRepo.DependsOn, newRepo.DependsOn) || oldRepo.Description != newRepo.Description {
+		if changedByID[identity] {
 			changed = append(changed, newPath)
 		}
 	}
@@ -1164,11 +1813,50 @@ func printDefinitionChanges(out io.Writer, oldDef *Definition, newDef *Definitio
 			removed = append(removed, oldPath)
 		}
 	}
+	printGroup(out, label+"-added", added)
+	printGroup(out, label+"-removed", removed)
+	printGroup(out, label+"-moved", moved)
+	printGroup(out, label+"-changed", changed)
+}
 
-	printGroup(out, "added", added)
-	printGroup(out, "removed", removed)
-	printGroup(out, "moved", moved)
-	printGroup(out, "changed", changed)
+func repoChanged(oldModel *Model, newModel *Model) map[string]bool {
+	result := map[string]bool{}
+	oldByID := repoIdentityToPath(oldModel)
+	newByID := repoIdentityToPath(newModel)
+	for identity, newPath := range newByID {
+		oldPath, ok := oldByID[identity]
+		if !ok {
+			continue
+		}
+		oldEntry := oldModel.Repos[oldPath]
+		newEntry := newModel.Repos[newPath]
+		oldRepo := oldEntry.Repo
+		newRepo := newEntry.Repo
+		if oldRepo.Git != newRepo.Git || oldRepo.Web != newRepo.Web || oldRepo.Description != newRepo.Description || !reflect.DeepEqual(oldRepo.DependsOn, newRepo.DependsOn) || !reflect.DeepEqual(oldEntry.Conditions, newEntry.Conditions) {
+			result[identity] = true
+		}
+	}
+	return result
+}
+
+func fileChanged(oldModel *Model, newModel *Model) map[string]bool {
+	result := map[string]bool{}
+	oldByID := fileIdentityToPath(oldModel)
+	newByID := fileIdentityToPath(newModel)
+	for identity, newPath := range newByID {
+		oldPath, ok := oldByID[identity]
+		if !ok {
+			continue
+		}
+		oldEntry := oldModel.Files[oldPath]
+		newEntry := newModel.Files[newPath]
+		oldFile := oldEntry.File
+		newFile := newEntry.File
+		if oldFile.Src != newFile.Src || oldFile.Description != newFile.Description || oldFile.Executable != newFile.Executable || !reflect.DeepEqual(oldEntry.Conditions, newEntry.Conditions) {
+			result[identity] = true
+		}
+	}
+	return result
 }
 
 func isGitRepo(path string) bool {
@@ -1233,6 +1921,19 @@ func printGroup(out io.Writer, label string, items []string) {
 	}
 }
 
+func fileSHA256(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return sha256Hex(data), nil
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
 type parsedArgs struct {
 	Positionals []string
 	Values      map[string]string
@@ -1259,6 +1960,35 @@ func parseArgs(args []string, valueFlags map[string]bool, boolFlags map[string]b
 			return parsed, fmt.Errorf("unknown flag %s", arg)
 		}
 		parsed.Positionals = append(parsed.Positionals, arg)
+	}
+	return parsed, nil
+}
+
+func parseInitArgs(args []string) (parsedArgs, error) {
+	parsed := parsedArgs{Values: map[string]string{}, Flags: map[string]bool{}}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch arg {
+		case "--path":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
+				return parsed, errors.New("--path requires a value")
+			}
+			parsed.Values[arg] = args[i+1]
+			i++
+		case "--clone":
+			parsed.Flags[arg] = true
+			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				parsed.Values[arg] = args[i+1]
+				i++
+			}
+		case "--with-optional-deps":
+			parsed.Flags[arg] = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return parsed, fmt.Errorf("unknown flag %s", arg)
+			}
+			parsed.Positionals = append(parsed.Positionals, arg)
+		}
 	}
 	return parsed, nil
 }

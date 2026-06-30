@@ -4,16 +4,23 @@ Jig is a CLI tool for managing a local workspace made of many related Git reposi
 
 It uses a `.jig.json` file to describe the desired workspace tree. Repositories are declared with `$repo`, files are declared with `$file`, and paths map directly to where things should appear on disk.
 
+Directory nodes may also declare `$group` metadata. Group metadata such as `description`, `web`, `dependsOn`, and `onlyWhen` is inherited by child repositories or files where applicable.
+
 ## Example
 
 ```json
 {
   "version": 1,
   "tree": {
-    "platform/auth": {
-      "$repo": {
-        "id": "auth-service",
-        "git": "git@github.com:acme/platform-auth.git"
+    "platform": {
+      "$group": {
+        "description": "Shared platform services"
+      },
+      "auth": {
+        "$repo": {
+          "id": "auth-service",
+          "git": "git@github.com:acme/platform-auth.git"
+        }
       }
     },
     "services/checkout": {
@@ -60,12 +67,13 @@ jig help
 
 ```sh
 jig init <git-url> [workspace-dir]
-jig init <git-url> [workspace-dir] --clone <path>
+jig init <local-jig-file> [workspace-dir]
+jig init <git-url> [workspace-dir] --clone [path]
 jig validate
 jig list
 jig info <path>
 jig deps <path>
-jig clone <path>
+jig clone [path]
 jig sync [path]
 jig pull [path]
 jig status [path]
@@ -78,7 +86,7 @@ jig update
 - `.jig/state.json` is local state used to track installed repositories and generated files.
 - Paths use workspace-style `/` separators, such as `services/checkout` or `platform`.
 - A path may refer to one repository or a group of repositories.
-- `jig clone <path>` clones matching repositories and their dependencies.
+- `jig clone [path]` clones all repositories, or matching repositories and their dependencies when a path is provided.
 - `jig sync [path]` updates the local checkout shape without deleting local repositories.
 - `jig pull [path]` runs `git pull` in installed repositories.
 - `jig update` refreshes `.jig.json` from its configured source.
@@ -102,6 +110,14 @@ jig init git@github.com:acme/jig-definition.git ~/Code/acme --clone services/che
 ```
 
 Later, run `jig update` to refresh the local `.jig.json` from the configured remote source.
+
+You can also initialize from a local Jig file while testing changes before pushing them:
+
+```sh
+jig init ./draft.jig.json ~/Code/acme-test
+```
+
+When initialized from a local file, Jig does not record a remote source.
 
 ## Files
 
