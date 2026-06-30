@@ -576,6 +576,25 @@ func TestEnsureLinkFileCreatesRelativeSymlink(t *testing.T) {
 	}
 }
 
+func TestPruneEmptyParentsStopsAtNonEmptyDirectory(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "sourcery", "tools"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "sourcery", "keep.txt"), []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pruneEmptyParents(root, "sourcery/tools")
+
+	if pathExists(filepath.Join(root, "sourcery", "tools")) {
+		t.Fatal("expected empty tools directory to be pruned")
+	}
+	if !pathExists(filepath.Join(root, "sourcery")) {
+		t.Fatal("expected non-empty sourcery directory to remain")
+	}
+}
+
 func TestEnsureFilePreservesLocalModification(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "scripts", "dev.sh")

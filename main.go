@@ -1738,6 +1738,7 @@ func ensureRepo(out io.Writer, root string, model *Model, state *State, repoPath
 			if err := os.Rename(oldAbs, expectedAbs); err != nil {
 				return err
 			}
+			pruneEmptyParents(root, filepath.Dir(stateRepo.Path))
 			fmt.Fprintf(out, "moved: %s: %s -> %s\n", repoPath, stateRepo.Path, expectedRel)
 			stateRepo.Path = expectedRel
 			state.Repos[entry.Identity] = stateRepo
@@ -1815,6 +1816,7 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 			if err := os.Rename(oldAbs, expectedAbs); err != nil {
 				return err
 			}
+			pruneEmptyParents(root, filepath.Dir(stateFile.Path))
 			fmt.Fprintf(out, "moved-file: %s: %s -> %s\n", filePath, stateFile.Path, expectedRel)
 			stateFile.Path = expectedRel
 			state.Files[entry.Identity] = stateFile
@@ -1905,6 +1907,7 @@ func ensureLinkFile(out io.Writer, root string, model *Model, state *State, file
 			if err := os.Rename(oldAbs, expectedAbs); err != nil {
 				return err
 			}
+			pruneEmptyParents(root, filepath.Dir(stateFile.Path))
 			fmt.Fprintf(out, "moved-file: %s: %s -> %s\n", filePath, stateFile.Path, expectedRel)
 			hasState = true
 		} else {
@@ -1959,6 +1962,25 @@ func relativeSymlinkTarget(linkPath string, targetPath string) (string, error) {
 		return "", err
 	}
 	return filepath.ToSlash(rel), nil
+}
+
+func pruneEmptyParents(root string, relDir string) {
+	if relDir == "." || relDir == "" {
+		return
+	}
+	for {
+		if relDir == "." || relDir == "" {
+			return
+		}
+		abs := filepath.Join(root, relDir)
+		if filepath.Clean(abs) == filepath.Clean(root) {
+			return
+		}
+		if err := os.Remove(abs); err != nil {
+			return
+		}
+		relDir = filepath.Dir(relDir)
+	}
 }
 
 func fetchFileContent(src string) ([]byte, error) {
