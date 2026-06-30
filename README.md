@@ -56,20 +56,6 @@ Then run:
 jig help
 ```
 
-## Development
-
-Run directly from source:
-
-```sh
-go run . help
-```
-
-Or install the local checkout:
-
-```sh
-go install .
-```
-
 ## Common Commands
 
 ```sh
@@ -97,6 +83,26 @@ jig update
 - `jig pull [path]` runs `git pull` in installed repositories.
 - `jig update` refreshes `.jig.json` from its configured source.
 
+## Remote Jig File
+
+The `.jig.json` file is designed to be hosted in a remote Git repository and shared by a team.
+
+Use `jig init` to create a local workspace from that remote definition:
+
+```sh
+jig init git@github.com:acme/jig-definition.git ~/Code/acme
+```
+
+This fetches the remote `.jig.json`, writes it into the workspace, records the source repository, and creates local Jig state.
+
+You can also initialize and clone a path in one command:
+
+```sh
+jig init git@github.com:acme/jig-definition.git ~/Code/acme --clone services/checkout
+```
+
+Later, run `jig update` to refresh the local `.jig.json` from the configured remote source.
+
 ## Files
 
 Jig can also materialize files into the workspace:
@@ -115,5 +121,3 @@ Jig can also materialize files into the workspace:
   }
 }
 ```
-
-Jig tracks file hashes in `.jig/state.json` so it can update files it wrote while preserving local edits.
