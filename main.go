@@ -725,8 +725,10 @@ func cmdPull(args []string, out io.Writer) error {
 		if !ok {
 			continue
 		}
+		fmt.Fprintf(out, "pulling: %s\n", repoPath)
 		if _, err := git(local, "pull"); err != nil {
-			skipped = append(skipped, fmt.Sprintf("%s: %s", repoPath, shortError(err)))
+			msg := strings.ReplaceAll(strings.TrimSpace(err.Error()), "\n", "\n  ")
+			skipped = append(skipped, fmt.Sprintf("%s: %s", repoPath, msg))
 			continue
 		}
 		pulled = append(pulled, repoPath)
