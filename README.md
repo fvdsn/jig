@@ -77,8 +77,6 @@ jig clone [path]
 jig sync [path]
 jig pull [path]
 jig status [path]
-jig update
-jig update --sync
 ```
 
 ## Concepts
@@ -88,10 +86,8 @@ jig update --sync
 - Paths use workspace-style `/` separators, such as `services/checkout` or `platform`.
 - A path may refer to one repository or a group of repositories.
 - `jig clone [path]` clones all repositories, or matching repositories and their dependencies when a path is provided.
-- `jig sync [path]` updates the local checkout shape without deleting local repositories.
+- `jig sync [path]` refreshes `.jig.json` from its source when configured, then updates the local checkout shape without deleting local repositories.
 - `jig pull [path]` runs `git pull` in installed repositories.
-- `jig update` refreshes `.jig.json` from its configured source.
-- `jig update --sync` refreshes `.jig.json`, then syncs the workspace.
 
 ## Remote Jig File
 
@@ -111,7 +107,7 @@ You can also initialize and clone a path in one command:
 jig init git@github.com:acme/jig-definition.git ~/Code/acme --clone services/checkout
 ```
 
-Later, run `jig update` to refresh the local `.jig.json` from the configured remote source.
+Later, run `jig sync` to refresh the local `.jig.json` from the configured remote source and apply it.
 
 You can also initialize from a local Jig file while testing changes before pushing them:
 

@@ -404,35 +404,17 @@ jig status
 jig status services
 ```
 
-Update `.jig.json` from its configured remote source:
-
-```sh
-jig update
-```
-
-Update `.jig.json` and immediately sync the workspace:
-
-```sh
-jig update --sync
-```
-
 ## Update And Sync Model
 
-Use `jig update` to update the definition file.
-
-Use `jig update --sync` to update the definition file and then apply the updated map in one command.
-
-Use `jig sync` to apply the current definition to the local workspace.
+Use `jig sync` to refresh the definition file from its source when configured, then apply the current definition to the local workspace.
 
 Use `jig pull` to update Git contents in already-installed repositories.
 
 These are intentionally separate operations.
 
 ```text
-jig update        -> update the map
-jig update --sync -> update and apply the map
-jig sync          -> apply the map to local checkout shape
-jig pull          -> update Git repository contents
+jig sync -> update/apply the map
+jig pull -> update Git repository contents
 ```
 
 ## Safety Rules
