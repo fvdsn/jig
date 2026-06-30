@@ -263,6 +263,16 @@ Descendant repositories inherit this value when they do not define their own `we
 
 Nearest ancestor wins.
 
+### `$group.archived`
+
+Optional boolean.
+
+Default: `false`.
+
+Marks the group and all descendant repositories and files as archived.
+
+Archived repositories and files are skipped by clone and sync operations unless `--archived` is passed.
+
 ### `$group.dependsOn`
 
 Optional array.
@@ -287,6 +297,7 @@ When flattening the tree:
 
 - `description` is inherited by descendant repositories and files when they do not define one locally. The nearest value wins.
 - `web` is inherited by descendant repositories when they do not define one locally. The nearest value wins.
+- `archived` is inherited by descendant repositories and files. A descendant cannot opt out of an archived ancestor.
 - `dependsOn` is inherited additively by descendant repositories. Ancestor dependencies come before local dependencies.
 - `onlyWhen` is inherited additively by descendant repositories and files. All conditions must match.
 
@@ -348,6 +359,14 @@ The web URL for the repository.
 Optional string.
 
 A short human-readable description of the repository.
+
+### `$repo.archived`
+
+Optional boolean.
+
+Default: `false`.
+
+Archived repositories remain valid definition entries, but clone and sync skip them unless `--archived` is passed.
 
 ### `$repo.dependsOn`
 
@@ -481,6 +500,16 @@ Optional boolean.
 Default: `false`.
 
 If true, Jig sets executable permissions after writing the file.
+
+### `$file.archived`
+
+Optional boolean.
+
+Default: `false`.
+
+Archived files remain valid definition entries, but clone and sync skip them unless `--archived` is passed.
+
+If a link file points to an archived target file, the link is also skipped unless `--archived` is passed.
 
 ### `$file.onlyWhen`
 
@@ -746,6 +775,7 @@ jig init <git-url-or-file> [workspace-dir]
 jig init <git-url> [workspace-dir] --path <path>
 jig init <git-url-or-file> [workspace-dir] --clone [path]
 jig init <git-url-or-file> [workspace-dir] --clone [path] --with-optional-deps
+jig init <git-url-or-file> [workspace-dir] --clone [path] --archived
 jig validate
 jig list
 jig info <path>
@@ -758,6 +788,8 @@ jig update --sync
 jig sync [path]
 jig clone [path] --with-optional-deps
 jig sync [path] --with-optional-deps
+jig clone [path] --archived
+jig sync [path] --archived
 ```
 
 ### `jig init <git-url-or-file> [workspace-dir]`
@@ -802,6 +834,8 @@ If `path` is omitted, Jig clones all repositories.
 
 If `path` is provided, Jig clones repositories matching `path` and all non-optional dependencies.
 
+Archived repositories and files are skipped unless `--archived` is provided.
+
 The clone step should run only after `.jig.json` and `.jig/state.json` have been written successfully.
 
 The clone behavior is the same as `jig clone <path>`.
@@ -809,6 +843,10 @@ The clone behavior is the same as `jig clone <path>`.
 ### `jig init <git-url-or-file> [workspace-dir] --clone [path] --with-optional-deps`
 
 Initializes a workspace, then clones all repositories, or repositories matching `path`, including non-optional dependencies, optional dependencies, and active files.
+
+### `jig init <git-url-or-file> [workspace-dir] --clone [path] --archived`
+
+Initializes a workspace, then clones archived repositories and files in addition to non-archived entries.
 
 ### `jig validate`
 
@@ -885,11 +923,17 @@ If `path` matches symlink files, Jig also materializes their target files.
 
 Jig should also write active files whose `onlyWhen` condition matches the resulting active repository set.
 
+Archived repositories and files are skipped unless `--archived` is provided.
+
 After cloning each repository or writing each file, Jig should record it in `.jig/state.json` using its identity.
 
 ### `jig clone [path] --with-optional-deps`
 
 Clones all repositories, or repositories matching a path, including non-optional dependencies and optional dependencies.
+
+### `jig clone [path] --archived`
+
+Clones archived repositories and files in addition to non-archived entries.
 
 ### `jig sync [path]`
 
@@ -902,6 +946,8 @@ If `path` matches symlink files, Jig also materializes their target files.
 If a matching repository has optional dependencies that are already installed locally, those optional dependencies are included in the sync set.
 
 If `path` is omitted, Jig syncs locally installed repositories known to the current `.jig.json` plus their non-optional dependencies, then writes active files. Installed optional dependencies are included. It should not clone every repository in `.jig.json` by default.
+
+Archived repositories and files are skipped unless `--archived` is provided.
 
 Sync may perform these actions:
 
@@ -921,6 +967,10 @@ Sync must skip and report any operation that is ambiguous or unsafe.
 ### `jig sync [path] --with-optional-deps`
 
 Syncs repositories matching `path`, non-optional dependencies, optional dependencies, and active files.
+
+### `jig sync [path] --archived`
+
+Syncs archived repositories and files in addition to non-archived entries.
 
 ### `jig pull [path]`
 
@@ -972,6 +1022,8 @@ Updates `.jig.json` from its configured `source`, then applies the updated defin
 The sync step should run only after the incoming definition has been fetched, validated, and written successfully.
 
 `jig update --sync --with-optional-deps` includes optional dependencies during the sync step.
+
+`jig update --sync --archived` includes archived repositories and files during the sync step.
 
 ## Open Questions
 

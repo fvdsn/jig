@@ -235,6 +235,126 @@ func TestCloneAllRootsIncludeAllRepositories(t *testing.T) {
 	}
 }
 
+func TestResolvePlanSkipsArchivedReposUnlessIncluded(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 1,
+  "tree": {
+    "services/active": {
+      "$repo": {
+        "git": "git@example.com:active.git",
+        "dependsOn": [{ "path": "platform" }]
+      }
+    },
+    "services/old": {
+      "$repo": {
+        "git": "git@example.com:old.git",
+        "archived": true
+      }
+    },
+    "platform/auth": {
+      "$repo": { "git": "git@example.com:auth.git" }
+    },
+    "platform/legacy": {
+      "$repo": {
+        "git": "git@example.com:legacy.git",
+        "archived": true
+      }
+    }
+  }
+}`)
+	model, err := flattenDefinition(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := sortedRepoPaths(&model)
+
+	plan, err := resolvePlan(&model, roots, planOptions{IncludeRoots: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"platform/auth", "services/active"}
+	if !reflect.DeepEqual(plan.Repos, want) {
+		t.Fatalf("without archived = %#v, want %#v", plan.Repos, want)
+	}
+
+	plan, err = resolvePlan(&model, roots, planOptions{IncludeArchived: true, IncludeRoots: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = []string{"platform/auth", "platform/legacy", "services/active", "services/old"}
+	if !reflect.DeepEqual(plan.Repos, want) {
+		t.Fatalf("with archived = %#v, want %#v", plan.Repos, want)
+	}
+}
+
+func TestGroupArchivedIsInheritedByReposAndFiles(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 1,
+  "tree": {
+    "legacy": {
+      "$group": { "archived": true },
+      "service": {
+        "$repo": { "git": "git@example.com:service.git" }
+      },
+      "README.md": {
+        "$file": { "src": "git:git@example.com:config.git#README.md" }
+      }
+    }
+  }
+}`)
+	model, err := flattenDefinition(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !model.Groups["legacy"].Group.Archived {
+		t.Fatal("group is not archived")
+	}
+	if !model.Repos["legacy/service"].Repo.Archived {
+		t.Fatal("repo did not inherit archived")
+	}
+	if !model.Files["legacy/README.md"].File.Archived {
+		t.Fatal("file did not inherit archived")
+	}
+}
+
+func TestArchivedFilesAreSkippedUnlessIncluded(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 1,
+  "tree": {
+    "scripts/current.sh": {
+      "$file": { "src": "git:git@example.com:config.git#scripts/current.sh" }
+    },
+    "scripts/old.sh": {
+      "$file": {
+        "src": "git:git@example.com:config.git#scripts/old.sh",
+        "archived": true
+      }
+    },
+    "bin/old": {
+      "$file": { "link": "scripts/old.sh" }
+    }
+  }
+}`)
+	model, err := flattenDefinition(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := resolvePlan(&model, []string{}, planOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved = includeExplicitFiles(&model, resolved, sortedFilePaths(&model))
+	resolved = excludeArchivedFiles(&model, resolved)
+	if !reflect.DeepEqual(resolved.Files, []string{"scripts/current.sh"}) {
+		t.Fatalf("without archived files = %#v", resolved.Files)
+	}
+	resolved = plan{}
+	resolved = includeExplicitFiles(&model, resolved, sortedFilePaths(&model))
+	if !reflect.DeepEqual(resolved.Files, []string{"scripts/old.sh", "bin/old", "scripts/current.sh"}) {
+		t.Fatalf("with archived files = %#v", resolved.Files)
+	}
+}
+
 func TestResolvePlanIncludesInstalledOptionalDependencyForSync(t *testing.T) {
 	def := testDefinition(t, `{
   "version": 1,
@@ -687,7 +807,7 @@ func TestInitFromLocalFileRejectsPathFlag(t *testing.T) {
 }
 
 func TestParseInitArgsCloneWithoutPath(t *testing.T) {
-	parsed, err := parseInitArgs([]string{"git@example.com:config.git", "--clone", "--with-optional-deps"})
+	parsed, err := parseInitArgs([]string{"git@example.com:config.git", "--clone", "--with-optional-deps", "--archived"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -699,6 +819,9 @@ func TestParseInitArgsCloneWithoutPath(t *testing.T) {
 	}
 	if !parsed.Flags["--with-optional-deps"] {
 		t.Fatal("expected optional deps flag")
+	}
+	if !parsed.Flags["--archived"] {
+		t.Fatal("expected archived flag")
 	}
 }
 
@@ -713,11 +836,11 @@ func TestParseInitArgsCloneWithPath(t *testing.T) {
 }
 
 func TestParseUpdateFlags(t *testing.T) {
-	parsed, err := parseArgs([]string{"--sync", "--with-optional-deps"}, nil, map[string]bool{"--sync": true, "--with-optional-deps": true})
+	parsed, err := parseArgs([]string{"--sync", "--with-optional-deps", "--archived"}, nil, map[string]bool{"--sync": true, "--with-optional-deps": true, "--archived": true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !parsed.Flags["--sync"] || !parsed.Flags["--with-optional-deps"] {
+	if !parsed.Flags["--sync"] || !parsed.Flags["--with-optional-deps"] || !parsed.Flags["--archived"] {
 		t.Fatalf("unexpected update flags: %#v", parsed.Flags)
 	}
 }

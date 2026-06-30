@@ -131,6 +131,7 @@ Important fields:
 - `git`: required clone URL.
 - `web`: optional web URL.
 - `description`: optional human description.
+- `archived`: optional boolean; archived repos are skipped by clone/sync unless `--archived` is passed.
 - `dependsOn`: optional dependency list.
 - `onlyWhen`: optional activation condition.
 
@@ -218,6 +219,7 @@ Inherited behavior:
 
 - `description` is inherited by child repos/files when they do not define one.
 - `web` is inherited by child repos when they do not define one.
+- `archived` is inherited by child repos/files.
 - `dependsOn` is inherited additively by child repos.
 - `onlyWhen` is inherited additively by child repos/files.
 
@@ -247,6 +249,8 @@ git:<repo-url>#<path-inside-source-repo>
 ```
 
 Files are written during `clone` and `sync` when active.
+
+Files can set `archived: true` to opt out of clone/sync unless `--archived` is passed.
 
 Jig records a hash for files it writes. If a user edits a generated file locally, Jig skips overwriting it and reports it as modified.
 
@@ -384,6 +388,12 @@ Clone with optional dependencies:
 jig clone services/checkout --with-optional-deps
 ```
 
+Clone archived repositories and files too:
+
+```sh
+jig clone services --archived
+```
+
 Sync installed repositories and active files:
 
 ```sh
@@ -394,6 +404,12 @@ Sync a specific path:
 
 ```sh
 jig sync platform
+```
+
+Sync archived repositories and files too:
+
+```sh
+jig sync --archived
 ```
 
 Pull installed repositories:

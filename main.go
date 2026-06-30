@@ -41,6 +41,7 @@ type Repo struct {
 	Git         string       `json:"git"`
 	Web         string       `json:"web,omitempty"`
 	Description string       `json:"description,omitempty"`
+	Archived    bool         `json:"archived,omitempty"`
 	DependsOn   []Dependency `json:"dependsOn,omitempty"`
 	OnlyWhen    *Condition   `json:"onlyWhen,omitempty"`
 }
@@ -51,12 +52,14 @@ type File struct {
 	Link        string     `json:"link,omitempty"`
 	Description string     `json:"description,omitempty"`
 	Executable  bool       `json:"executable,omitempty"`
+	Archived    bool       `json:"archived,omitempty"`
 	OnlyWhen    *Condition `json:"onlyWhen,omitempty"`
 }
 
 type Group struct {
 	Description string       `json:"description,omitempty"`
 	Web         string       `json:"web,omitempty"`
+	Archived    bool         `json:"archived,omitempty"`
 	DependsOn   []Dependency `json:"dependsOn,omitempty"`
 	OnlyWhen    *Condition   `json:"onlyWhen,omitempty"`
 }
@@ -101,6 +104,7 @@ type GroupEntry struct {
 type inheritedGroup struct {
 	Description string
 	Web         string
+	Archived    bool
 	DependsOn   []Dependency
 	Conditions  []Condition
 }
@@ -184,7 +188,7 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "  jig <command> [args]")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Commands:")
-	fmt.Fprintln(out, "  init <git-url-or-file> [workspace-dir] [--path <path>] [--clone [path]] [--with-optional-deps]")
+	fmt.Fprintln(out, "  init <git-url-or-file> [workspace-dir] [--path <path>] [--clone [path]] [--with-optional-deps] [--archived]")
 	fmt.Fprintln(out, "      Initialize a workspace from a Git-hosted or local Jig definition, optionally cloning a path.")
 	fmt.Fprintln(out, "  validate")
 	fmt.Fprintln(out, "      Validate the current workspace .jig.json file.")
@@ -194,9 +198,9 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Show repository, file, or group metadata.")
 	fmt.Fprintln(out, "  deps <path>")
 	fmt.Fprintln(out, "      Show expanded recursive dependencies for repositories matching a path.")
-	fmt.Fprintln(out, "  clone [path] [--with-optional-deps]")
+	fmt.Fprintln(out, "  clone [path] [--with-optional-deps] [--archived]")
 	fmt.Fprintln(out, "      Clone/materialize all entries, or repositories/files matching a path.")
-	fmt.Fprintln(out, "  sync [path] [--with-optional-deps]")
+	fmt.Fprintln(out, "  sync [path] [--with-optional-deps] [--archived]")
 	fmt.Fprintln(out, "      Clone missing repos, move renamed repos/files, update origins/files, and refresh local state.")
 	fmt.Fprintln(out, "  pull [path]")
 	fmt.Fprintln(out, "      Run git pull in installed repositories matching a path or group.")
@@ -204,7 +208,7 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Show installed, missing, moved, dirty, stale, modified, and remote-changed entries.")
 	fmt.Fprintln(out, "  update")
 	fmt.Fprintln(out, "      Update .jig.json from its configured source without changing local checkouts.")
-	fmt.Fprintln(out, "  update --sync [--with-optional-deps]")
+	fmt.Fprintln(out, "  update --sync [--with-optional-deps] [--archived]")
 	fmt.Fprintln(out, "      Update .jig.json, then sync the workspace.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Paths identify repositories, files, or groups using slash paths such as services/checkout or platform.")
@@ -216,7 +220,7 @@ func cmdInit(args []string, out io.Writer) error {
 		return err
 	}
 	if len(parsed.Positionals) == 0 || len(parsed.Positionals) > 2 {
-		return errors.New("usage: jig init <git-url-or-file> [workspace-dir] [--path <path>] [--clone [path]] [--with-optional-deps]")
+		return errors.New("usage: jig init <git-url-or-file> [workspace-dir] [--path <path>] [--clone [path]] [--with-optional-deps] [--archived]")
 	}
 
 	sourceArg := parsed.Positionals[0]
@@ -276,7 +280,7 @@ func cmdInit(args []string, out io.Writer) error {
 			return err
 		}
 		ws := Workspace{Root: workspaceDir, Def: *def, Model: model, State: state}
-		if err := clonePathIntoWorkspace(out, &ws, clonePath, parsed.Flags["--with-optional-deps"]); err != nil {
+		if err := clonePathIntoWorkspace(out, &ws, clonePath, parsed.Flags["--with-optional-deps"], parsed.Flags["--archived"]); err != nil {
 			return err
 		}
 		if err := saveState(workspaceDir, ws.State); err != nil {
@@ -383,6 +387,9 @@ func cmdInfo(args []string, out io.Writer) error {
 		if repo.Description != "" {
 			fmt.Fprintf(out, "description: %s\n", repo.Description)
 		}
+		if repo.Archived {
+			fmt.Fprintln(out, "archived: true")
+		}
 		if len(entry.Conditions) > 0 {
 			printConditions(out, "onlyWhen", entry.Conditions)
 		}
@@ -416,6 +423,9 @@ func cmdInfo(args []string, out io.Writer) error {
 		if file.Description != "" {
 			fmt.Fprintf(out, "description: %s\n", file.Description)
 		}
+		if file.Archived {
+			fmt.Fprintln(out, "archived: true")
+		}
 		fmt.Fprintf(out, "executable: %v\n", file.Executable)
 		if len(entry.Conditions) > 0 {
 			printConditions(out, "onlyWhen", entry.Conditions)
@@ -436,6 +446,9 @@ func cmdInfo(args []string, out io.Writer) error {
 		}
 		if group.Group.Web != "" {
 			fmt.Fprintf(out, "web: %s\n", group.Group.Web)
+		}
+		if group.Group.Archived {
+			fmt.Fprintln(out, "archived: true")
 		}
 		if len(group.Conditions) > 0 {
 			printConditions(out, "onlyWhen", group.Conditions)
@@ -531,12 +544,12 @@ func cmdDeps(args []string, out io.Writer) error {
 }
 
 func cmdClone(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, nil, map[string]bool{"--with-optional-deps": true})
+	parsed, err := parseArgs(args, nil, map[string]bool{"--with-optional-deps": true, "--archived": true})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig clone [path] [--with-optional-deps]")
+		return errors.New("usage: jig clone [path] [--with-optional-deps] [--archived]")
 	}
 	ws, err := loadWorkspace(true)
 	if err != nil {
@@ -546,13 +559,13 @@ func cmdClone(args []string, out io.Writer) error {
 	if len(parsed.Positionals) == 1 {
 		path = parsed.Positionals[0]
 	}
-	if err := clonePathIntoWorkspace(out, ws, path, parsed.Flags["--with-optional-deps"]); err != nil {
+	if err := clonePathIntoWorkspace(out, ws, path, parsed.Flags["--with-optional-deps"], parsed.Flags["--archived"]); err != nil {
 		return err
 	}
 	return saveState(ws.Root, ws.State)
 }
 
-func clonePathIntoWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bool) error {
+func clonePathIntoWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bool, includeArchived bool) error {
 	roots := sortedRepoPaths(&ws.Model)
 	explicitFiles := sortedFilePaths(&ws.Model)
 	if path != "" {
@@ -568,22 +581,25 @@ func clonePathIntoWorkspace(out io.Writer, ws *Workspace, path string, includeOp
 		}
 		return fmt.Errorf("no repositories or files match %q", path)
 	}
-	plan, err := resolvePlan(&ws.Model, roots, planOptions{IncludeOptional: includeOptional, IncludeRoots: true, Installed: installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State)})
+	plan, err := resolvePlan(&ws.Model, roots, planOptions{IncludeOptional: includeOptional, IncludeArchived: includeArchived, IncludeRoots: true, Installed: installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State)})
 	if err != nil {
 		return err
 	}
 	plan = includeExplicitFiles(&ws.Model, plan, explicitFiles)
+	if !includeArchived {
+		plan = excludeArchivedFiles(&ws.Model, plan)
+	}
 	applyPlan(out, ws, plan, false)
 	return nil
 }
 
 func cmdSync(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, nil, map[string]bool{"--with-optional-deps": true})
+	parsed, err := parseArgs(args, nil, map[string]bool{"--with-optional-deps": true, "--archived": true})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig sync [path] [--with-optional-deps]")
+		return errors.New("usage: jig sync [path] [--with-optional-deps] [--archived]")
 	}
 	ws, err := loadWorkspace(true)
 	if err != nil {
@@ -594,10 +610,10 @@ func cmdSync(args []string, out io.Writer) error {
 	if len(parsed.Positionals) == 1 {
 		path = parsed.Positionals[0]
 	}
-	return syncWorkspace(out, ws, path, parsed.Flags["--with-optional-deps"])
+	return syncWorkspace(out, ws, path, parsed.Flags["--with-optional-deps"], parsed.Flags["--archived"])
 }
 
-func syncWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bool) error {
+func syncWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bool, includeArchived bool) error {
 	var roots []string
 	var explicitFiles []string
 	if path != "" {
@@ -613,11 +629,14 @@ func syncWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bo
 		roots = installedDefinedRepos(ws.Root, &ws.Model, &ws.State)
 	}
 
-	plan, err := resolvePlan(&ws.Model, roots, planOptions{IncludeOptional: includeOptional, IncludeInstalledOptional: true, IncludeRoots: true, Installed: installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State)})
+	plan, err := resolvePlan(&ws.Model, roots, planOptions{IncludeOptional: includeOptional, IncludeInstalledOptional: true, IncludeArchived: includeArchived, IncludeRoots: true, Installed: installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State)})
 	if err != nil {
 		return err
 	}
 	plan = includeExplicitFiles(&ws.Model, plan, explicitFiles)
+	if !includeArchived {
+		plan = excludeArchivedFiles(&ws.Model, plan)
+	}
 	applyPlan(out, ws, plan, true)
 	reportStale(out, ws.Root, &ws.Model, &ws.State)
 	return saveState(ws.Root, ws.State)
@@ -641,6 +660,29 @@ func includeExplicitFiles(model *Model, base plan, files []string) plan {
 	}
 	for _, filePath := range files {
 		add(filePath)
+	}
+	base.Files = orderFilesForApply(model, active)
+	return base
+}
+
+func excludeArchivedFiles(model *Model, base plan) plan {
+	active := map[string]bool{}
+	for _, filePath := range base.Files {
+		entry, ok := model.Files[filePath]
+		if ok && !entry.File.Archived {
+			active[filePath] = true
+		}
+	}
+	changed := true
+	for changed {
+		changed = false
+		for filePath := range active {
+			entry := model.Files[filePath]
+			if entry.File.Link != "" && !active[entry.File.Link] {
+				delete(active, filePath)
+				changed = true
+			}
+		}
 	}
 	base.Files = orderFilesForApply(model, active)
 	return base
@@ -847,12 +889,12 @@ func cmdStatus(args []string, out io.Writer) error {
 }
 
 func cmdUpdate(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, nil, map[string]bool{"--sync": true, "--with-optional-deps": true})
+	parsed, err := parseArgs(args, nil, map[string]bool{"--sync": true, "--with-optional-deps": true, "--archived": true})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 0 {
-		return errors.New("usage: jig update [--sync] [--with-optional-deps]")
+		return errors.New("usage: jig update [--sync] [--with-optional-deps] [--archived]")
 	}
 	ws, err := loadWorkspace(parsed.Flags["--sync"])
 	if err != nil {
@@ -899,7 +941,7 @@ func cmdUpdate(args []string, out io.Writer) error {
 	if parsed.Flags["--sync"] {
 		ws.Def = *incoming
 		ws.Model = incomingModel
-		return syncWorkspace(out, ws, "", parsed.Flags["--with-optional-deps"])
+		return syncWorkspace(out, ws, "", parsed.Flags["--with-optional-deps"], parsed.Flags["--archived"])
 	}
 	return nil
 }
@@ -1171,6 +1213,9 @@ func flattenTreeNode(path string, raw json.RawMessage, inherited inheritedGroup,
 		}
 		delete(obj, "$group")
 		inherited = mergeGroup(inherited, group)
+		if inherited.Archived {
+			group.Archived = true
+		}
 		model.Groups[path] = GroupEntry{Path: path, Group: group, Conditions: append([]Condition{}, inherited.Conditions...)}
 	}
 	return flattenTreeMap(obj, path, inherited, model)
@@ -1183,6 +1228,9 @@ func applyInheritedRepo(repo Repo, inherited inheritedGroup) Repo {
 	if repo.Web == "" {
 		repo.Web = inherited.Web
 	}
+	if inherited.Archived {
+		repo.Archived = true
+	}
 	if len(inherited.DependsOn) > 0 {
 		deps := append([]Dependency{}, inherited.DependsOn...)
 		repo.DependsOn = append(deps, repo.DependsOn...)
@@ -1194,6 +1242,9 @@ func applyInheritedFile(file File, inherited inheritedGroup) File {
 	if file.Description == "" {
 		file.Description = inherited.Description
 	}
+	if inherited.Archived {
+		file.Archived = true
+	}
 	return file
 }
 
@@ -1201,6 +1252,7 @@ func mergeGroup(inherited inheritedGroup, group Group) inheritedGroup {
 	merged := inheritedGroup{
 		Description: inherited.Description,
 		Web:         inherited.Web,
+		Archived:    inherited.Archived,
 		DependsOn:   append([]Dependency{}, inherited.DependsOn...),
 		Conditions:  append([]Condition{}, inherited.Conditions...),
 	}
@@ -1209,6 +1261,9 @@ func mergeGroup(inherited inheritedGroup, group Group) inheritedGroup {
 	}
 	if group.Web != "" {
 		merged.Web = group.Web
+	}
+	if group.Archived {
+		merged.Archived = true
 	}
 	if len(group.DependsOn) > 0 {
 		merged.DependsOn = append(merged.DependsOn, group.DependsOn...)
@@ -1331,6 +1386,7 @@ func indexOf(items []string, value string) int {
 type planOptions struct {
 	IncludeOptional          bool
 	IncludeInstalledOptional bool
+	IncludeArchived          bool
 	IncludeRoots             bool
 	Installed                map[string]bool
 }
@@ -1352,7 +1408,7 @@ func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
 			return plan{}, fmt.Errorf("unknown repository %q", root)
 		}
 		rootIDs[entry.Identity] = true
-		if opts.IncludeRoots {
+		if opts.IncludeRoots && !repoArchived(entry, opts) {
 			active[root] = true
 		}
 	}
@@ -1371,6 +1427,9 @@ func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
 		}
 		for _, repoPath := range sortedRepoPaths(model) {
 			entry := model.Repos[repoPath]
+			if repoArchived(entry, opts) {
+				continue
+			}
 			if active[repoPath] {
 				if changedDeps, err := addDependencies(model, repoPath, active, opts, rootIDs); err != nil {
 					return plan{}, err
@@ -1386,8 +1445,16 @@ func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
 		}
 	}
 
-	activeFilesSet := activeFilesForRepoSet(model, active, opts.Installed)
+	activeFilesSet := activeFilesForRepoSet(model, active, opts.Installed, opts.IncludeArchived)
 	return plan{Repos: sortedKeys(active), Files: orderFilesForApply(model, activeFilesSet)}, nil
+}
+
+func repoArchived(entry RepoEntry, opts planOptions) bool {
+	return entry.Repo.Archived && !opts.IncludeArchived
+}
+
+func fileArchived(entry FileEntry, includeArchived bool) bool {
+	return entry.File.Archived && !includeArchived
 }
 
 func orderFilesForApply(model *Model, active map[string]bool) []string {
@@ -1426,6 +1493,9 @@ func addDependencies(model *Model, repoPath string, active map[string]bool, opts
 		}
 		for _, match := range matches {
 			matchEntry := model.Repos[match]
+			if repoArchived(matchEntry, opts) {
+				continue
+			}
 			if dep.Optional && !opts.IncludeOptional && !(opts.IncludeInstalledOptional && opts.Installed[matchEntry.Identity]) {
 				continue
 			}
@@ -1445,10 +1515,10 @@ func addDependencies(model *Model, repoPath string, active map[string]bool, opts
 }
 
 func activeFiles(model *Model, installed map[string]bool) map[string]bool {
-	return activeFilesForRepoSet(model, map[string]bool{}, installed)
+	return activeFilesForRepoSet(model, map[string]bool{}, installed, true)
 }
 
-func activeFilesForRepoSet(model *Model, activeRepos map[string]bool, installed map[string]bool) map[string]bool {
+func activeFilesForRepoSet(model *Model, activeRepos map[string]bool, installed map[string]bool, includeArchived bool) map[string]bool {
 	files := map[string]bool{}
 	changed := true
 	for changed {
@@ -1458,6 +1528,9 @@ func activeFilesForRepoSet(model *Model, activeRepos map[string]bool, installed 
 				continue
 			}
 			entry := model.Files[filePath]
+			if fileArchived(entry, includeArchived) {
+				continue
+			}
 			if len(entry.Conditions) > 0 && !conditionsMatch(entry.Conditions, activeRepos, installed, model) {
 				continue
 			}
@@ -2280,6 +2353,8 @@ func parseInitArgs(args []string) (parsedArgs, error) {
 				i++
 			}
 		case "--with-optional-deps":
+			parsed.Flags[arg] = true
+		case "--archived":
 			parsed.Flags[arg] = true
 		default:
 			if strings.HasPrefix(arg, "-") {

@@ -92,6 +92,7 @@ jig update --sync
 - `jig pull [path]` runs `git pull` in installed repositories.
 - `jig update` refreshes `.jig.json` from its configured source.
 - `jig update --sync` refreshes `.jig.json`, then syncs the workspace.
+- `archived: true` on repos, files, or groups excludes those entries from clone/sync unless `--archived` is passed.
 
 ## Remote Jig File
 
