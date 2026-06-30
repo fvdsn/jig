@@ -40,7 +40,23 @@ jig clone services/checkout
 
 clones `services/checkout` and its dependencies under the workspace root.
 
-## Install For Development
+## Install
+
+Install directly from GitHub:
+
+```sh
+go install github.com/fvdsn/jig@latest
+```
+
+Make sure `$(go env GOPATH)/bin` is in your `PATH`.
+
+Then run:
+
+```sh
+jig help
+```
+
+## Development
 
 Run directly from source:
 
@@ -48,13 +64,11 @@ Run directly from source:
 go run . help
 ```
 
-Or install the binary:
+Or install the local checkout:
 
 ```sh
 go install .
 ```
-
-Make sure `$(go env GOPATH)/bin` is in your `PATH`.
 
 ## Common Commands
 
