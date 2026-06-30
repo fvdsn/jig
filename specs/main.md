@@ -383,6 +383,13 @@ Example:
         "description": "Starts the local development stack",
         "executable": true
       }
+    },
+    "bin/dev": {
+      "$file": {
+        "id": "dev-command",
+        "link": "scripts/dev.sh",
+        "description": "Shortcut to the dev script"
+      }
     }
   }
 }
@@ -400,7 +407,7 @@ File identities must be unique after applying this rule. Two files cannot resolv
 
 ### `$file.src`
 
-Required string.
+Optional string.
 
 Identifies where the file content comes from.
 
@@ -424,6 +431,42 @@ Parsing rules:
 - The left side is the Git URL.
 - The right side is a safe source repo file path.
 - The source repo file path must not contain `#`.
+
+### `$file.link`
+
+Optional string.
+
+Declares the file node as a symbolic link to another `$file` node in the same schema.
+
+Example:
+
+```json
+{
+  "tree": {
+    "scripts/dev.sh": {
+      "$file": {
+        "id": "dev-script",
+        "src": "git:git@github.com:org/workspace-config.git#scripts/dev.sh"
+      }
+    },
+    "bin/dev": {
+      "$file": {
+        "id": "dev-command",
+        "link": "scripts/dev.sh"
+      }
+    }
+  }
+}
+```
+
+Rules:
+
+- A `$file` must define exactly one of `src` or `link`.
+- `link` must be a safe workspace path.
+- `link` must resolve to another `$file` node in the same `.jig.json`.
+- Link files are active only when their own conditions match and their target file is active.
+- Jig creates relative symlinks so workspaces remain movable.
+- `executable` applies only to `src` files.
 
 ### `$file.description`
 
@@ -617,7 +660,10 @@ File state fields:
 
 - `path`: required safe workspace path relative to the workspace root.
 - `src`: required string. Source recorded when Jig last wrote the file.
+- `link`: optional string. Link target recorded when Jig last created a symlink.
 - `sha256`: required string. Hash of the file contents written by Jig.
+
+For symlink files, `link` is required and `sha256` is omitted.
 
 The local filesystem remains the authority for whether a repository or file currently exists.
 
@@ -648,10 +694,13 @@ Jig should never overwrite an existing directory during clone or sync.
 
 When Jig needs to write a file, it should handle the expected local path as follows:
 
-- If the file does not exist, write it and record its hash in `.jig/state.json`.
+- If the file does not exist, write it and record its hash in `.jig/state.json`, or create the symlink and record its link target.
 - If the file exists and is not tracked in state, skip it and report the conflict.
 - If the file exists, is tracked in state, and its current hash matches the state hash, overwrite it with the new source content and update state.
 - If the file exists, is tracked in state, and its current hash differs from the state hash, skip it and report that it was locally modified.
+- If a symlink exists and points to the expected target, adopt or update state.
+- If a symlink exists with a different target, update it only if state shows Jig previously created it.
+- If a symlink path exists and is not a symlink, skip it and report the conflict.
 
 Jig should never overwrite local file modifications.
 
@@ -779,6 +828,7 @@ Validation should catch:
 - Dependency paths that do not resolve to any repository.
 - `onlyWhen.path` values that do not resolve to any repository.
 - Invalid file `src` values.
+- Invalid file `link` values.
 
 Dependency cycles should be detected and reported, but they do not necessarily make the file invalid.
 

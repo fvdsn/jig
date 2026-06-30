@@ -250,6 +250,37 @@ Files are written during `clone` and `sync` when active.
 
 Jig records a hash for files it writes. If a user edits a generated file locally, Jig skips overwriting it and reports it as modified.
 
+Files can also be symbolic links to other files in the same schema.
+
+```json
+{
+  "tree": {
+    "scripts/dev.sh": {
+      "$file": {
+        "id": "dev-script",
+        "src": "git:git@github.com:acme/workspace-config.git#scripts/dev.sh",
+        "executable": true
+      }
+    },
+    "bin/dev": {
+      "$file": {
+        "id": "dev-command",
+        "link": "scripts/dev.sh",
+        "description": "Shortcut to the dev script"
+      }
+    }
+  }
+}
+```
+
+Rules for links:
+
+- A `$file` defines exactly one of `src` or `link`.
+- `link` points to another `$file` path in the same `.jig.json`.
+- Jig creates relative symlinks.
+- Link files are active only when their target file is active.
+- Jig skips existing non-symlink paths instead of overwriting them.
+
 ## Conditional Nodes
 
 Use `onlyWhen` to make a repo or file active only when another repository path or group is active or installed.

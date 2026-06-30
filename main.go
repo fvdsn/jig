@@ -48,6 +48,7 @@ type Repo struct {
 type File struct {
 	ID          string     `json:"id,omitempty"`
 	Src         string     `json:"src"`
+	Link        string     `json:"link,omitempty"`
 	Description string     `json:"description,omitempty"`
 	Executable  bool       `json:"executable,omitempty"`
 	OnlyWhen    *Condition `json:"onlyWhen,omitempty"`
@@ -117,8 +118,9 @@ type StateRepo struct {
 
 type StateFile struct {
 	Path   string `json:"path"`
-	Src    string `json:"src"`
-	SHA256 string `json:"sha256"`
+	Src    string `json:"src,omitempty"`
+	Link   string `json:"link,omitempty"`
+	SHA256 string `json:"sha256,omitempty"`
 }
 
 type Workspace struct {
@@ -403,7 +405,12 @@ func cmdInfo(args []string, out io.Writer) error {
 		fmt.Fprintf(out, "path: %s\n", path)
 		fmt.Fprintln(out, "type: file")
 		fmt.Fprintf(out, "identity: %s\n", entry.Identity)
-		fmt.Fprintf(out, "src: %s\n", file.Src)
+		if file.Src != "" {
+			fmt.Fprintf(out, "src: %s\n", file.Src)
+		}
+		if file.Link != "" {
+			fmt.Fprintf(out, "link: %s\n", file.Link)
+		}
 		if file.Description != "" {
 			fmt.Fprintf(out, "description: %s\n", file.Description)
 		}
@@ -733,6 +740,34 @@ func cmdStatus(args []string, out io.Writer) error {
 			conflicts = append(conflicts, fmt.Sprintf("%s: existing file is not tracked", filePath))
 			continue
 		}
+		if entry.File.Link != "" {
+			info, err := os.Lstat(expectedAbs)
+			if err != nil {
+				conflicts = append(conflicts, fmt.Sprintf("%s: %s", filePath, err))
+				continue
+			}
+			if info.Mode()&os.ModeSymlink == 0 {
+				conflicts = append(conflicts, fmt.Sprintf("%s: expected symlink path is not a symlink", filePath))
+				continue
+			}
+			targetEntry := ws.Model.Files[entry.File.Link]
+			expectedTarget, err := relativeSymlinkTarget(entry.Path, targetEntry.Path)
+			if err != nil {
+				conflicts = append(conflicts, fmt.Sprintf("%s: %s", filePath, err))
+				continue
+			}
+			currentTarget, err := os.Readlink(expectedAbs)
+			if err != nil {
+				conflicts = append(conflicts, fmt.Sprintf("%s: %s", filePath, err))
+				continue
+			}
+			if currentTarget != expectedTarget {
+				modified = append(modified, filePath)
+			} else {
+				written = append(written, filePath)
+			}
+			continue
+		}
 		currentHash, err := fileSHA256(expectedAbs)
 		if err != nil {
 			conflicts = append(conflicts, fmt.Sprintf("%s: %s", filePath, err))
@@ -874,10 +909,25 @@ func validateDefinition(def *Definition) validationResult {
 	fileIDs := map[string]string{}
 	for _, path := range sortedFilePaths(&model) {
 		entry := model.Files[path]
-		if entry.File.Src == "" {
-			result.Errors = append(result.Errors, fmt.Sprintf("file %s missing src", path))
-		} else if _, err := parseFileSrc(entry.File.Src); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("file %s invalid src: %s", path, err))
+		if (entry.File.Src == "") == (entry.File.Link == "") {
+			result.Errors = append(result.Errors, fmt.Sprintf("file %s must define exactly one of src or link", path))
+		}
+		if entry.File.Src != "" {
+			if _, err := parseFileSrc(entry.File.Src); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("file %s invalid src: %s", path, err))
+			}
+		}
+		if entry.File.Link != "" {
+			if err := validateSafePath(entry.File.Link); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("file %s invalid link: %s", path, err))
+			} else if _, ok := model.Files[entry.File.Link]; !ok {
+				result.Errors = append(result.Errors, fmt.Sprintf("file %s link %s does not resolve to any file", path, entry.File.Link))
+			} else if entry.File.Link == path {
+				result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot link to itself", path))
+			}
+		}
+		if entry.File.Executable && entry.File.Link != "" {
+			result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot use executable with link", path))
 		}
 		if prev, ok := fileIDs[entry.Identity]; ok {
 			result.Errors = append(result.Errors, fmt.Sprintf("duplicate file identity %s: %s and %s", entry.Identity, prev, path))
@@ -909,7 +959,47 @@ func validateDefinition(def *Definition) validationResult {
 	for _, cycle := range detectCycles(&model) {
 		result.Warnings = append(result.Warnings, "dependency cycle detected: "+strings.Join(cycle, " -> "))
 	}
+	for _, cycle := range detectFileLinkCycles(&model) {
+		result.Errors = append(result.Errors, "file link cycle detected: "+strings.Join(cycle, " -> "))
+	}
 	return result
+}
+
+func detectFileLinkCycles(model *Model) [][]string {
+	visited := map[string]int{}
+	var stack []string
+	var cycles [][]string
+	seen := map[string]bool{}
+	var visit func(string)
+	visit = func(path string) {
+		if visited[path] == 2 {
+			return
+		}
+		if visited[path] == 1 {
+			idx := indexOf(stack, path)
+			if idx >= 0 {
+				cycle := append([]string{}, stack[idx:]...)
+				cycle = append(cycle, path)
+				key := strings.Join(cycle, "\x00")
+				if !seen[key] {
+					cycles = append(cycles, cycle)
+					seen[key] = true
+				}
+			}
+			return
+		}
+		visited[path] = 1
+		stack = append(stack, path)
+		if entry, ok := model.Files[path]; ok && entry.File.Link != "" {
+			visit(entry.File.Link)
+		}
+		stack = stack[:len(stack)-1]
+		visited[path] = 2
+	}
+	for _, path := range sortedFilePaths(model) {
+		visit(path)
+	}
+	return cycles
 }
 
 func validateCondition(result *validationResult, model Model, ownerPath string, condition *Condition) {
@@ -1242,7 +1332,33 @@ func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
 	}
 
 	activeFilesSet := activeFilesForRepoSet(model, active, opts.Installed)
-	return plan{Repos: sortedKeys(active), Files: sortedKeys(activeFilesSet)}, nil
+	return plan{Repos: sortedKeys(active), Files: orderFilesForApply(model, activeFilesSet)}, nil
+}
+
+func orderFilesForApply(model *Model, active map[string]bool) []string {
+	visited := map[string]bool{}
+	visiting := map[string]bool{}
+	var result []string
+	var visit func(string)
+	visit = func(path string) {
+		if visited[path] || !active[path] {
+			return
+		}
+		if visiting[path] {
+			return
+		}
+		visiting[path] = true
+		if entry, ok := model.Files[path]; ok && entry.File.Link != "" {
+			visit(entry.File.Link)
+		}
+		visiting[path] = false
+		visited[path] = true
+		result = append(result, path)
+	}
+	for _, path := range sortedKeys(active) {
+		visit(path)
+	}
+	return result
 }
 
 func addDependencies(model *Model, repoPath string, active map[string]bool, opts planOptions, excludedIDs map[string]bool) (bool, error) {
@@ -1279,10 +1395,22 @@ func activeFiles(model *Model, installed map[string]bool) map[string]bool {
 
 func activeFilesForRepoSet(model *Model, activeRepos map[string]bool, installed map[string]bool) map[string]bool {
 	files := map[string]bool{}
-	for _, filePath := range sortedFilePaths(model) {
-		entry := model.Files[filePath]
-		if len(entry.Conditions) == 0 || conditionsMatch(entry.Conditions, activeRepos, installed, model) {
+	changed := true
+	for changed {
+		changed = false
+		for _, filePath := range sortedFilePaths(model) {
+			if files[filePath] {
+				continue
+			}
+			entry := model.Files[filePath]
+			if len(entry.Conditions) > 0 && !conditionsMatch(entry.Conditions, activeRepos, installed, model) {
+				continue
+			}
+			if entry.File.Link != "" && !files[entry.File.Link] {
+				continue
+			}
 			files[filePath] = true
+			changed = true
 		}
 	}
 	return files
@@ -1623,6 +1751,9 @@ func ensureRepo(out io.Writer, root string, model *Model, state *State, repoPath
 func ensureFile(out io.Writer, root string, model *Model, state *State, filePath string, allowMove bool) error {
 	entry := model.Files[filePath]
 	file := entry.File
+	if file.Link != "" {
+		return ensureLinkFile(out, root, model, state, filePath, allowMove)
+	}
 	stateFile, hasState := state.Files[entry.Identity]
 	expectedRel := entry.Path
 	expectedAbs := filepath.Join(root, expectedRel)
@@ -1703,6 +1834,96 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 	state.Files[entry.Identity] = StateFile{Path: expectedRel, Src: file.Src, SHA256: newHash}
 	fmt.Fprintf(out, "wrote-file: %s\n", filePath)
 	return nil
+}
+
+func ensureLinkFile(out io.Writer, root string, model *Model, state *State, filePath string, allowMove bool) error {
+	entry := model.Files[filePath]
+	file := entry.File
+	targetEntry, ok := model.Files[file.Link]
+	if !ok {
+		return fmt.Errorf("link target is not defined: %s", file.Link)
+	}
+	if !pathExists(filepath.Join(root, targetEntry.Path)) {
+		return fmt.Errorf("link target is missing: %s", targetEntry.Path)
+	}
+
+	stateFile, hasState := state.Files[entry.Identity]
+	expectedRel := entry.Path
+	expectedAbs := filepath.Join(root, expectedRel)
+	expectedTarget, err := relativeSymlinkTarget(expectedRel, targetEntry.Path)
+	if err != nil {
+		return err
+	}
+
+	if hasState && stateFile.Path != expectedRel {
+		oldAbs := filepath.Join(root, stateFile.Path)
+		if pathExists(oldAbs) {
+			if !allowMove {
+				return fmt.Errorf("already written at %s; run jig sync to move it", stateFile.Path)
+			}
+			if pathExists(expectedAbs) {
+				return fmt.Errorf("target path already exists: %s", expectedRel)
+			}
+			if err := os.MkdirAll(filepath.Dir(expectedAbs), 0o755); err != nil {
+				return err
+			}
+			if err := os.Rename(oldAbs, expectedAbs); err != nil {
+				return err
+			}
+			fmt.Fprintf(out, "moved-file: %s: %s -> %s\n", filePath, stateFile.Path, expectedRel)
+			hasState = true
+		} else {
+			delete(state.Files, entry.Identity)
+			hasState = false
+		}
+	}
+
+	if pathExists(expectedAbs) {
+		info, err := os.Lstat(expectedAbs)
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			return fmt.Errorf("expected symlink path exists and is not a symlink: %s", expectedRel)
+		}
+		currentTarget, err := os.Readlink(expectedAbs)
+		if err != nil {
+			return err
+		}
+		if currentTarget == expectedTarget {
+			state.Files[entry.Identity] = StateFile{Path: expectedRel, Link: file.Link}
+			fmt.Fprintf(out, "present-file: %s\n", filePath)
+			return nil
+		}
+		if !hasState || stateFile.Link == "" {
+			return fmt.Errorf("existing symlink has different target")
+		}
+		if err := os.Remove(expectedAbs); err != nil {
+			return err
+		}
+	}
+
+	if err := os.MkdirAll(filepath.Dir(expectedAbs), 0o755); err != nil {
+		return err
+	}
+	if err := os.Symlink(expectedTarget, expectedAbs); err != nil {
+		return err
+	}
+	state.Files[entry.Identity] = StateFile{Path: expectedRel, Link: file.Link}
+	fmt.Fprintf(out, "linked-file: %s\n", filePath)
+	return nil
+}
+
+func relativeSymlinkTarget(linkPath string, targetPath string) (string, error) {
+	fromDir := filepath.Dir(linkPath)
+	if fromDir == "." {
+		fromDir = ""
+	}
+	rel, err := filepath.Rel(fromDir, targetPath)
+	if err != nil {
+		return "", err
+	}
+	return filepath.ToSlash(rel), nil
 }
 
 func fetchFileContent(src string) ([]byte, error) {
@@ -1852,7 +2073,7 @@ func fileChanged(oldModel *Model, newModel *Model) map[string]bool {
 		newEntry := newModel.Files[newPath]
 		oldFile := oldEntry.File
 		newFile := newEntry.File
-		if oldFile.Src != newFile.Src || oldFile.Description != newFile.Description || oldFile.Executable != newFile.Executable || !reflect.DeepEqual(oldEntry.Conditions, newEntry.Conditions) {
+		if oldFile.Src != newFile.Src || oldFile.Link != newFile.Link || oldFile.Description != newFile.Description || oldFile.Executable != newFile.Executable || !reflect.DeepEqual(oldEntry.Conditions, newEntry.Conditions) {
 			result[identity] = true
 		}
 	}

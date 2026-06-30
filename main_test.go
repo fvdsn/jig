@@ -460,6 +460,93 @@ func TestParseFileSrc(t *testing.T) {
 	}
 }
 
+func TestFileLinkValidationAndOrdering(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 1,
+  "tree": {
+    "scripts/dev.sh": {
+      "$file": {
+        "id": "dev-script",
+        "src": "git:git@example.com:config.git#scripts/dev.sh"
+      }
+    },
+    "bin/dev": {
+      "$file": {
+        "id": "dev-command",
+        "link": "scripts/dev.sh"
+      }
+    }
+  }
+}`)
+	result := validateDefinition(def)
+	if len(result.Errors) > 0 {
+		t.Fatalf("unexpected validation errors: %#v", result.Errors)
+	}
+	model, err := flattenDefinition(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := resolvePlan(&model, []string{}, planOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := map[string]bool{"scripts/dev.sh": true, "bin/dev": true}
+	ordered := orderFilesForApply(&model, active)
+	want := []string{"scripts/dev.sh", "bin/dev"}
+	if !reflect.DeepEqual(ordered, want) {
+		t.Fatalf("ordered files = %#v, want %#v", ordered, want)
+	}
+	_ = plan
+}
+
+func TestFileLinkRequiresDefinedTarget(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 1,
+  "tree": {
+    "bin/dev": {
+      "$file": {
+        "id": "dev-command",
+        "link": "scripts/dev.sh"
+      }
+    }
+  }
+}`)
+	result := validateDefinition(def)
+	if len(result.Errors) == 0 {
+		t.Fatal("expected validation error")
+	}
+}
+
+func TestEnsureLinkFileCreatesRelativeSymlink(t *testing.T) {
+	root := t.TempDir()
+	targetPath := filepath.Join(root, "scripts", "dev.sh")
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetPath, []byte("script"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	state := emptyState()
+	model := Model{Repos: map[string]RepoEntry{}, Groups: map[string]GroupEntry{}, Files: map[string]FileEntry{
+		"scripts/dev.sh": {Path: "scripts/dev.sh", Identity: "dev-script", File: File{Src: "git:git@example.com:config.git#scripts/dev.sh"}},
+		"bin/dev":        {Path: "bin/dev", Identity: "dev-command", File: File{Link: "scripts/dev.sh"}},
+	}}
+
+	if err := ensureFile(ioDiscard{}, root, &model, &state, "bin/dev", true); err != nil {
+		t.Fatal(err)
+	}
+	target, err := os.Readlink(filepath.Join(root, "bin", "dev"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != "../scripts/dev.sh" {
+		t.Fatalf("symlink target = %q", target)
+	}
+	if state.Files["dev-command"].Link != "scripts/dev.sh" {
+		t.Fatalf("state = %#v", state.Files["dev-command"])
+	}
+}
+
 func TestEnsureFilePreservesLocalModification(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "scripts", "dev.sh")
