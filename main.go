@@ -371,7 +371,7 @@ func cmdInfo(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	path := args[0]
+	path := normalizeCLIPath(args[0])
 	if err := validateSafePath(path); err != nil {
 		return err
 	}
@@ -525,7 +525,7 @@ func cmdDeps(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	path := parsed.Positionals[0]
+	path := normalizeCLIPath(parsed.Positionals[0])
 	if err := validateSafePath(path); err != nil {
 		return err
 	}
@@ -557,7 +557,7 @@ func cmdClone(args []string, out io.Writer) error {
 	}
 	path := ""
 	if len(parsed.Positionals) == 1 {
-		path = parsed.Positionals[0]
+		path = normalizeCLIPath(parsed.Positionals[0])
 	}
 	if err := clonePathIntoWorkspace(out, ws, path, parsed.Flags["--with-optional-deps"], parsed.Flags["--archived"]); err != nil {
 		return err
@@ -569,6 +569,7 @@ func clonePathIntoWorkspace(out io.Writer, ws *Workspace, path string, includeOp
 	roots := sortedRepoPaths(&ws.Model)
 	explicitFiles := sortedFilePaths(&ws.Model)
 	if path != "" {
+		path = normalizeCLIPath(path)
 		if err := validateSafePath(path); err != nil {
 			return err
 		}
@@ -608,7 +609,7 @@ func cmdSync(args []string, out io.Writer) error {
 
 	path := ""
 	if len(parsed.Positionals) == 1 {
-		path = parsed.Positionals[0]
+		path = normalizeCLIPath(parsed.Positionals[0])
 	}
 	return syncWorkspace(out, ws, path, parsed.Flags["--with-optional-deps"], parsed.Flags["--archived"])
 }
@@ -617,6 +618,7 @@ func syncWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bo
 	var roots []string
 	var explicitFiles []string
 	if path != "" {
+		path = normalizeCLIPath(path)
 		if err := validateSafePath(path); err != nil {
 			return err
 		}
@@ -711,7 +713,7 @@ func cmdPull(args []string, out io.Writer) error {
 	}
 	filter := ""
 	if len(args) == 1 {
-		filter = args[0]
+		filter = normalizeCLIPath(args[0])
 		if err := validateSafePath(filter); err != nil {
 			return err
 		}
@@ -750,7 +752,7 @@ func cmdStatus(args []string, out io.Writer) error {
 	}
 	filter := ""
 	if len(args) == 1 {
-		filter = args[0]
+		filter = normalizeCLIPath(args[0])
 		if err := validateSafePath(filter); err != nil {
 			return err
 		}
@@ -1307,6 +1309,10 @@ func validateSafePath(path string) error {
 		}
 	}
 	return nil
+}
+
+func normalizeCLIPath(path string) string {
+	return strings.TrimRight(path, "/")
 }
 
 type fileSrc struct {

@@ -38,6 +38,15 @@ func TestPathMatchesSegmentBoundary(t *testing.T) {
 	}
 }
 
+func TestNormalizeCLIPathTrimsTrailingSlashes(t *testing.T) {
+	if got := normalizeCLIPath("platform/"); got != "platform" {
+		t.Fatalf("normalizeCLIPath trailing slash = %q", got)
+	}
+	if got := normalizeCLIPath("codabox/sourcery///"); got != "codabox/sourcery" {
+		t.Fatalf("normalizeCLIPath multiple trailing slashes = %q", got)
+	}
+}
+
 func TestFlattenDefinitionWithSlashShorthandAndFile(t *testing.T) {
 	def := testDefinition(t, `{
   "version": 1,
@@ -232,6 +241,29 @@ func TestCloneAllRootsIncludeAllRepositories(t *testing.T) {
 	want := []string{"platform/auth", "services/checkout"}
 	if !reflect.DeepEqual(plan.Repos, want) {
 		t.Fatalf("clone-all repos = %#v, want %#v", plan.Repos, want)
+	}
+}
+
+func TestTrailingSlashPathMatchesGroup(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 1,
+  "tree": {
+    "platform/auth": {
+      "$repo": { "git": "git@example.com:auth.git" }
+    }
+  }
+}`)
+	model, err := flattenDefinition(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := normalizeCLIPath("platform/")
+	if err := validateSafePath(path); err != nil {
+		t.Fatal(err)
+	}
+	roots := matchingRepos(&model, path)
+	if !reflect.DeepEqual(roots, []string{"platform/auth"}) {
+		t.Fatalf("roots = %#v", roots)
 	}
 }
 
