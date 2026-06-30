@@ -873,9 +873,11 @@ Optional dependencies should be included only when requested.
 
 If `path` is omitted, clones all repositories and active files.
 
-If `path` is provided, clones repositories matching that path and all non-optional dependencies.
+If `path` is provided, clones repositories and files matching that path. Matching repositories include all non-optional dependencies. Matching files are materialized directly.
 
 If `path` matches multiple repositories, Jig clones all matching repositories and their deduplicated dependencies.
+
+If `path` matches symlink files, Jig also materializes their target files.
 
 Jig should also write active files whose `onlyWhen` condition matches the resulting active repository set.
 
@@ -889,7 +891,9 @@ Clones all repositories, or repositories matching a path, including non-optional
 
 Refreshes `.jig.json` from its configured `source` when present, then applies the current definition to the local checkout shape.
 
-If `path` is provided, Jig syncs repositories matching that path plus their non-optional dependencies, then writes active files.
+If `path` is provided, Jig syncs repositories and files matching that path. Matching repositories include non-optional dependencies. Matching files are materialized directly.
+
+If `path` matches symlink files, Jig also materializes their target files.
 
 If a matching repository has optional dependencies that are already installed locally, those optional dependencies are included in the sync set.
 

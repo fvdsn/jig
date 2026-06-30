@@ -193,7 +193,7 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "  deps <path>")
 	fmt.Fprintln(out, "      Show expanded recursive dependencies for repositories matching a path.")
 	fmt.Fprintln(out, "  clone [path] [--with-optional-deps]")
-	fmt.Fprintln(out, "      Clone all repositories, or repositories matching a path, plus dependencies and active files.")
+	fmt.Fprintln(out, "      Clone/materialize all entries, or repositories/files matching a path.")
 	fmt.Fprintln(out, "  sync [path] [--with-optional-deps]")
 	fmt.Fprintln(out, "      Refresh .jig.json from source when configured, then sync local repos/files.")
 	fmt.Fprintln(out, "  pull [path]")
@@ -548,22 +548,25 @@ func cmdClone(args []string, out io.Writer) error {
 
 func clonePathIntoWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bool) error {
 	roots := sortedRepoPaths(&ws.Model)
+	explicitFiles := sortedFilePaths(&ws.Model)
 	if path != "" {
 		if err := validateSafePath(path); err != nil {
 			return err
 		}
 		roots = matchingRepos(&ws.Model, path)
+		explicitFiles = matchingFiles(&ws.Model, path)
 	}
-	if len(roots) == 0 {
+	if len(roots) == 0 && len(explicitFiles) == 0 {
 		if path == "" {
-			return errors.New("no repositories defined")
+			return errors.New("no repositories or files defined")
 		}
-		return fmt.Errorf("no repositories match %q", path)
+		return fmt.Errorf("no repositories or files match %q", path)
 	}
 	plan, err := resolvePlan(&ws.Model, roots, planOptions{IncludeOptional: includeOptional, IncludeRoots: true, Installed: installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State)})
 	if err != nil {
 		return err
 	}
+	plan = includeExplicitFiles(&ws.Model, plan, explicitFiles)
 	applyPlan(out, ws, plan, false)
 	return nil
 }
@@ -636,13 +639,15 @@ func refreshWorkspaceDefinition(out io.Writer, ws *Workspace) error {
 
 func syncWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bool) error {
 	var roots []string
+	var explicitFiles []string
 	if path != "" {
 		if err := validateSafePath(path); err != nil {
 			return err
 		}
 		roots = matchingRepos(&ws.Model, path)
-		if len(roots) == 0 {
-			return fmt.Errorf("no repositories match %q", path)
+		explicitFiles = matchingFiles(&ws.Model, path)
+		if len(roots) == 0 && len(explicitFiles) == 0 {
+			return fmt.Errorf("no repositories or files match %q", path)
 		}
 	} else {
 		roots = installedDefinedRepos(ws.Root, &ws.Model, &ws.State)
@@ -652,9 +657,33 @@ func syncWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bo
 	if err != nil {
 		return err
 	}
+	plan = includeExplicitFiles(&ws.Model, plan, explicitFiles)
 	applyPlan(out, ws, plan, true)
 	reportStale(out, ws.Root, &ws.Model, &ws.State)
 	return saveState(ws.Root, ws.State)
+}
+
+func includeExplicitFiles(model *Model, base plan, files []string) plan {
+	active := map[string]bool{}
+	for _, filePath := range base.Files {
+		active[filePath] = true
+	}
+	var add func(string)
+	add = func(filePath string) {
+		entry, ok := model.Files[filePath]
+		if !ok {
+			return
+		}
+		if entry.File.Link != "" {
+			add(entry.File.Link)
+		}
+		active[filePath] = true
+	}
+	for _, filePath := range files {
+		add(filePath)
+	}
+	base.Files = orderFilesForApply(model, active)
+	return base
 }
 
 func applyPlan(out io.Writer, ws *Workspace, plan plan, allowMove bool) {

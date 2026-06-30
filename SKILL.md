@@ -372,6 +372,12 @@ Clone a path and its dependencies:
 jig clone services/checkout
 ```
 
+Clone or materialize files under a path:
+
+```sh
+jig clone .agents
+```
+
 Clone with optional dependencies:
 
 ```sh

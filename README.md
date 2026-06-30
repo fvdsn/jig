@@ -85,7 +85,7 @@ jig status [path]
 - `.jig/state.json` is local state used to track installed repositories and generated files.
 - Paths use workspace-style `/` separators, such as `services/checkout` or `platform`.
 - A path may refer to one repository or a group of repositories.
-- `jig clone [path]` clones all repositories, or matching repositories and their dependencies when a path is provided.
+- `jig clone [path]` clones/materializes all entries, or matching repositories/files when a path is provided.
 - `jig sync [path]` refreshes `.jig.json` from its source when configured, then updates the local checkout shape without deleting local repositories.
 - `jig pull [path]` runs `git pull` in installed repositories.
 

@@ -499,6 +499,35 @@ func TestFileLinkValidationAndOrdering(t *testing.T) {
 	_ = plan
 }
 
+func TestIncludeExplicitFilesAddsRequestedFilesAndLinkTargets(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 1,
+  "tree": {
+    "scripts/dev.sh": {
+      "$file": {
+        "id": "dev-script",
+        "src": "git:git@example.com:config.git#scripts/dev.sh"
+      }
+    },
+    "bin/dev": {
+      "$file": {
+        "id": "dev-command",
+        "link": "scripts/dev.sh"
+      }
+    }
+  }
+}`)
+	model, err := flattenDefinition(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := includeExplicitFiles(&model, plan{}, []string{"bin/dev"})
+	want := []string{"scripts/dev.sh", "bin/dev"}
+	if !reflect.DeepEqual(plan.Files, want) {
+		t.Fatalf("files = %#v, want %#v", plan.Files, want)
+	}
+}
+
 func TestFileLinkRequiresDefinedTarget(t *testing.T) {
 	def := testDefinition(t, `{
   "version": 1,
