@@ -714,13 +714,14 @@ Updating the definition and updating repository contents are separate operations
 
 ```text
 jig update       updates .jig.json
+jig update --sync updates .jig.json, then syncs the workspace
 jig pull [path]  pulls existing local Git repositories
 jig sync [path]  applies the current .jig.json to the local checkout shape
 ```
 
 `jig update` should fetch the latest definition from `source`, validate it, compare it to the current local `.jig.json`, and replace the local `.jig.json` only if validation succeeds.
 
-`jig update` should not clone repositories, pull repositories, delete repositories, move directories, write files, or update Git remotes.
+`jig update` should not clone repositories, pull repositories, delete repositories, move directories, write files, or update Git remotes unless `--sync` is provided.
 
 When comparing the current and incoming definitions, Jig should use repository and file identities.
 
@@ -753,6 +754,7 @@ jig clone [path]
 jig pull [path]
 jig status [path]
 jig update
+jig update --sync
 jig sync [path]
 jig clone [path] --with-optional-deps
 jig sync [path] --with-optional-deps
@@ -958,6 +960,14 @@ The command should:
 - Replace `.jig.json` only if the incoming definition is valid.
 
 The command should not change local repository checkouts, write files, or update `.jig/state.json`.
+
+### `jig update --sync`
+
+Updates `.jig.json` from its configured `source`, then applies the updated definition with the same behavior as `jig sync`.
+
+The sync step should run only after the incoming definition has been fetched, validated, and written successfully.
+
+`jig update --sync --with-optional-deps` includes optional dependencies during the sync step.
 
 ## Open Questions
 

@@ -78,6 +78,7 @@ jig sync [path]
 jig pull [path]
 jig status [path]
 jig update
+jig update --sync
 ```
 
 ## Concepts
@@ -90,6 +91,7 @@ jig update
 - `jig sync [path]` updates the local checkout shape without deleting local repositories.
 - `jig pull [path]` runs `git pull` in installed repositories.
 - `jig update` refreshes `.jig.json` from its configured source.
+- `jig update --sync` refreshes `.jig.json`, then syncs the workspace.
 
 ## Remote Jig File
 

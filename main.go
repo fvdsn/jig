@@ -168,7 +168,7 @@ func run(args []string, out io.Writer, errOut io.Writer) error {
 	case "status":
 		return cmdStatus(args[1:], out)
 	case "update":
-		return cmdUpdate(out)
+		return cmdUpdate(args[1:], out)
 	case "help", "--help", "-h":
 		printUsage(out)
 		return nil
@@ -204,6 +204,8 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Show installed, missing, moved, dirty, stale, modified, and remote-changed entries.")
 	fmt.Fprintln(out, "  update")
 	fmt.Fprintln(out, "      Update .jig.json from its configured source without changing local checkouts.")
+	fmt.Fprintln(out, "  update --sync [--with-optional-deps]")
+	fmt.Fprintln(out, "      Update .jig.json, then sync the workspace.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Paths identify repositories, files, or groups using slash paths such as services/checkout or platform.")
 }
@@ -585,9 +587,16 @@ func cmdSync(args []string, out io.Writer) error {
 		return err
 	}
 
-	var roots []string
+	path := ""
 	if len(parsed.Positionals) == 1 {
-		path := parsed.Positionals[0]
+		path = parsed.Positionals[0]
+	}
+	return syncWorkspace(out, ws, path, parsed.Flags["--with-optional-deps"])
+}
+
+func syncWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bool) error {
+	var roots []string
+	if path != "" {
 		if err := validateSafePath(path); err != nil {
 			return err
 		}
@@ -599,7 +608,7 @@ func cmdSync(args []string, out io.Writer) error {
 		roots = installedDefinedRepos(ws.Root, &ws.Model, &ws.State)
 	}
 
-	plan, err := resolvePlan(&ws.Model, roots, planOptions{IncludeOptional: parsed.Flags["--with-optional-deps"], IncludeInstalledOptional: true, IncludeRoots: true, Installed: installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State)})
+	plan, err := resolvePlan(&ws.Model, roots, planOptions{IncludeOptional: includeOptional, IncludeInstalledOptional: true, IncludeRoots: true, Installed: installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State)})
 	if err != nil {
 		return err
 	}
@@ -806,8 +815,15 @@ func cmdStatus(args []string, out io.Writer) error {
 	return nil
 }
 
-func cmdUpdate(out io.Writer) error {
-	ws, err := loadWorkspace(false)
+func cmdUpdate(args []string, out io.Writer) error {
+	parsed, err := parseArgs(args, nil, map[string]bool{"--sync": true, "--with-optional-deps": true})
+	if err != nil {
+		return err
+	}
+	if len(parsed.Positionals) > 0 {
+		return errors.New("usage: jig update [--sync] [--with-optional-deps]")
+	}
+	ws, err := loadWorkspace(parsed.Flags["--sync"])
 	if err != nil {
 		return err
 	}
@@ -846,7 +862,15 @@ func cmdUpdate(out io.Writer) error {
 		return err
 	}
 	printDefinitionChanges(out, &ws.Model, &incomingModel)
-	return writeJSON(filepath.Join(ws.Root, definitionFile), incoming)
+	if err := writeJSON(filepath.Join(ws.Root, definitionFile), incoming); err != nil {
+		return err
+	}
+	if parsed.Flags["--sync"] {
+		ws.Def = *incoming
+		ws.Model = incomingModel
+		return syncWorkspace(out, ws, "", parsed.Flags["--with-optional-deps"])
+	}
+	return nil
 }
 
 func validateDefinition(def *Definition) validationResult {
