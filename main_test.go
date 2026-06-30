@@ -712,6 +712,16 @@ func TestParseInitArgsCloneWithPath(t *testing.T) {
 	}
 }
 
+func TestParseUpdateFlags(t *testing.T) {
+	parsed, err := parseArgs([]string{"--sync", "--with-optional-deps"}, nil, map[string]bool{"--sync": true, "--with-optional-deps": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !parsed.Flags["--sync"] || !parsed.Flags["--with-optional-deps"] {
+		t.Fatalf("unexpected update flags: %#v", parsed.Flags)
+	}
+}
+
 type ioDiscard struct{}
 
 func (ioDiscard) Write(p []byte) (int, error) { return len(p), nil }

@@ -167,6 +167,8 @@ func run(args []string, out io.Writer, errOut io.Writer) error {
 		return cmdPull(args[1:], out)
 	case "status":
 		return cmdStatus(args[1:], out)
+	case "update":
+		return cmdUpdate(args[1:], out)
 	case "help", "--help", "-h":
 		printUsage(out)
 		return nil
@@ -195,11 +197,15 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "  clone [path] [--with-optional-deps]")
 	fmt.Fprintln(out, "      Clone/materialize all entries, or repositories/files matching a path.")
 	fmt.Fprintln(out, "  sync [path] [--with-optional-deps]")
-	fmt.Fprintln(out, "      Refresh .jig.json from source when configured, then sync local repos/files.")
+	fmt.Fprintln(out, "      Clone missing repos, move renamed repos/files, update origins/files, and refresh local state.")
 	fmt.Fprintln(out, "  pull [path]")
 	fmt.Fprintln(out, "      Run git pull in installed repositories matching a path or group.")
 	fmt.Fprintln(out, "  status [path]")
 	fmt.Fprintln(out, "      Show installed, missing, moved, dirty, stale, modified, and remote-changed entries.")
+	fmt.Fprintln(out, "  update")
+	fmt.Fprintln(out, "      Update .jig.json from its configured source without changing local checkouts.")
+	fmt.Fprintln(out, "  update --sync [--with-optional-deps]")
+	fmt.Fprintln(out, "      Update .jig.json, then sync the workspace.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Paths identify repositories, files, or groups using slash paths such as services/checkout or platform.")
 }
@@ -583,58 +589,12 @@ func cmdSync(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if err := refreshWorkspaceDefinition(out, ws); err != nil {
-		return err
-	}
 
 	path := ""
 	if len(parsed.Positionals) == 1 {
 		path = parsed.Positionals[0]
 	}
 	return syncWorkspace(out, ws, path, parsed.Flags["--with-optional-deps"])
-}
-
-func refreshWorkspaceDefinition(out io.Writer, ws *Workspace) error {
-	if ws.Def.Source == nil {
-		return nil
-	}
-	source := *ws.Def.Source
-	if source.Type != "git" {
-		return fmt.Errorf("unsupported source type %q", source.Type)
-	}
-	if source.Path == "" {
-		source.Path = definitionFile
-	}
-	if err := validateSafePath(source.Path); err != nil {
-		return fmt.Errorf("invalid source path: %s", err)
-	}
-	if source.Ref == "" {
-		ref, err := discoverDefaultBranch(source.URL)
-		if err != nil {
-			return fmt.Errorf("could not determine default branch for %s", source.URL)
-		}
-		source.Ref = ref
-	}
-	incoming, err := fetchDefinition(source.URL, source.Ref, source.Path)
-	if err != nil {
-		return err
-	}
-	incoming.Source = &source
-	validation := validateDefinition(incoming)
-	if len(validation.Errors) > 0 {
-		return validation.asError("invalid incoming definition")
-	}
-	incomingModel, err := flattenDefinition(incoming)
-	if err != nil {
-		return err
-	}
-	printDefinitionChanges(out, &ws.Model, &incomingModel)
-	if err := writeJSON(filepath.Join(ws.Root, definitionFile), incoming); err != nil {
-		return err
-	}
-	ws.Def = *incoming
-	ws.Model = incomingModel
-	return nil
 }
 
 func syncWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bool) error {
@@ -883,6 +843,64 @@ func cmdStatus(args []string, out io.Writer) error {
 	printGroup(out, "modified", modified)
 	printGroup(out, "conflicts", conflicts)
 	printGroup(out, "stale", stale)
+	return nil
+}
+
+func cmdUpdate(args []string, out io.Writer) error {
+	parsed, err := parseArgs(args, nil, map[string]bool{"--sync": true, "--with-optional-deps": true})
+	if err != nil {
+		return err
+	}
+	if len(parsed.Positionals) > 0 {
+		return errors.New("usage: jig update [--sync] [--with-optional-deps]")
+	}
+	ws, err := loadWorkspace(parsed.Flags["--sync"])
+	if err != nil {
+		return err
+	}
+	if ws.Def.Source == nil {
+		return errors.New(".jig.json has no source")
+	}
+	source := *ws.Def.Source
+	if source.Type != "git" {
+		return fmt.Errorf("unsupported source type %q", source.Type)
+	}
+	if source.Path == "" {
+		source.Path = definitionFile
+	}
+	if err := validateSafePath(source.Path); err != nil {
+		return fmt.Errorf("invalid source path: %s", err)
+	}
+	if source.Ref == "" {
+		ref, err := discoverDefaultBranch(source.URL)
+		if err != nil {
+			return fmt.Errorf("could not determine default branch for %s", source.URL)
+		}
+		source.Ref = ref
+	}
+
+	incoming, err := fetchDefinition(source.URL, source.Ref, source.Path)
+	if err != nil {
+		return err
+	}
+	incoming.Source = &source
+	validation := validateDefinition(incoming)
+	if len(validation.Errors) > 0 {
+		return validation.asError("invalid incoming definition")
+	}
+	incomingModel, err := flattenDefinition(incoming)
+	if err != nil {
+		return err
+	}
+	printDefinitionChanges(out, &ws.Model, &incomingModel)
+	if err := writeJSON(filepath.Join(ws.Root, definitionFile), incoming); err != nil {
+		return err
+	}
+	if parsed.Flags["--sync"] {
+		ws.Def = *incoming
+		ws.Model = incomingModel
+		return syncWorkspace(out, ws, "", parsed.Flags["--with-optional-deps"])
+	}
 	return nil
 }
 

@@ -708,18 +708,20 @@ Jig should never overwrite local file modifications.
 
 `.jig.json` is the active local definition file.
 
-If `.jig.json` contains a `source` object, Jig refreshes it from that source as part of `jig sync`.
+If `.jig.json` contains a `source` object, Jig can update it from that source.
 
-Syncing and pulling repository contents are separate operations:
+Updating the definition and updating repository contents are separate operations:
 
 ```text
-jig sync [path]  refreshes .jig.json when a source exists, then applies it
+jig update       updates .jig.json
+jig update --sync updates .jig.json, then syncs the workspace
 jig pull [path]  pulls existing local Git repositories
+jig sync [path]  applies the current .jig.json to the local checkout shape
 ```
 
-`jig sync` should fetch the latest definition from `source`, validate it, compare it to the current local `.jig.json`, and replace the local `.jig.json` only if validation succeeds.
+`jig update` should fetch the latest definition from `source`, validate it, compare it to the current local `.jig.json`, and replace the local `.jig.json` only if validation succeeds.
 
-After the definition is updated, `jig sync` applies the current definition to the local checkout shape.
+`jig update` should not clone repositories, pull repositories, delete repositories, move directories, write files, or update Git remotes unless `--sync` is provided.
 
 When comparing the current and incoming definitions, Jig should use repository and file identities.
 
@@ -751,6 +753,8 @@ jig deps <path>
 jig clone [path]
 jig pull [path]
 jig status [path]
+jig update
+jig update --sync
 jig sync [path]
 jig clone [path] --with-optional-deps
 jig sync [path] --with-optional-deps
@@ -889,7 +893,7 @@ Clones all repositories, or repositories matching a path, including non-optional
 
 ### `jig sync [path]`
 
-Refreshes `.jig.json` from its configured `source` when present, then applies the current definition to the local checkout shape.
+Applies the current `.jig.json` to the local checkout shape.
 
 If `path` is provided, Jig syncs repositories and files matching that path. Matching repositories include non-optional dependencies. Matching files are materialized directly.
 
@@ -947,6 +951,27 @@ Status should identify:
 
 The initial implementation may omit ahead/behind information if computing it would require network access. Local-only status should not fetch from remotes.
 
+### `jig update`
+
+Updates `.jig.json` from its configured `source`.
+
+The command should:
+
+- Fetch the incoming definition.
+- Validate the incoming definition.
+- Compare the current and incoming definitions by repository and file identity.
+- Report added, removed, moved, and changed repositories and files.
+- Replace `.jig.json` only if the incoming definition is valid.
+
+The command should not change local repository checkouts, write files, or update `.jig/state.json`.
+
+### `jig update --sync`
+
+Updates `.jig.json` from its configured `source`, then applies the updated definition with the same behavior as `jig sync`.
+
+The sync step should run only after the incoming definition has been fetched, validated, and written successfully.
+
+`jig update --sync --with-optional-deps` includes optional dependencies during the sync step.
 
 ## Open Questions
 
