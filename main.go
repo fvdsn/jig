@@ -84,6 +84,12 @@ type Model struct {
 type NodeQuery struct {
 	Path            string
 	IncludeArchived bool
+	Installed       InstalledNodes
+}
+
+type InstalledNodes struct {
+	Repos map[string]bool
+	Files map[string]bool
 }
 
 type NodeSelection struct {
@@ -206,21 +212,21 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Validate the current workspace .jig.json file.")
 	fmt.Fprintln(out, "  list [path] [--archived]")
 	fmt.Fprintln(out, "      List repositories and files defined in .jig.json.")
-	fmt.Fprintln(out, "  info <path>")
+	fmt.Fprintln(out, "  info <path> [--archived]")
 	fmt.Fprintln(out, "      Show repository, file, or group metadata.")
-	fmt.Fprintln(out, "  deps <path>")
+	fmt.Fprintln(out, "  deps <path> [--with-optional-deps] [--archived]")
 	fmt.Fprintln(out, "      Show expanded recursive dependencies for repositories matching a path.")
 	fmt.Fprintln(out, "  clone [path] [--with-optional-deps] [--archived]")
 	fmt.Fprintln(out, "      Clone/materialize all entries, or repositories/files matching a path.")
 	fmt.Fprintln(out, "  sync [path] [--with-optional-deps] [--archived]")
 	fmt.Fprintln(out, "      Clone missing repos, move renamed repos/files, update origins/files, and refresh local state.")
-	fmt.Fprintln(out, "  pull [path]")
+	fmt.Fprintln(out, "  pull [path] [--archived]")
 	fmt.Fprintln(out, "      Run git pull in installed repositories matching a path or group.")
 	fmt.Fprintln(out, "  status [path] [--archived]")
 	fmt.Fprintln(out, "      Show installed, missing, moved, dirty, stale, modified, and remote-changed entries.")
 	fmt.Fprintln(out, "  update")
 	fmt.Fprintln(out, "      Update .jig.json from its configured source without changing local checkouts.")
-	fmt.Fprintln(out, "  update --sync [--with-optional-deps] [--archived]")
+	fmt.Fprintln(out, "  update --sync [path] [--with-optional-deps] [--archived]")
 	fmt.Fprintln(out, "      Update .jig.json, then sync the workspace.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Paths identify repositories, files, or groups using slash paths such as services/checkout or platform.")
@@ -233,6 +239,9 @@ func cmdInit(args []string, out io.Writer) error {
 	}
 	if len(parsed.Positionals) == 0 || len(parsed.Positionals) > 2 {
 		return errors.New("usage: jig init <git-url-or-file> [workspace-dir] [--path <path>] [--clone [path]] [--with-optional-deps] [--archived]")
+	}
+	if !parsed.Flags["--clone"] && (parsed.Flags["--with-optional-deps"] || parsed.Flags["--archived"]) {
+		return errors.New("--with-optional-deps and --archived require --clone")
 	}
 
 	sourceArg := parsed.Positionals[0]
@@ -367,7 +376,7 @@ func cmdList(args []string, out io.Writer) error {
 	if len(parsed.Positionals) == 1 {
 		query.Path = parsed.Positionals[0]
 	}
-	selection, err := ws.Model.Select(query)
+	selection, err := ws.Select(query)
 	if err != nil {
 		return err
 	}
@@ -391,14 +400,18 @@ func cmdList(args []string, out io.Writer) error {
 }
 
 func cmdInfo(args []string, out io.Writer) error {
-	if len(args) != 1 {
-		return errors.New("usage: jig info <path>")
+	parsed, err := parseArgs(args, nil, map[string]bool{"--archived": true})
+	if err != nil {
+		return err
+	}
+	if len(parsed.Positionals) != 1 {
+		return errors.New("usage: jig info <path> [--archived]")
 	}
 	ws, err := loadWorkspace(false)
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Model.Select(NodeQuery{Path: args[0], IncludeArchived: true})
+	selection, err := ws.Select(NodeQuery{Path: parsed.Positionals[0], IncludeArchived: parsed.Flags["--archived"]})
 	if err != nil {
 		return err
 	}
@@ -540,18 +553,18 @@ func printDependency(out io.Writer, dep Dependency) {
 }
 
 func cmdDeps(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, nil, map[string]bool{"--with-optional-deps": true})
+	parsed, err := parseArgs(args, nil, map[string]bool{"--with-optional-deps": true, "--archived": true})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) != 1 {
-		return errors.New("usage: jig deps <path> [--with-optional-deps]")
+		return errors.New("usage: jig deps <path> [--with-optional-deps] [--archived]")
 	}
 	ws, err := loadWorkspace(false)
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Model.Select(NodeQuery{Path: parsed.Positionals[0], IncludeArchived: true})
+	selection, err := ws.Select(NodeQuery{Path: parsed.Positionals[0], IncludeArchived: parsed.Flags["--archived"]})
 	if err != nil {
 		return err
 	}
@@ -559,7 +572,14 @@ func cmdDeps(args []string, out io.Writer) error {
 	if len(roots) == 0 {
 		return fmt.Errorf("no repositories match %q", selection.Path)
 	}
-	plan, err := resolvePlan(&ws.Model, roots, planOptions{IncludeOptional: parsed.Flags["--with-optional-deps"], IncludeRoots: false})
+	installed := ws.installedNodes()
+	plan, err := resolvePlan(&ws.Model, roots, planOptions{
+		IncludeOptional: parsed.Flags["--with-optional-deps"],
+		IncludeArchived: parsed.Flags["--archived"],
+		IncludeRoots:    false,
+		Installed:       installed.Repos,
+		InstalledFiles:  installed.Files,
+	})
 	if err != nil {
 		return err
 	}
@@ -592,7 +612,7 @@ func cmdClone(args []string, out io.Writer) error {
 }
 
 func clonePathIntoWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bool, includeArchived bool) error {
-	selection, err := ws.Model.Select(NodeQuery{Path: path, IncludeArchived: true})
+	selection, err := ws.Select(NodeQuery{Path: path, IncludeArchived: includeArchived})
 	if err != nil {
 		return err
 	}
@@ -604,13 +624,20 @@ func clonePathIntoWorkspace(out io.Writer, ws *Workspace, path string, includeOp
 		}
 		return fmt.Errorf("no repositories or files match %q", selection.Path)
 	}
-	plan, err := resolvePlan(&ws.Model, roots, planOptions{IncludeOptional: includeOptional, IncludeArchived: includeArchived, IncludeRoots: true, Installed: installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State)})
+	installed := ws.installedNodes()
+	plan, err := resolvePlan(&ws.Model, roots, planOptions{
+		IncludeOptional: includeOptional,
+		IncludeArchived: includeArchived,
+		IncludeRoots:    true,
+		Installed:       installed.Repos,
+		InstalledFiles:  installed.Files,
+	})
 	if err != nil {
 		return err
 	}
 	plan = includeExplicitFiles(&ws.Model, plan, explicitFiles)
 	if !includeArchived {
-		plan = excludeArchivedFiles(&ws.Model, plan)
+		plan = excludeArchivedFiles(&ws.Model, plan, installed.Files)
 	}
 	applyPlan(out, ws, plan, false)
 	return nil
@@ -640,7 +667,7 @@ func syncWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bo
 	var roots []string
 	var explicitFiles []string
 	if path != "" {
-		selection, err := ws.Model.Select(NodeQuery{Path: path, IncludeArchived: true})
+		selection, err := ws.Select(NodeQuery{Path: path, IncludeArchived: includeArchived})
 		if err != nil {
 			return err
 		}
@@ -653,13 +680,21 @@ func syncWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bo
 		roots = installedDefinedRepos(ws.Root, &ws.Model, &ws.State)
 	}
 
-	plan, err := resolvePlan(&ws.Model, roots, planOptions{IncludeOptional: includeOptional, IncludeInstalledOptional: true, IncludeArchived: includeArchived, IncludeRoots: true, Installed: installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State)})
+	installed := ws.installedNodes()
+	plan, err := resolvePlan(&ws.Model, roots, planOptions{
+		IncludeOptional:          includeOptional,
+		IncludeInstalledOptional: true,
+		IncludeArchived:          includeArchived,
+		IncludeRoots:             true,
+		Installed:                installed.Repos,
+		InstalledFiles:           installed.Files,
+	})
 	if err != nil {
 		return err
 	}
 	plan = includeExplicitFiles(&ws.Model, plan, explicitFiles)
 	if !includeArchived {
-		plan = excludeArchivedFiles(&ws.Model, plan)
+		plan = excludeArchivedFiles(&ws.Model, plan, installed.Files)
 	}
 	applyPlan(out, ws, plan, true)
 	reportStale(out, ws.Root, &ws.Model, &ws.State)
@@ -689,11 +724,11 @@ func includeExplicitFiles(model *Model, base plan, files []string) plan {
 	return base
 }
 
-func excludeArchivedFiles(model *Model, base plan) plan {
+func excludeArchivedFiles(model *Model, base plan, installed map[string]bool) plan {
 	active := map[string]bool{}
 	for _, filePath := range base.Files {
 		entry, ok := model.Files[filePath]
-		if ok && !entry.File.Archived {
+		if ok && (!entry.File.Archived || installed[entry.Identity]) {
 			active[filePath] = true
 		}
 	}
@@ -726,18 +761,22 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, allowMove bool) {
 }
 
 func cmdPull(args []string, out io.Writer) error {
-	if len(args) > 1 {
-		return errors.New("usage: jig pull [path]")
+	parsed, err := parseArgs(args, nil, map[string]bool{"--archived": true})
+	if err != nil {
+		return err
+	}
+	if len(parsed.Positionals) > 1 {
+		return errors.New("usage: jig pull [path] [--archived]")
 	}
 	ws, err := loadWorkspace(false)
 	if err != nil {
 		return err
 	}
-	query := NodeQuery{IncludeArchived: true}
-	if len(args) == 1 {
-		query.Path = args[0]
+	query := NodeQuery{IncludeArchived: parsed.Flags["--archived"]}
+	if len(parsed.Positionals) == 1 {
+		query.Path = parsed.Positionals[0]
 	}
-	selection, err := ws.Model.Select(query)
+	selection, err := ws.Select(query)
 	if err != nil {
 		return err
 	}
@@ -779,13 +818,13 @@ func cmdStatus(args []string, out io.Writer) error {
 	if len(parsed.Positionals) == 1 {
 		query.Path = parsed.Positionals[0]
 	}
-	selection, err := ws.Model.Select(query)
+	selection, err := ws.Select(query)
 	if err != nil {
 		return err
 	}
 
-	installedIDs := installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State)
-	activeFiles := activeFilesForRepoSet(&ws.Model, map[string]bool{}, installedIDs, parsed.Flags["--archived"])
+	installedNodes := ws.installedNodes()
+	activeFiles := activeFilesForRepoSet(&ws.Model, map[string]bool{}, installedNodes.Repos, installedNodes.Files, parsed.Flags["--archived"])
 
 	var installed []string
 	var missing []string
@@ -915,8 +954,11 @@ func cmdUpdate(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if len(parsed.Positionals) > 0 {
-		return errors.New("usage: jig update [--sync] [--with-optional-deps] [--archived]")
+	if len(parsed.Positionals) > 1 || len(parsed.Positionals) == 1 && !parsed.Flags["--sync"] {
+		return errors.New("usage: jig update | jig update --sync [path] [--with-optional-deps] [--archived]")
+	}
+	if !parsed.Flags["--sync"] && (parsed.Flags["--with-optional-deps"] || parsed.Flags["--archived"]) {
+		return errors.New("--with-optional-deps and --archived require --sync")
 	}
 	ws, err := loadWorkspace(parsed.Flags["--sync"])
 	if err != nil {
@@ -963,7 +1005,11 @@ func cmdUpdate(args []string, out io.Writer) error {
 	if parsed.Flags["--sync"] {
 		ws.Def = *incoming
 		ws.Model = incomingModel
-		return syncWorkspace(out, ws, "", parsed.Flags["--with-optional-deps"], parsed.Flags["--archived"])
+		path := ""
+		if len(parsed.Positionals) == 1 {
+			path = parsed.Positionals[0]
+		}
+		return syncWorkspace(out, ws, path, parsed.Flags["--with-optional-deps"], parsed.Flags["--archived"])
 	}
 	return nil
 }
@@ -1422,6 +1468,7 @@ type planOptions struct {
 	IncludeArchived          bool
 	IncludeRoots             bool
 	Installed                map[string]bool
+	InstalledFiles           map[string]bool
 }
 
 type plan struct {
@@ -1432,6 +1479,9 @@ type plan struct {
 func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
 	if opts.Installed == nil {
 		opts.Installed = map[string]bool{}
+	}
+	if opts.InstalledFiles == nil {
+		opts.InstalledFiles = map[string]bool{}
 	}
 	active := map[string]bool{}
 	rootIDs := map[string]bool{}
@@ -1478,16 +1528,16 @@ func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
 		}
 	}
 
-	activeFilesSet := activeFilesForRepoSet(model, active, opts.Installed, opts.IncludeArchived)
+	activeFilesSet := activeFilesForRepoSet(model, active, opts.Installed, opts.InstalledFiles, opts.IncludeArchived)
 	return plan{Repos: sortedKeys(active), Files: orderFilesForApply(model, activeFilesSet)}, nil
 }
 
 func repoArchived(entry RepoEntry, opts planOptions) bool {
-	return entry.Repo.Archived && !opts.IncludeArchived
+	return entry.Repo.Archived && !opts.IncludeArchived && !opts.Installed[entry.Identity]
 }
 
-func fileArchived(entry FileEntry, includeArchived bool) bool {
-	return entry.File.Archived && !includeArchived
+func fileArchived(entry FileEntry, installed map[string]bool, includeArchived bool) bool {
+	return entry.File.Archived && !includeArchived && !installed[entry.Identity]
 }
 
 func orderFilesForApply(model *Model, active map[string]bool) []string {
@@ -1550,11 +1600,7 @@ func addDependencies(model *Model, repoPath string, active map[string]bool, opts
 	return changed, nil
 }
 
-func activeFiles(model *Model, installed map[string]bool) map[string]bool {
-	return activeFilesForRepoSet(model, map[string]bool{}, installed, true)
-}
-
-func activeFilesForRepoSet(model *Model, activeRepos map[string]bool, installed map[string]bool, includeArchived bool) map[string]bool {
+func activeFilesForRepoSet(model *Model, activeRepos map[string]bool, installedRepos map[string]bool, installedFiles map[string]bool, includeArchived bool) map[string]bool {
 	files := map[string]bool{}
 	changed := true
 	for changed {
@@ -1564,10 +1610,10 @@ func activeFilesForRepoSet(model *Model, activeRepos map[string]bool, installed 
 				continue
 			}
 			entry := model.Files[filePath]
-			if fileArchived(entry, includeArchived) {
+			if fileArchived(entry, installedFiles, includeArchived) {
 				continue
 			}
-			if len(entry.Conditions) > 0 && !conditionsMatch(entry.Conditions, activeRepos, installed, model) {
+			if len(entry.Conditions) > 0 && !conditionsMatch(entry.Conditions, activeRepos, installedRepos, model) {
 				continue
 			}
 			if entry.File.Link != "" && !files[entry.File.Link] {
@@ -1619,26 +1665,52 @@ func (model *Model) Select(query NodeQuery) (NodeSelection, error) {
 	selection := NodeSelection{Path: path}
 	for _, repoPath := range sortedRepoPaths(model) {
 		entry := model.Repos[repoPath]
-		if !nodePathMatches(path, repoPath) || entry.Repo.Archived && !query.IncludeArchived {
+		if !nodePathMatches(path, repoPath) || entry.Repo.Archived && !query.IncludeArchived && !query.Installed.Repos[entry.Identity] {
 			continue
 		}
 		selection.Repos = append(selection.Repos, entry)
 	}
 	for _, filePath := range sortedFilePaths(model) {
 		entry := model.Files[filePath]
-		if !nodePathMatches(path, filePath) || entry.File.Archived && !query.IncludeArchived {
+		if !nodePathMatches(path, filePath) || entry.File.Archived && !query.IncludeArchived && !query.Installed.Files[entry.Identity] {
 			continue
 		}
 		selection.Files = append(selection.Files, entry)
 	}
 	for _, groupPath := range sortedGroupPaths(model) {
 		entry := model.Groups[groupPath]
-		if !nodePathMatches(path, groupPath) || entry.Group.Archived && !query.IncludeArchived {
+		if !nodePathMatches(path, groupPath) || entry.Group.Archived && !query.IncludeArchived && !groupInstalled(model, groupPath, query.Installed) {
 			continue
 		}
 		selection.Groups = append(selection.Groups, entry)
 	}
 	return selection, nil
+}
+
+func (ws *Workspace) Select(query NodeQuery) (NodeSelection, error) {
+	query.Installed = ws.installedNodes()
+	return ws.Model.Select(query)
+}
+
+func (ws *Workspace) installedNodes() InstalledNodes {
+	return InstalledNodes{
+		Repos: installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State),
+		Files: installedFileIdentitySet(ws.Root, &ws.Model, &ws.State),
+	}
+}
+
+func groupInstalled(model *Model, groupPath string, installed InstalledNodes) bool {
+	for _, entry := range model.Repos {
+		if installed.Repos[entry.Identity] && pathMatches(groupPath, entry.Path) {
+			return true
+		}
+	}
+	for _, entry := range model.Files {
+		if installed.Files[entry.Identity] && pathMatches(groupPath, entry.Path) {
+			return true
+		}
+	}
+	return false
 }
 
 func nodePathMatches(queryPath string, entryPath string) bool {
@@ -2245,6 +2317,20 @@ func installedRepoIdentitySet(root string, model *Model, state *State) map[strin
 	return installed
 }
 
+func installedFileIdentitySet(root string, model *Model, state *State) map[string]bool {
+	installed := map[string]bool{}
+	identityToPath := fileIdentityToPath(model)
+	for identity, stateFile := range state.Files {
+		if _, ok := identityToPath[identity]; !ok {
+			continue
+		}
+		if pathEntryExists(filepath.Join(root, stateFile.Path)) {
+			installed[identity] = true
+		}
+	}
+	return installed
+}
+
 func reportStale(out io.Writer, root string, model *Model, state *State) {
 	repoIdentityToPath := repoIdentityToPath(model)
 	fileIdentityToPath := fileIdentityToPath(model)
@@ -2356,6 +2442,11 @@ func isDirty(path string) bool {
 
 func pathExists(path string) bool {
 	_, err := os.Stat(path)
+	return err == nil
+}
+
+func pathEntryExists(path string) bool {
+	_, err := os.Lstat(path)
 	return err == nil
 }
 

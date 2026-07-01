@@ -131,7 +131,7 @@ Important fields:
 - `git`: required clone URL.
 - `web`: optional web URL.
 - `description`: optional human description.
-- `archived`: optional boolean; archived repos are skipped by clone/sync unless `--archived` is passed.
+- `archived`: optional boolean; archived repos are excluded by default unless already installed. Pass `--archived` to include uninstalled archived repos too.
 - `dependsOn`: optional dependency list.
 - `onlyWhen`: optional activation condition.
 
@@ -250,7 +250,7 @@ git:<repo-url>#<path-inside-source-repo>
 
 Files are written during `clone` and `sync` when active.
 
-Files can set `archived: true` to opt out of clone/sync unless `--archived` is passed.
+Files can set `archived: true` to exclude them by default. Files already installed by Jig remain included; pass `--archived` to include uninstalled archived files too.
 
 Jig records a hash for files it writes. If a user edits a generated file locally, Jig skips overwriting it and reports it as modified.
 
@@ -358,12 +358,14 @@ Show information about a repo, file, or group:
 jig info platform
 jig info services/checkout
 jig info scripts/dev.sh
+jig info legacy --archived
 ```
 
 Show recursive dependencies for a path:
 
 ```sh
 jig deps services/checkout
+jig deps legacy --archived
 ```
 
 Clone everything:
@@ -390,7 +392,7 @@ Clone with optional dependencies:
 jig clone services/checkout --with-optional-deps
 ```
 
-Clone archived repositories and files too:
+Clone uninstalled archived repositories and files too:
 
 ```sh
 jig clone services --archived
@@ -408,7 +410,7 @@ Sync a specific path:
 jig sync platform
 ```
 
-Sync archived repositories and files too:
+Sync uninstalled archived repositories and files too:
 
 ```sh
 jig sync --archived
@@ -419,6 +421,7 @@ Pull installed repositories:
 ```sh
 jig pull
 jig pull platform
+jig pull --archived
 ```
 
 Show workspace status:
@@ -439,6 +442,7 @@ Update `.jig.json` and immediately sync the workspace:
 
 ```sh
 jig update --sync
+jig update --sync services
 ```
 
 ## Update And Sync Model

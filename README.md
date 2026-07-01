@@ -71,14 +71,14 @@ jig init <local-jig-file> [workspace-dir]
 jig init <git-url> [workspace-dir] --clone [path]
 jig validate
 jig list [path] [--archived]
-jig info <path>
-jig deps <path>
-jig clone [path]
-jig sync [path]
-jig pull [path]
+jig info <path> [--archived]
+jig deps <path> [--with-optional-deps] [--archived]
+jig clone [path] [--with-optional-deps] [--archived]
+jig sync [path] [--with-optional-deps] [--archived]
+jig pull [path] [--archived]
 jig status [path] [--archived]
 jig update
-jig update --sync
+jig update --sync [path] [--with-optional-deps] [--archived]
 ```
 
 ## Concepts
@@ -92,7 +92,7 @@ jig update --sync
 - `jig pull [path]` runs `git pull` in installed repositories.
 - `jig update` refreshes `.jig.json` from its configured source.
 - `jig update --sync` refreshes `.jig.json`, then syncs the workspace.
-- `archived: true` on repos, files, or groups excludes those entries from clone/sync unless `--archived` is passed.
+- Archived entries are excluded by default unless they are already installed. Pass `--archived` to include uninstalled archived entries too.
 
 ## Remote Jig File
 

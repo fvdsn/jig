@@ -271,7 +271,7 @@ Default: `false`.
 
 Marks the group and all descendant repositories and files as archived.
 
-Archived repositories and files are skipped by clone and sync operations unless `--archived` is passed.
+Archived repositories and files are excluded by default unless already installed. `--archived` includes uninstalled archived entries too.
 
 ### `$group.dependsOn`
 
@@ -366,7 +366,7 @@ Optional boolean.
 
 Default: `false`.
 
-Archived repositories remain valid definition entries, but clone and sync skip them unless `--archived` is passed.
+Archived repositories remain valid definition entries. They are excluded by default unless already installed; `--archived` includes uninstalled archived repositories too.
 
 ### `$repo.dependsOn`
 
@@ -507,9 +507,9 @@ Optional boolean.
 
 Default: `false`.
 
-Archived files remain valid definition entries, but clone and sync skip them unless `--archived` is passed.
+Archived files remain valid definition entries. They are excluded by default unless already installed; `--archived` includes uninstalled archived files too.
 
-If a link file points to an archived target file, the link is also skipped unless `--archived` is passed.
+If a link file points to an archived target file, the link is also skipped unless the target is already installed or `--archived` is passed.
 
 ### `$file.onlyWhen`
 
@@ -696,6 +696,8 @@ For symlink files, `link` is required and `sha256` is omitted.
 
 The local filesystem remains the authority for whether a repository or file currently exists.
 
+For node selection, a repository is installed when a Git checkout exists at its tracked or current path. A file is installed when it is tracked in state and its tracked path exists. Untracked files are not considered installed.
+
 ## Workspace Discovery
 
 The workspace root is defined by the presence of a `.jig.json` file.
@@ -780,13 +782,17 @@ jig validate
 jig list [path]
 jig list [path] --archived
 jig info <path>
+jig info <path> --archived
 jig deps <path>
+jig deps <path> --archived
 jig clone [path]
 jig pull [path]
+jig pull [path] --archived
 jig status [path]
 jig status [path] --archived
 jig update
 jig update --sync
+jig update --sync [path]
 jig sync [path]
 jig clone [path] --with-optional-deps
 jig sync [path] --with-optional-deps
@@ -818,6 +824,8 @@ The command should:
 
 By default, the command should not clone repositories or write files declared in the tree.
 
+`--with-optional-deps` and `--archived` are valid only when `--clone` is present.
+
 Initial state:
 
 ```json
@@ -836,7 +844,7 @@ If `path` is omitted, Jig clones all repositories.
 
 If `path` is provided, Jig clones repositories matching `path` and all non-optional dependencies.
 
-Archived repositories and files are skipped unless `--archived` is provided.
+Archived repositories and files are skipped unless they are already installed or `--archived` is provided.
 
 The clone step should run only after `.jig.json` and `.jig/state.json` have been written successfully.
 
@@ -848,7 +856,7 @@ Initializes a workspace, then clones all repositories, or repositories matching 
 
 ### `jig init <git-url-or-file> [workspace-dir] --clone [path] --archived`
 
-Initializes a workspace, then clones archived repositories and files in addition to non-archived entries.
+Initializes a workspace, then clones uninstalled archived repositories and files in addition to the default selection.
 
 ### `jig validate`
 
@@ -880,7 +888,7 @@ Lists known repositories and files.
 
 If `path` is provided, only repositories and files matching that path are listed.
 
-Archived repositories and files are skipped unless `--archived` is provided.
+Archived repositories and files are skipped unless they are already installed or `--archived` is provided.
 
 The output should include the entry type.
 
@@ -905,6 +913,8 @@ For a group, it should show matching repositories and files.
 
 If the group has `$group` metadata, it should also show that metadata.
 
+Archived repositories, files, and groups are skipped unless they are already installed or `--archived` is provided.
+
 ### `jig deps <path>`
 
 Shows the dependencies for repositories matching a path after expanding group paths.
@@ -916,6 +926,8 @@ Files are ignored by `jig deps`.
 By default, only non-optional dependencies are included.
 
 Optional dependencies should be included only when requested.
+
+Archived repositories are skipped unless they are already installed or `--archived` is provided.
 
 ### `jig clone [path]`
 
@@ -929,7 +941,7 @@ If `path` matches symlink files, Jig also materializes their target files.
 
 Jig should also write active files whose `onlyWhen` condition matches the resulting active repository set.
 
-Archived repositories and files are skipped unless `--archived` is provided.
+Archived repositories and files are skipped unless they are already installed or `--archived` is provided.
 
 After cloning each repository or writing each file, Jig should record it in `.jig/state.json` using its identity.
 
@@ -939,7 +951,7 @@ Clones all repositories, or repositories matching a path, including non-optional
 
 ### `jig clone [path] --archived`
 
-Clones archived repositories and files in addition to non-archived entries.
+Clones uninstalled archived repositories and files in addition to the default selection.
 
 ### `jig sync [path]`
 
@@ -953,7 +965,7 @@ If a matching repository has optional dependencies that are already installed lo
 
 If `path` is omitted, Jig syncs locally installed repositories known to the current `.jig.json` plus their non-optional dependencies, then writes active files. Installed optional dependencies are included. It should not clone every repository in `.jig.json` by default.
 
-Archived repositories and files are skipped unless `--archived` is provided.
+Archived repositories and files are skipped unless they are already installed or `--archived` is provided.
 
 Sync may perform these actions:
 
@@ -976,7 +988,7 @@ Syncs repositories matching `path`, non-optional dependencies, optional dependen
 
 ### `jig sync [path] --archived`
 
-Syncs archived repositories and files in addition to non-archived entries.
+Syncs uninstalled archived repositories and files in addition to the default selection.
 
 ### `jig pull [path]`
 
@@ -986,13 +998,15 @@ If `path` is omitted, all locally installed repositories in the workspace are ma
 
 Files are ignored by `jig pull`.
 
+Installed archived repositories are included by default. `--archived` applies the same selection semantics as other commands, although `pull` can only act on installed repositories.
+
 ### `jig status [path]`
 
 Shows local checkout status for repositories and files matching `path`.
 
 If `path` is omitted, Jig reports status for all repositories and files known to `.jig.json` plus entries tracked in `.jig/state.json` that are no longer defined.
 
-Archived repositories and files are skipped unless `--archived` is provided.
+Archived repositories and files are skipped unless they are already installed or `--archived` is provided.
 
 Status should identify:
 
@@ -1023,15 +1037,19 @@ The command should:
 
 The command should not change local repository checkouts, write files, or update `.jig/state.json`.
 
-### `jig update --sync`
+`--with-optional-deps`, `--archived`, and a node path are valid only when `--sync` is present.
+
+### `jig update --sync [path]`
 
 Updates `.jig.json` from its configured `source`, then applies the updated definition with the same behavior as `jig sync`.
+
+If `path` is provided, only matching nodes are included in the sync step. The definition update itself is always global.
 
 The sync step should run only after the incoming definition has been fetched, validated, and written successfully.
 
 `jig update --sync --with-optional-deps` includes optional dependencies during the sync step.
 
-`jig update --sync --archived` includes archived repositories and files during the sync step.
+`jig update --sync --archived` includes uninstalled archived repositories and files during the sync step.
 
 ## Open Questions
 

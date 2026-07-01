@@ -125,6 +125,55 @@ func TestSelectNodesRejectsUnsafePath(t *testing.T) {
 	}
 }
 
+func TestSelectNodesIncludesInstalledArchivedNodes(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 1,
+  "tree": {
+    "legacy": {
+      "$group": { "archived": true },
+      "service": {
+        "$repo": { "git": "git@example.com:legacy.git" }
+      },
+      "settings.json": {
+        "$file": { "src": "git:git@example.com:config.git#settings.json" }
+      }
+    }
+  }
+}`)
+	model, err := flattenDefinition(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	selection, err := model.Select(NodeQuery{Path: "legacy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(selection.Repos) != 0 || len(selection.Files) != 0 || len(selection.Groups) != 0 {
+		t.Fatalf("unexpected uninstalled archived selection: %#v", selection)
+	}
+
+	selection, err = model.Select(NodeQuery{
+		Path: "legacy",
+		Installed: InstalledNodes{
+			Repos: map[string]bool{"legacy/service": true},
+			Files: map[string]bool{"legacy/settings.json": true},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := selection.repoPaths(), []string{"legacy/service"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("installed archived repos = %#v, want %#v", got, want)
+	}
+	if got, want := selection.filePaths(), []string{"legacy/settings.json"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("installed archived files = %#v, want %#v", got, want)
+	}
+	if len(selection.Groups) != 1 || selection.Groups[0].Path != "legacy" {
+		t.Fatalf("installed archived groups = %#v, want legacy", selection.Groups)
+	}
+}
+
 func TestFlattenDefinitionWithSlashShorthandAndFile(t *testing.T) {
 	def := testDefinition(t, `{
   "version": 1,
@@ -399,6 +448,32 @@ func TestResolvePlanSkipsArchivedReposUnlessIncluded(t *testing.T) {
 	if !reflect.DeepEqual(plan.Repos, want) {
 		t.Fatalf("with archived = %#v, want %#v", plan.Repos, want)
 	}
+
+	plan, err = resolvePlan(&model, roots, planOptions{
+		IncludeRoots: true,
+		Installed: map[string]bool{
+			"services/old":    true,
+			"platform/legacy": true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(plan.Repos, want) {
+		t.Fatalf("with installed archived = %#v, want %#v", plan.Repos, want)
+	}
+
+	plan, err = resolvePlan(&model, []string{"services/active"}, planOptions{
+		IncludeRoots: true,
+		Installed:    map[string]bool{"platform/legacy": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = []string{"platform/auth", "platform/legacy", "services/active"}
+	if !reflect.DeepEqual(plan.Repos, want) {
+		t.Fatalf("with installed archived dependency = %#v, want %#v", plan.Repos, want)
+	}
 }
 
 func TestGroupArchivedIsInheritedByReposAndFiles(t *testing.T) {
@@ -458,7 +533,7 @@ func TestArchivedFilesAreSkippedUnlessIncluded(t *testing.T) {
 		t.Fatal(err)
 	}
 	resolved = includeExplicitFiles(&model, resolved, sortedFilePaths(&model))
-	resolved = excludeArchivedFiles(&model, resolved)
+	resolved = excludeArchivedFiles(&model, resolved, nil)
 	if !reflect.DeepEqual(resolved.Files, []string{"scripts/current.sh"}) {
 		t.Fatalf("without archived files = %#v", resolved.Files)
 	}
@@ -466,6 +541,20 @@ func TestArchivedFilesAreSkippedUnlessIncluded(t *testing.T) {
 	resolved = includeExplicitFiles(&model, resolved, sortedFilePaths(&model))
 	if !reflect.DeepEqual(resolved.Files, []string{"scripts/old.sh", "bin/old", "scripts/current.sh"}) {
 		t.Fatalf("with archived files = %#v", resolved.Files)
+	}
+	resolved = excludeArchivedFiles(&model, resolved, map[string]bool{"scripts/old.sh": true})
+	if !reflect.DeepEqual(resolved.Files, []string{"scripts/old.sh", "bin/old", "scripts/current.sh"}) {
+		t.Fatalf("with installed archived files = %#v", resolved.Files)
+	}
+
+	resolved, err = resolvePlan(&model, nil, planOptions{
+		InstalledFiles: map[string]bool{"scripts/old.sh": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(resolved.Files, []string{"scripts/old.sh", "bin/old", "scripts/current.sh"}) {
+		t.Fatalf("planned installed archived files = %#v", resolved.Files)
 	}
 }
 
@@ -523,6 +612,37 @@ func TestStatusSkipsArchivedMissingEntriesUnlessIncluded(t *testing.T) {
 	}
 	if strings.Contains(got, "services/old") || strings.Contains(got, "scripts/old.sh") {
 		t.Fatalf("did not expect archived entries in status, got:\n%s", got)
+	}
+
+	oldRepoPath := filepath.Join(root, "services", "old")
+	if err := exec.Command("git", "init", oldRepoPath).Run(); err != nil {
+		t.Fatal(err)
+	}
+	oldFilePath := filepath.Join(root, "scripts", "old.sh")
+	if err := os.MkdirAll(filepath.Dir(oldFilePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldFileContents := []byte("old")
+	if err := os.WriteFile(oldFilePath, oldFileContents, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	state := emptyState()
+	state.Files["scripts/old.sh"] = StateFile{
+		Path:   "scripts/old.sh",
+		Src:    "git:git@example.com:config.git#scripts/old.sh",
+		SHA256: sha256Hex(oldFileContents),
+	}
+	if err := saveState(root, state); err != nil {
+		t.Fatal(err)
+	}
+
+	out.Reset()
+	if err := cmdStatus(nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	got = out.String()
+	if !strings.Contains(got, "services/old") || !strings.Contains(got, "scripts/old.sh") {
+		t.Fatalf("expected installed archived entries in status, got:\n%s", got)
 	}
 
 	out.Reset()
@@ -601,6 +721,61 @@ func TestListSupportsPathAndArchivedFlag(t *testing.T) {
 	got = out.String()
 	if !strings.Contains(got, "repo  services/old") || !strings.Contains(got, "file  services/scripts/old.sh") {
 		t.Fatalf("expected archived services entries, got:\n%s", got)
+	}
+}
+
+func TestInfoIncludesArchivedNodeWhenRequestedOrInstalled(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, definitionFile), []byte(`{
+  "version": 1,
+  "tree": {
+    "services/old": {
+      "$repo": {
+        "git": "git@example.com:old.git",
+        "archived": true
+      }
+    }
+  }
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveState(root, emptyState()); err != nil {
+		t.Fatal(err)
+	}
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chdir(oldWd); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	var out bytes.Buffer
+	if err := cmdInfo([]string{"services/old"}, &out); err == nil {
+		t.Fatal("expected uninstalled archived repository to be excluded")
+	}
+	if err := cmdInfo([]string{"services/old", "--archived"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "path: services/old") {
+		t.Fatalf("expected archived repository info, got:\n%s", out.String())
+	}
+
+	if err := exec.Command("git", "init", filepath.Join(root, "services", "old")).Run(); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := cmdInfo([]string{"services/old"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "path: services/old") {
+		t.Fatalf("expected installed archived repository info, got:\n%s", out.String())
 	}
 }
 
@@ -1006,6 +1181,38 @@ func TestInstalledRepoIdentitySetUsesGitRepos(t *testing.T) {
 	}
 }
 
+func TestInstalledFileIdentitySetRequiresTrackedExistingFile(t *testing.T) {
+	root := t.TempDir()
+	model := Model{
+		Repos: map[string]RepoEntry{},
+		Files: map[string]FileEntry{
+			"tracked.txt":   {Path: "tracked.txt", Identity: "tracked", File: File{Archived: true}},
+			"untracked.txt": {Path: "untracked.txt", Identity: "untracked", File: File{Archived: true}},
+		},
+	}
+	state := State{
+		Version: 1,
+		Repos:   map[string]StateRepo{},
+		Files: map[string]StateFile{
+			"tracked": {Path: "tracked.txt"},
+		},
+	}
+	if err := os.WriteFile(filepath.Join(root, "tracked.txt"), []byte("tracked"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "untracked.txt"), []byte("untracked"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := installedFileIdentitySet(root, &model, &state)
+	if !got["tracked"] {
+		t.Fatalf("expected tracked file to be installed: %#v", got)
+	}
+	if got["untracked"] {
+		t.Fatalf("did not expect untracked file to be installed: %#v", got)
+	}
+}
+
 func TestInitFromLocalFileDoesNotSetSource(t *testing.T) {
 	root := t.TempDir()
 	sourcePath := filepath.Join(root, "source.jig.json")
@@ -1084,6 +1291,13 @@ func TestParseInitArgsCloneWithPath(t *testing.T) {
 	}
 }
 
+func TestInitSelectionFlagsRequireClone(t *testing.T) {
+	err := cmdInit([]string{"git@example.com:config.git", "--archived"}, ioDiscard{})
+	if err == nil || err.Error() != "--with-optional-deps and --archived require --clone" {
+		t.Fatalf("expected --clone requirement, got %v", err)
+	}
+}
+
 func TestParseUpdateFlags(t *testing.T) {
 	parsed, err := parseArgs([]string{"--sync", "--with-optional-deps", "--archived"}, nil, map[string]bool{"--sync": true, "--with-optional-deps": true, "--archived": true})
 	if err != nil {
@@ -1091,6 +1305,13 @@ func TestParseUpdateFlags(t *testing.T) {
 	}
 	if !parsed.Flags["--sync"] || !parsed.Flags["--with-optional-deps"] || !parsed.Flags["--archived"] {
 		t.Fatalf("unexpected update flags: %#v", parsed.Flags)
+	}
+}
+
+func TestUpdateSelectionFlagsRequireSync(t *testing.T) {
+	err := cmdUpdate([]string{"--archived"}, ioDiscard{})
+	if err == nil || err.Error() != "--with-optional-deps and --archived require --sync" {
+		t.Fatalf("expected --sync requirement, got %v", err)
 	}
 }
 
