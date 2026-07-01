@@ -117,7 +117,7 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "  validate")
 	fmt.Fprintln(out, "      Validate the current workspace .jig.json file.")
 	fmt.Fprintln(out, "  list [path] [--archived]")
-	fmt.Fprintln(out, "      List repositories and files defined in .jig.json.")
+	fmt.Fprintln(out, "      List groups, repositories, and files defined in .jig.json.")
 	fmt.Fprintln(out, "  info <path> [--archived]")
 	fmt.Fprintln(out, "      Show repository, file, or group metadata.")
 	fmt.Fprintln(out, "  deps <path> [--with-optional-deps] [--archived]")

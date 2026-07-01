@@ -44,7 +44,7 @@ func validateDefinition(def *Definition) validationResult {
 
 	repoIDs := map[string]string{}
 	for _, path := range sortedRepoPaths(&model) {
-		entry := model.Repos[path]
+		entry, _ := model.entry(path, EntryRepo)
 		if entry.Repo.Git == "" {
 			result.Errors = append(result.Errors, fmt.Sprintf("repository %s missing git", path))
 		}
@@ -63,7 +63,7 @@ func validateDefinition(def *Definition) validationResult {
 				continue
 			}
 			matches, _ := model.Select(NodeQuery{Path: dep.Path, IncludeArchived: true})
-			if len(matches.Repos) == 0 {
+			if len(matches.ofKind(EntryRepo)) == 0 {
 				result.Errors = append(result.Errors, fmt.Sprintf("repository %s dependency %s does not resolve to any repository", path, dep.Path))
 			}
 		}
@@ -71,7 +71,7 @@ func validateDefinition(def *Definition) validationResult {
 
 	fileIDs := map[string]string{}
 	for _, path := range sortedFilePaths(&model) {
-		entry := model.Files[path]
+		entry, _ := model.entry(path, EntryFile)
 		if (entry.File.Src == "") == (entry.File.Link == "") {
 			result.Errors = append(result.Errors, fmt.Sprintf("file %s must define exactly one of src or link", path))
 		}
@@ -83,7 +83,7 @@ func validateDefinition(def *Definition) validationResult {
 		if entry.File.Link != "" {
 			if err := validateSafePath(entry.File.Link); err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("file %s invalid link: %s", path, err))
-			} else if _, ok := model.Files[entry.File.Link]; !ok {
+			} else if _, ok := model.entry(entry.File.Link, EntryFile); !ok {
 				result.Errors = append(result.Errors, fmt.Sprintf("file %s link %s does not resolve to any file", path, entry.File.Link))
 			} else if entry.File.Link == path {
 				result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot link to itself", path))
@@ -103,14 +103,21 @@ func validateDefinition(def *Definition) validationResult {
 		}
 	}
 
-	for path, entry := range model.Groups {
+	groupIDs := map[string]string{}
+	for _, path := range sortedGroupPaths(&model) {
+		entry, _ := model.entry(path, EntryGroup)
+		if prev, ok := groupIDs[entry.Identity]; ok {
+			result.Errors = append(result.Errors, fmt.Sprintf("duplicate group identity %s: %s and %s", entry.Identity, prev, path))
+		} else {
+			groupIDs[entry.Identity] = path
+		}
 		for _, dep := range entry.Group.DependsOn {
 			if err := validateSafePath(dep.Path); err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("group %s has invalid dependency path %q: %s", path, dep.Path, err))
 				continue
 			}
 			matches, _ := model.Select(NodeQuery{Path: dep.Path, IncludeArchived: true})
-			if len(matches.Repos) == 0 {
+			if len(matches.ofKind(EntryRepo)) == 0 {
 				result.Errors = append(result.Errors, fmt.Sprintf("group %s dependency %s does not resolve to any repository", path, dep.Path))
 			}
 		}
@@ -154,7 +161,7 @@ func detectFileLinkCycles(model *Model) [][]string {
 		}
 		visited[path] = 1
 		stack = append(stack, path)
-		if entry, ok := model.Files[path]; ok && entry.File.Link != "" {
+		if entry, ok := model.entry(path, EntryFile); ok && entry.File.Link != "" {
 			visit(entry.File.Link)
 		}
 		stack = stack[:len(stack)-1]
@@ -176,7 +183,7 @@ func validateCondition(result *validationResult, model Model, ownerPath string, 
 		return
 	}
 	matches, _ := model.Select(NodeQuery{Path: condition.Path, IncludeArchived: true})
-	if len(matches.Repos) == 0 {
+	if len(matches.ofKind(EntryRepo)) == 0 {
 		result.Errors = append(result.Errors, fmt.Sprintf("%s onlyWhen path %s does not resolve to any repository", ownerPath, condition.Path))
 	}
 }
@@ -217,12 +224,13 @@ func detectCycles(model *Model) [][]string {
 		}
 		visited[repoPath] = 1
 		stack = append(stack, repoPath)
-		for _, dep := range model.Repos[repoPath].Repo.DependsOn {
+		entry, _ := model.entry(repoPath, EntryRepo)
+		for _, dep := range entry.Repo.DependsOn {
 			selection, err := model.Select(NodeQuery{Path: dep.Path, IncludeArchived: true})
 			if err != nil {
 				continue
 			}
-			for _, match := range selection.Repos {
+			for _, match := range selection.ofKind(EntryRepo) {
 				visit(match.Path)
 			}
 		}

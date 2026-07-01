@@ -41,6 +41,7 @@ type File struct {
 }
 
 type Group struct {
+	ID          string       `json:"id,omitempty"`
 	Description string       `json:"description,omitempty"`
 	Web         string       `json:"web,omitempty"`
 	Archived    bool         `json:"archived,omitempty"`

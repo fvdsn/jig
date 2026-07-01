@@ -223,6 +223,7 @@ Example:
   "tree": {
     "platform": {
       "$group": {
+        "id": "platform-group",
         "description": "Shared platform services",
         "web": "https://github.com/acme/platform",
         "dependsOn": [
@@ -242,6 +243,14 @@ Example:
   }
 }
 ```
+
+### `$group.id`
+
+Optional string.
+
+Stable group identity. If omitted, the group path is used as its identity.
+
+Group identities must be unique among groups.
 
 ### `$group.description`
 
@@ -871,10 +880,12 @@ Validation should catch:
 - Invalid `source` object.
 - Invalid tree node objects.
 - Invalid safe paths.
+- Invalid `$group` objects.
 - Invalid `$repo` objects.
 - Invalid `$file` objects.
 - Duplicate repository identities.
 - Duplicate file identities.
+- Duplicate group identities.
 - Dependency paths that do not resolve to any repository.
 - `onlyWhen.path` values that do not resolve to any repository.
 - Invalid file `src` values.
@@ -884,20 +895,21 @@ Dependency cycles should be detected and reported, but they do not necessarily m
 
 ### `jig list [path]`
 
-Lists known repositories and files.
+Lists known groups, repositories, and files.
 
-If `path` is provided, only repositories and files matching that path are listed.
+If `path` is provided, only entries matching that path are listed.
 
-Archived repositories and files are skipped unless they are already installed or `--archived` is provided.
+Archived entries are skipped unless they are already installed or `--archived` is provided.
 
-The output should include the entry type.
+The output includes the entry type and is ordered by path across all entry types.
 
 Example:
 
 ```text
+file  .agents/skills/platform
+group platform
 repo  platform/auth
 repo  services/checkout
-file  .agents/skills/platform
 file  scripts/dev.sh
 ```
 
@@ -909,9 +921,9 @@ For a repository, it should show metadata such as Git URL, web URL, description,
 
 For a file, it should show metadata such as source, description, executable flag, and `onlyWhen` condition.
 
-For a group, it should show matching repositories and files.
+For a group, it should show matching groups, repositories, and files together in path order.
 
-If the group has `$group` metadata, it should also show that metadata.
+If the group has `$group` metadata, it should also show its identity and metadata.
 
 Archived repositories, files, and groups are skipped unless they are already installed or `--archived` is provided.
 
@@ -1032,7 +1044,7 @@ The command should:
 - Fetch the incoming definition.
 - Validate the incoming definition.
 - Compare the current and incoming definitions by repository and file identity.
-- Report added, removed, moved, and changed repositories and files.
+- Report added, removed, moved, and changed groups, repositories, and files.
 - Replace `.jig.json` only if the incoming definition is valid.
 
 The command should not change local repository checkouts, write files, or update `.jig/state.json`.

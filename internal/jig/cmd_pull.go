@@ -24,7 +24,7 @@ func Pull(options PullOptions, out io.Writer) error {
 
 	var pulled []string
 	var skipped []string
-	for _, entry := range selection.Repos {
+	for _, entry := range selection.ofKind(EntryRepo) {
 		repoPath := entry.Path
 		local, ok := installedPath(ws.Root, &ws.Model, &ws.State, repoPath)
 		if !ok {

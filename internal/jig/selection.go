@@ -17,10 +17,8 @@ type InstalledNodes struct {
 }
 
 type NodeSelection struct {
-	Path   string
-	Repos  []RepoEntry
-	Files  []FileEntry
-	Groups []GroupEntry
+	Path    string
+	Entries []Entry
 }
 
 func normalizeQueryPath(path string) string {
@@ -37,26 +35,15 @@ func (model *Model) Select(query NodeQuery) (NodeSelection, error) {
 	}
 
 	selection := NodeSelection{Path: path}
-	for _, repoPath := range sortedRepoPaths(model) {
-		entry := model.Repos[repoPath]
-		if !nodePathMatches(path, repoPath) || entry.Repo.Archived && !query.IncludeArchived && !query.Installed.Repos[entry.Identity] {
+	for _, entryPath := range sortedEntryPaths(model) {
+		entry := model.Entries[entryPath]
+		if !nodePathMatches(path, entryPath) {
 			continue
 		}
-		selection.Repos = append(selection.Repos, entry)
-	}
-	for _, filePath := range sortedFilePaths(model) {
-		entry := model.Files[filePath]
-		if !nodePathMatches(path, filePath) || entry.File.Archived && !query.IncludeArchived && !query.Installed.Files[entry.Identity] {
+		if entryArchived(entry) && !query.IncludeArchived && !entryInstalled(model, entry, query.Installed) {
 			continue
 		}
-		selection.Files = append(selection.Files, entry)
-	}
-	for _, groupPath := range sortedGroupPaths(model) {
-		entry := model.Groups[groupPath]
-		if !nodePathMatches(path, groupPath) || entry.Group.Archived && !query.IncludeArchived && !groupInstalled(model, groupPath, query.Installed) {
-			continue
-		}
-		selection.Groups = append(selection.Groups, entry)
+		selection.Entries = append(selection.Entries, entry)
 	}
 	return selection, nil
 }
@@ -73,15 +60,56 @@ func (ws *Workspace) installedNodes() InstalledNodes {
 	}
 }
 
-func groupInstalled(model *Model, groupPath string, installed InstalledNodes) bool {
-	for _, entry := range model.Repos {
-		if installed.Repos[entry.Identity] && pathMatches(groupPath, entry.Path) {
-			return true
-		}
+func entryArchived(entry Entry) bool {
+	switch entry.Kind {
+	case EntryRepo:
+		return entry.Repo.Archived
+	case EntryFile:
+		return entry.File.Archived
+	case EntryGroup:
+		return entry.Group.Archived
+	default:
+		return false
 	}
-	for _, entry := range model.Files {
-		if installed.Files[entry.Identity] && pathMatches(groupPath, entry.Path) {
-			return true
+}
+
+func entryDescription(entry Entry) string {
+	switch entry.Kind {
+	case EntryRepo:
+		return entry.Repo.Description
+	case EntryFile:
+		return entry.File.Description
+	case EntryGroup:
+		return entry.Group.Description
+	default:
+		return ""
+	}
+}
+
+func entryInstalled(model *Model, entry Entry, installed InstalledNodes) bool {
+	switch entry.Kind {
+	case EntryRepo:
+		return installed.Repos[entry.Identity]
+	case EntryFile:
+		return installed.Files[entry.Identity]
+	case EntryGroup:
+		return groupInstalled(model, entry.Path, installed)
+	default:
+		return false
+	}
+}
+
+func groupInstalled(model *Model, groupPath string, installed InstalledNodes) bool {
+	for _, entry := range model.Entries {
+		switch entry.Kind {
+		case EntryRepo:
+			if installed.Repos[entry.Identity] && pathMatches(groupPath, entry.Path) {
+				return true
+			}
+		case EntryFile:
+			if installed.Files[entry.Identity] && pathMatches(groupPath, entry.Path) {
+				return true
+			}
 		}
 	}
 	return false
@@ -91,78 +119,91 @@ func nodePathMatches(queryPath string, entryPath string) bool {
 	return queryPath == "" || pathMatches(queryPath, entryPath)
 }
 
-func (selection NodeSelection) repoPaths() []string {
-	paths := make([]string, 0, len(selection.Repos))
-	for _, entry := range selection.Repos {
-		paths = append(paths, entry.Path)
+func (selection NodeSelection) ofKind(kind EntryKind) []Entry {
+	entries := make([]Entry, 0, len(selection.Entries))
+	for _, entry := range selection.Entries {
+		if entry.Kind == kind {
+			entries = append(entries, entry)
+		}
 	}
-	return paths
+	return entries
+}
+
+func (selection NodeSelection) repoPaths() []string {
+	return entryPaths(selection.ofKind(EntryRepo))
 }
 
 func (selection NodeSelection) filePaths() []string {
-	paths := make([]string, 0, len(selection.Files))
-	for _, entry := range selection.Files {
+	return entryPaths(selection.ofKind(EntryFile))
+}
+
+func entryPaths(entries []Entry) []string {
+	paths := make([]string, 0, len(entries))
+	for _, entry := range entries {
 		paths = append(paths, entry.Path)
 	}
 	return paths
 }
 
-func (selection NodeSelection) exactRepo() (RepoEntry, bool) {
-	for _, entry := range selection.Repos {
-		if entry.Path == selection.Path {
+func (selection NodeSelection) exact(kind EntryKind) (Entry, bool) {
+	for _, entry := range selection.Entries {
+		if entry.Path == selection.Path && entry.Kind == kind {
 			return entry, true
 		}
 	}
-	return RepoEntry{}, false
+	return Entry{}, false
 }
 
-func (selection NodeSelection) exactFile() (FileEntry, bool) {
-	for _, entry := range selection.Files {
-		if entry.Path == selection.Path {
-			return entry, true
-		}
-	}
-	return FileEntry{}, false
+func (selection NodeSelection) exactRepo() (Entry, bool) {
+	return selection.exact(EntryRepo)
 }
 
-func (selection NodeSelection) exactGroup() (GroupEntry, bool) {
-	for _, entry := range selection.Groups {
-		if entry.Path == selection.Path {
-			return entry, true
-		}
-	}
-	return GroupEntry{}, false
+func (selection NodeSelection) exactFile() (Entry, bool) {
+	return selection.exact(EntryFile)
+}
+
+func (selection NodeSelection) exactGroup() (Entry, bool) {
+	return selection.exact(EntryGroup)
+}
+
+func (model *Model) entry(path string, kind EntryKind) (Entry, bool) {
+	entry, ok := model.Entries[path]
+	return entry, ok && entry.Kind == kind
 }
 
 func pathMatches(path string, entryPath string) bool {
 	return entryPath == path || strings.HasPrefix(entryPath, path+"/")
 }
 
-func sortedRepoPaths(model *Model) []string {
-	paths := make([]string, 0, len(model.Repos))
-	for path := range model.Repos {
+func sortedEntryPaths(model *Model) []string {
+	paths := make([]string, 0, len(model.Entries))
+	for path := range model.Entries {
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
 	return paths
+}
+
+func sortedPathsOfKind(model *Model, kind EntryKind) []string {
+	var paths []string
+	for _, path := range sortedEntryPaths(model) {
+		if model.Entries[path].Kind == kind {
+			paths = append(paths, path)
+		}
+	}
+	return paths
+}
+
+func sortedRepoPaths(model *Model) []string {
+	return sortedPathsOfKind(model, EntryRepo)
 }
 
 func sortedFilePaths(model *Model) []string {
-	paths := make([]string, 0, len(model.Files))
-	for path := range model.Files {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	return paths
+	return sortedPathsOfKind(model, EntryFile)
 }
 
 func sortedGroupPaths(model *Model) []string {
-	paths := make([]string, 0, len(model.Groups))
-	for path := range model.Groups {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	return paths
+	return sortedPathsOfKind(model, EntryGroup)
 }
 
 func sortedKeys(values map[string]bool) []string {
@@ -174,18 +215,24 @@ func sortedKeys(values map[string]bool) []string {
 	return keys
 }
 
-func repoIdentityToPath(model *Model) map[string]string {
+func identityToPath(model *Model, kind EntryKind) map[string]string {
 	result := map[string]string{}
-	for path, entry := range model.Repos {
-		result[entry.Identity] = path
+	for path, entry := range model.Entries {
+		if entry.Kind == kind {
+			result[entry.Identity] = path
+		}
 	}
 	return result
 }
 
+func repoIdentityToPath(model *Model) map[string]string {
+	return identityToPath(model, EntryRepo)
+}
+
 func fileIdentityToPath(model *Model) map[string]string {
-	result := map[string]string{}
-	for path, entry := range model.Files {
-		result[entry.Identity] = path
-	}
-	return result
+	return identityToPath(model, EntryFile)
+}
+
+func groupIdentityToPath(model *Model) map[string]string {
+	return identityToPath(model, EntryGroup)
 }

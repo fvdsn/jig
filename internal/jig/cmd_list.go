@@ -20,19 +20,10 @@ func List(options ListOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	for _, entry := range selection.Repos {
-		repo := entry.Repo
-		fmt.Fprintf(out, "repo  %s", entry.Path)
-		if repo.Description != "" {
-			fmt.Fprintf(out, "\t%s", repo.Description)
-		}
-		fmt.Fprintln(out)
-	}
-	for _, entry := range selection.Files {
-		file := entry.File
-		fmt.Fprintf(out, "file  %s", entry.Path)
-		if file.Description != "" {
-			fmt.Fprintf(out, "\t%s", file.Description)
+	for _, entry := range selection.Entries {
+		fmt.Fprintf(out, "%-5s %s", entry.Kind, entry.Path)
+		if description := entryDescription(entry); description != "" {
+			fmt.Fprintf(out, "\t%s", description)
 		}
 		fmt.Fprintln(out)
 	}

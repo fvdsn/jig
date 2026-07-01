@@ -189,6 +189,7 @@ Declare group metadata with `$group` on directory nodes.
   "tree": {
     "platform": {
       "$group": {
+        "id": "platform-group",
         "description": "Shared platform services",
         "web": "https://github.com/acme/platform",
         "dependsOn": [
@@ -217,6 +218,7 @@ Declare group metadata with `$group` on directory nodes.
 
 Inherited behavior:
 
+- `id` is the stable identity of the group and is not inherited.
 - `description` is inherited by child repos/files when they do not define one.
 - `web` is inherited by child repos when they do not define one.
 - `archived` is inherited by child repos/files.
@@ -344,7 +346,7 @@ Validate the definition:
 jig validate
 ```
 
-List defined repositories and files:
+List defined groups, repositories, and files:
 
 ```sh
 jig list

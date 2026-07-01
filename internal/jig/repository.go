@@ -12,7 +12,7 @@ import (
 )
 
 func ensureRepo(out io.Writer, root string, model *Model, state *State, repoPath string, allowMove bool) error {
-	entry := model.Repos[repoPath]
+	entry, _ := model.entry(repoPath, EntryRepo)
 	repo := entry.Repo
 	expectedRel := entry.Path
 	expectedAbs := filepath.Join(root, expectedRel)
@@ -103,7 +103,7 @@ func installedDefinedRepos(root string, model *Model, state *State) []string {
 }
 
 func installedPath(root string, model *Model, state *State, repoPath string) (string, bool) {
-	entry := model.Repos[repoPath]
+	entry, _ := model.entry(repoPath, EntryRepo)
 	if stateRepo, ok := state.Repos[entry.Identity]; ok {
 		abs := filepath.Join(root, stateRepo.Path)
 		if isGitRepo(abs) {
@@ -129,7 +129,7 @@ func installedRepoIdentitySet(root string, model *Model, state *State) map[strin
 		}
 	}
 	for _, repoPath := range sortedRepoPaths(model) {
-		entry := model.Repos[repoPath]
+		entry, _ := model.entry(repoPath, EntryRepo)
 		if isGitRepo(filepath.Join(root, entry.Path)) {
 			installed[entry.Identity] = true
 		}

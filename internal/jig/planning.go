@@ -26,7 +26,7 @@ func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
 	active := map[string]bool{}
 	rootIDs := map[string]bool{}
 	for _, root := range roots {
-		entry, ok := model.Repos[root]
+		entry, ok := model.entry(root, EntryRepo)
 		if !ok {
 			return plan{}, fmt.Errorf("unknown repository %q", root)
 		}
@@ -49,7 +49,7 @@ func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
 			}
 		}
 		for _, repoPath := range sortedRepoPaths(model) {
-			entry := model.Repos[repoPath]
+			entry, _ := model.entry(repoPath, EntryRepo)
 			if repoArchived(entry, opts) {
 				continue
 			}
@@ -72,11 +72,11 @@ func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
 	return plan{Repos: sortedKeys(active), Files: orderFilesForApply(model, activeFilesSet)}, nil
 }
 
-func repoArchived(entry RepoEntry, opts planOptions) bool {
+func repoArchived(entry Entry, opts planOptions) bool {
 	return entry.Repo.Archived && !opts.IncludeArchived && !opts.Installed[entry.Identity]
 }
 
-func fileArchived(entry FileEntry, installed map[string]bool, includeArchived bool) bool {
+func fileArchived(entry Entry, installed map[string]bool, includeArchived bool) bool {
 	return entry.File.Archived && !includeArchived && !installed[entry.Identity]
 }
 
@@ -93,7 +93,7 @@ func orderFilesForApply(model *Model, active map[string]bool) []string {
 			return
 		}
 		visiting[path] = true
-		if entry, ok := model.Files[path]; ok && entry.File.Link != "" {
+		if entry, ok := model.entry(path, EntryFile); ok && entry.File.Link != "" {
 			visit(entry.File.Link)
 		}
 		visiting[path] = false
@@ -107,17 +107,18 @@ func orderFilesForApply(model *Model, active map[string]bool) []string {
 }
 
 func addDependencies(model *Model, repoPath string, active map[string]bool, opts planOptions, excludedIDs map[string]bool) (bool, error) {
-	entry := model.Repos[repoPath]
+	entry, _ := model.entry(repoPath, EntryRepo)
 	changed := false
 	for _, dep := range entry.Repo.DependsOn {
 		selection, err := model.Select(NodeQuery{Path: dep.Path, IncludeArchived: true})
 		if err != nil {
 			return false, fmt.Errorf("invalid dependency %s for %s: %w", dep.Path, repoPath, err)
 		}
-		if len(selection.Repos) == 0 {
+		matches := selection.ofKind(EntryRepo)
+		if len(matches) == 0 {
 			return false, fmt.Errorf("dependency %s for %s does not resolve to any repository", dep.Path, repoPath)
 		}
-		for _, matchEntry := range selection.Repos {
+		for _, matchEntry := range matches {
 			match := matchEntry.Path
 			if repoArchived(matchEntry, opts) {
 				continue
@@ -149,7 +150,7 @@ func activeFilesForRepoSet(model *Model, activeRepos map[string]bool, installedR
 			if files[filePath] {
 				continue
 			}
-			entry := model.Files[filePath]
+			entry, _ := model.entry(filePath, EntryFile)
 			if fileArchived(entry, installedFiles, includeArchived) {
 				continue
 			}

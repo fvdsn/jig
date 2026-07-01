@@ -9,6 +9,7 @@ import (
 func printDefinitionChanges(out io.Writer, oldModel *Model, newModel *Model) {
 	printEntryChanges(out, "repo", repoIdentityToPath(oldModel), repoIdentityToPath(newModel), repoChanged(oldModel, newModel))
 	printEntryChanges(out, "file", fileIdentityToPath(oldModel), fileIdentityToPath(newModel), fileChanged(oldModel, newModel))
+	printEntryChanges(out, "group", groupIdentityToPath(oldModel), groupIdentityToPath(newModel), groupChanged(oldModel, newModel))
 }
 
 func printEntryChanges(out io.Writer, label string, oldByID map[string]string, newByID map[string]string, changedByID map[string]bool) {
@@ -49,8 +50,8 @@ func repoChanged(oldModel *Model, newModel *Model) map[string]bool {
 		if !ok {
 			continue
 		}
-		oldEntry := oldModel.Repos[oldPath]
-		newEntry := newModel.Repos[newPath]
+		oldEntry, _ := oldModel.entry(oldPath, EntryRepo)
+		newEntry, _ := newModel.entry(newPath, EntryRepo)
 		oldRepo := oldEntry.Repo
 		newRepo := newEntry.Repo
 		if oldRepo.Git != newRepo.Git || oldRepo.Web != newRepo.Web || oldRepo.Description != newRepo.Description || !reflect.DeepEqual(oldRepo.DependsOn, newRepo.DependsOn) || !reflect.DeepEqual(oldEntry.Conditions, newEntry.Conditions) {
@@ -69,11 +70,29 @@ func fileChanged(oldModel *Model, newModel *Model) map[string]bool {
 		if !ok {
 			continue
 		}
-		oldEntry := oldModel.Files[oldPath]
-		newEntry := newModel.Files[newPath]
+		oldEntry, _ := oldModel.entry(oldPath, EntryFile)
+		newEntry, _ := newModel.entry(newPath, EntryFile)
 		oldFile := oldEntry.File
 		newFile := newEntry.File
 		if oldFile.Src != newFile.Src || oldFile.Link != newFile.Link || oldFile.Description != newFile.Description || oldFile.Executable != newFile.Executable || !reflect.DeepEqual(oldEntry.Conditions, newEntry.Conditions) {
+			result[identity] = true
+		}
+	}
+	return result
+}
+
+func groupChanged(oldModel *Model, newModel *Model) map[string]bool {
+	result := map[string]bool{}
+	oldByID := groupIdentityToPath(oldModel)
+	newByID := groupIdentityToPath(newModel)
+	for identity, newPath := range newByID {
+		oldPath, ok := oldByID[identity]
+		if !ok {
+			continue
+		}
+		oldEntry, _ := oldModel.entry(oldPath, EntryGroup)
+		newEntry, _ := newModel.entry(newPath, EntryGroup)
+		if !reflect.DeepEqual(oldEntry.Group, newEntry.Group) || !reflect.DeepEqual(oldEntry.Conditions, newEntry.Conditions) {
 			result[identity] = true
 		}
 	}

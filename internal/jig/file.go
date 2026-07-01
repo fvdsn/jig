@@ -10,7 +10,7 @@ import (
 )
 
 func ensureFile(out io.Writer, root string, model *Model, state *State, filePath string, allowMove bool) error {
-	entry := model.Files[filePath]
+	entry, _ := model.entry(filePath, EntryFile)
 	file := entry.File
 	if file.Link != "" {
 		return ensureLinkFile(out, root, model, state, filePath, allowMove)
@@ -99,9 +99,9 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 }
 
 func ensureLinkFile(out io.Writer, root string, model *Model, state *State, filePath string, allowMove bool) error {
-	entry := model.Files[filePath]
+	entry, _ := model.entry(filePath, EntryFile)
 	file := entry.File
-	targetEntry, ok := model.Files[file.Link]
+	targetEntry, ok := model.entry(file.Link, EntryFile)
 	if !ok {
 		return fmt.Errorf("link target is not defined: %s", file.Link)
 	}

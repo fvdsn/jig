@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -13,6 +12,12 @@ func TestListSupportsPathAndArchivedFlag(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, definitionFile), []byte(`{
   "version": 1,
   "tree": {
+    "services": {
+      "$group": {
+        "id": "service-group",
+        "description": "Services"
+      }
+    },
     "services/current": {
       "$repo": { "git": "git@example.com:current.git" }
     },
@@ -60,11 +65,11 @@ func TestListSupportsPathAndArchivedFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "repo  services/current") || !strings.Contains(got, "file  services/scripts/current.sh") {
-		t.Fatalf("expected current services entries, got:\n%s", got)
-	}
-	if strings.Contains(got, "platform/auth") || strings.Contains(got, "services/old") || strings.Contains(got, "services/scripts/old.sh") {
-		t.Fatalf("unexpected filtered list output:\n%s", got)
+	want := "group services\tServices\n" +
+		"repo  services/current\n" +
+		"file  services/scripts/current.sh\n"
+	if got != want {
+		t.Fatalf("list output:\n%s\nwant:\n%s", got, want)
 	}
 
 	out.Reset()
@@ -72,7 +77,12 @@ func TestListSupportsPathAndArchivedFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 	got = out.String()
-	if !strings.Contains(got, "repo  services/old") || !strings.Contains(got, "file  services/scripts/old.sh") {
-		t.Fatalf("expected archived services entries, got:\n%s", got)
+	want = "group services\tServices\n" +
+		"repo  services/current\n" +
+		"repo  services/old\n" +
+		"file  services/scripts/current.sh\n" +
+		"file  services/scripts/old.sh\n"
+	if got != want {
+		t.Fatalf("archived list output:\n%s\nwant:\n%s", got, want)
 	}
 }

@@ -63,3 +63,57 @@ func TestInfoIncludesArchivedNodeWhenRequestedOrInstalled(t *testing.T) {
 		t.Fatalf("expected installed archived repository info, got:\n%s", out.String())
 	}
 }
+
+func TestInfoOrdersMixedGroupEntriesByPath(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, definitionFile), []byte(`{
+  "version": 1,
+  "tree": {
+    "services": {
+      "$group": { "id": "services-group", "description": "Services" },
+      "a-config": {
+        "$file": { "src": "git:git@example.com:config.git#a-config" }
+      },
+      "m-api": {
+        "$repo": { "git": "git@example.com:api.git" }
+      },
+      "z-readme": {
+        "$file": { "src": "git:git@example.com:config.git#z-readme" }
+      }
+    }
+  }
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveState(root, emptyState()); err != nil {
+		t.Fatal(err)
+	}
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chdir(oldWd); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	var out bytes.Buffer
+	if err := Info(InfoOptions{Path: "services"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	want := "group: services\n" +
+		"identity: services-group\n" +
+		"description: Services\n" +
+		"entries:\n" +
+		"  file  services/a-config\n" +
+		"  repo  services/m-api\n" +
+		"  file  services/z-readme\n"
+	if got := out.String(); got != want {
+		t.Fatalf("info output:\n%s\nwant:\n%s", got, want)
+	}
+}

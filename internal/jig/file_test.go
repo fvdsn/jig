@@ -56,9 +56,9 @@ func TestEnsureLinkFileCreatesRelativeSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := emptyState()
-	model := Model{Repos: map[string]RepoEntry{}, Groups: map[string]GroupEntry{}, Files: map[string]FileEntry{
-		"scripts/dev.sh": {Path: "scripts/dev.sh", Identity: "dev-script", File: File{Src: "git:git@example.com:config.git#scripts/dev.sh"}},
-		"bin/dev":        {Path: "bin/dev", Identity: "dev-command", File: File{Link: "scripts/dev.sh"}},
+	model := Model{Entries: map[string]Entry{
+		"scripts/dev.sh": testFileEntry("scripts/dev.sh", "dev-script", File{Src: "git:git@example.com:config.git#scripts/dev.sh"}),
+		"bin/dev":        testFileEntry("bin/dev", "dev-command", File{Link: "scripts/dev.sh"}),
 	}}
 
 	if err := ensureFile(ioDiscard{}, root, &model, &state, "bin/dev", true); err != nil {
@@ -88,8 +88,8 @@ func TestEnsureFilePreservesLocalModification(t *testing.T) {
 	state := State{Version: 1, Repos: map[string]StateRepo{}, Files: map[string]StateFile{
 		"dev-script": {Path: "scripts/dev.sh", Src: "git:git@example.com:config.git#scripts/dev.sh", SHA256: sha256Hex([]byte("original"))},
 	}}
-	model := Model{Repos: map[string]RepoEntry{}, Files: map[string]FileEntry{
-		"scripts/dev.sh": {Path: "scripts/dev.sh", Identity: "dev-script", File: File{Src: "git:git@example.com:config.git#scripts/dev.sh"}},
+	model := Model{Entries: map[string]Entry{
+		"scripts/dev.sh": testFileEntry("scripts/dev.sh", "dev-script", File{Src: "git:git@example.com:config.git#scripts/dev.sh"}),
 	}}
 
 	err := ensureFile(ioDiscard{}, root, &model, &state, "scripts/dev.sh", true)
@@ -101,10 +101,9 @@ func TestEnsureFilePreservesLocalModification(t *testing.T) {
 func TestInstalledFileIdentitySetRequiresTrackedExistingFile(t *testing.T) {
 	root := t.TempDir()
 	model := Model{
-		Repos: map[string]RepoEntry{},
-		Files: map[string]FileEntry{
-			"tracked.txt":   {Path: "tracked.txt", Identity: "tracked", File: File{Archived: true}},
-			"untracked.txt": {Path: "untracked.txt", Identity: "untracked", File: File{Archived: true}},
+		Entries: map[string]Entry{
+			"tracked.txt":   testFileEntry("tracked.txt", "tracked", File{Archived: true}),
+			"untracked.txt": testFileEntry("untracked.txt", "untracked", File{Archived: true}),
 		},
 	}
 	state := State{

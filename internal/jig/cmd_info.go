@@ -79,11 +79,12 @@ func Info(options InfoOptions, out io.Writer) error {
 	}
 
 	group, hasGroup := selection.exactGroup()
-	if len(selection.Repos) == 0 && len(selection.Files) == 0 && !hasGroup {
+	if len(selection.Entries) == 0 {
 		return fmt.Errorf("no repository, file, or group matches %q", path)
 	}
 	fmt.Fprintf(out, "group: %s\n", path)
 	if hasGroup {
+		fmt.Fprintf(out, "identity: %s\n", group.Identity)
 		if group.Group.Description != "" {
 			fmt.Fprintf(out, "description: %s\n", group.Group.Description)
 		}
@@ -103,16 +104,16 @@ func Info(options InfoOptions, out io.Writer) error {
 			}
 		}
 	}
-	if len(selection.Repos) > 0 {
-		fmt.Fprintln(out, "repos:")
-		for _, entry := range selection.Repos {
-			fmt.Fprintf(out, "  %s\n", entry.Path)
+	var children []Entry
+	for _, entry := range selection.Entries {
+		if entry.Path != path {
+			children = append(children, entry)
 		}
 	}
-	if len(selection.Files) > 0 {
-		fmt.Fprintln(out, "files:")
-		for _, entry := range selection.Files {
-			fmt.Fprintf(out, "  %s\n", entry.Path)
+	if len(children) > 0 {
+		fmt.Fprintln(out, "entries:")
+		for _, entry := range children {
+			fmt.Fprintf(out, "  %-5s %s\n", entry.Kind, entry.Path)
 		}
 	}
 	return nil

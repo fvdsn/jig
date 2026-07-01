@@ -83,8 +83,20 @@ func TestSelectNodesAppliesPathArchiveAndOrdering(t *testing.T) {
 	if got, want := selection.filePaths(), []string{"services/scripts/current.sh"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("files = %#v, want %#v", got, want)
 	}
-	if len(selection.Groups) != 1 || selection.Groups[0].Path != "services" {
-		t.Fatalf("groups = %#v, want services", selection.Groups)
+	if group, ok := selection.exactGroup(); !ok || group.Path != "services" {
+		t.Fatalf("entries = %#v, want services group", selection.Entries)
+	}
+	gotEntries := []string{}
+	for _, entry := range selection.Entries {
+		gotEntries = append(gotEntries, string(entry.Kind)+":"+entry.Path)
+	}
+	wantEntries := []string{
+		"group:services",
+		"repo:services/current",
+		"file:services/scripts/current.sh",
+	}
+	if !reflect.DeepEqual(gotEntries, wantEntries) {
+		t.Fatalf("entries = %#v, want %#v", gotEntries, wantEntries)
 	}
 
 	selection, err = model.Select(NodeQuery{Path: "services", IncludeArchived: true})
@@ -100,11 +112,7 @@ func TestSelectNodesAppliesPathArchiveAndOrdering(t *testing.T) {
 }
 
 func TestSelectNodesRejectsUnsafePath(t *testing.T) {
-	model := Model{
-		Repos:  map[string]RepoEntry{},
-		Files:  map[string]FileEntry{},
-		Groups: map[string]GroupEntry{},
-	}
+	model := Model{Entries: map[string]Entry{}}
 	if _, err := model.Select(NodeQuery{Path: "../services"}); err == nil {
 		t.Fatal("expected unsafe query path to fail")
 	}
@@ -134,7 +142,7 @@ func TestSelectNodesIncludesInstalledArchivedNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(selection.Repos) != 0 || len(selection.Files) != 0 || len(selection.Groups) != 0 {
+	if len(selection.Entries) != 0 {
 		t.Fatalf("unexpected uninstalled archived selection: %#v", selection)
 	}
 
@@ -154,8 +162,8 @@ func TestSelectNodesIncludesInstalledArchivedNodes(t *testing.T) {
 	if got, want := selection.filePaths(), []string{"legacy/settings.json"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("installed archived files = %#v, want %#v", got, want)
 	}
-	if len(selection.Groups) != 1 || selection.Groups[0].Path != "legacy" {
-		t.Fatalf("installed archived groups = %#v, want legacy", selection.Groups)
+	if group, ok := selection.exactGroup(); !ok || group.Path != "legacy" {
+		t.Fatalf("installed archived entries = %#v, want legacy group", selection.Entries)
 	}
 }
 

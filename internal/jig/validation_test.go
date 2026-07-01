@@ -21,6 +21,25 @@ func TestValidateDefinitionDuplicateIdentity(t *testing.T) {
 	}
 }
 
+func TestValidateDefinitionDuplicateGroupIdentity(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 1,
+  "tree": {
+    "platform": {
+      "$group": { "id": "shared-group" }
+    },
+    "services": {
+      "$group": { "id": "shared-group" }
+    }
+  }
+}`)
+
+	result := validateDefinition(def)
+	if len(result.Errors) == 0 {
+		t.Fatal("expected duplicate group identity validation error")
+	}
+}
+
 func TestValidateDefinitionDependencyPathMustResolve(t *testing.T) {
 	def := testDefinition(t, `{
   "version": 1,

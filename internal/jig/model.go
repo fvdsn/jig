@@ -9,29 +9,26 @@ import (
 )
 
 type Model struct {
-	Repos  map[string]RepoEntry
-	Files  map[string]FileEntry
-	Groups map[string]GroupEntry
+	Entries map[string]Entry
 }
 
-type RepoEntry struct {
+type EntryKind string
+
+const (
+	EntryRepo  EntryKind = "repo"
+	EntryFile  EntryKind = "file"
+	EntryGroup EntryKind = "group"
+)
+
+type Entry struct {
 	Path       string
 	Identity   string
-	Repo       Repo
+	Kind       EntryKind
 	Conditions []Condition
-}
 
-type FileEntry struct {
-	Path       string
-	Identity   string
-	File       File
-	Conditions []Condition
-}
-
-type GroupEntry struct {
-	Path       string
-	Group      Group
-	Conditions []Condition
+	Repo  *Repo
+	File  *File
+	Group *Group
 }
 
 type inheritedGroup struct {
@@ -43,7 +40,7 @@ type inheritedGroup struct {
 }
 
 func flattenDefinition(def *Definition) (Model, error) {
-	model := Model{Repos: map[string]RepoEntry{}, Files: map[string]FileEntry{}, Groups: map[string]GroupEntry{}}
+	model := Model{Entries: map[string]Entry{}}
 	if def.Tree == nil {
 		return model, errors.New("missing tree")
 	}
@@ -106,7 +103,13 @@ func flattenTreeNode(path string, raw json.RawMessage, inherited inheritedGroup,
 			if repo.OnlyWhen != nil {
 				conditions = append(conditions, *repo.OnlyWhen)
 			}
-			model.Repos[path] = RepoEntry{Path: path, Identity: identity, Repo: repo, Conditions: conditions}
+			model.Entries[path] = Entry{
+				Path:       path,
+				Identity:   identity,
+				Kind:       EntryRepo,
+				Conditions: conditions,
+				Repo:       &repo,
+			}
 			return nil
 		}
 		var file File
@@ -122,7 +125,13 @@ func flattenTreeNode(path string, raw json.RawMessage, inherited inheritedGroup,
 		if file.OnlyWhen != nil {
 			conditions = append(conditions, *file.OnlyWhen)
 		}
-		model.Files[path] = FileEntry{Path: path, Identity: identity, File: file, Conditions: conditions}
+		model.Entries[path] = Entry{
+			Path:       path,
+			Identity:   identity,
+			Kind:       EntryFile,
+			Conditions: conditions,
+			File:       &file,
+		}
 		return nil
 	}
 	if hasGroup {
@@ -135,7 +144,17 @@ func flattenTreeNode(path string, raw json.RawMessage, inherited inheritedGroup,
 		if inherited.Archived {
 			group.Archived = true
 		}
-		model.Groups[path] = GroupEntry{Path: path, Group: group, Conditions: append([]Condition{}, inherited.Conditions...)}
+		identity := group.ID
+		if identity == "" {
+			identity = path
+		}
+		model.Entries[path] = Entry{
+			Path:       path,
+			Identity:   identity,
+			Kind:       EntryGroup,
+			Conditions: append([]Condition{}, inherited.Conditions...),
+			Group:      &group,
+		}
 	}
 	return flattenTreeMap(obj, path, inherited, model)
 }

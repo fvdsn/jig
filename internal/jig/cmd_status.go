@@ -35,7 +35,7 @@ func Status(options StatusOptions, out io.Writer) error {
 	var modified []string
 	var conflicts []string
 
-	for _, entry := range selection.Repos {
+	for _, entry := range selection.ofKind(EntryRepo) {
 		repoPath := entry.Path
 		expectedAbs := filepath.Join(ws.Root, entry.Path)
 		stateRepo, hasState := ws.State.Repos[entry.Identity]
@@ -64,7 +64,7 @@ func Status(options StatusOptions, out io.Writer) error {
 		installed = append(installed, repoPath)
 	}
 
-	for _, entry := range selection.Files {
+	for _, entry := range selection.ofKind(EntryFile) {
 		filePath := entry.Path
 		if !activeFiles[filePath] {
 			continue
@@ -93,7 +93,7 @@ func Status(options StatusOptions, out io.Writer) error {
 				conflicts = append(conflicts, fmt.Sprintf("%s: expected symlink path is not a symlink", filePath))
 				continue
 			}
-			targetEntry := ws.Model.Files[entry.File.Link]
+			targetEntry, _ := ws.Model.entry(entry.File.Link, EntryFile)
 			expectedTarget, err := relativeSymlinkTarget(entry.Path, targetEntry.Path)
 			if err != nil {
 				conflicts = append(conflicts, fmt.Sprintf("%s: %s", filePath, err))

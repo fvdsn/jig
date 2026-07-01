@@ -8,9 +8,9 @@ import (
 
 func TestInstalledRepoIdentitySetUsesGitRepos(t *testing.T) {
 	root := t.TempDir()
-	model := Model{Repos: map[string]RepoEntry{
-		"observability/tracing": {Path: "observability/tracing", Identity: "tracing-service", Repo: Repo{Git: "git@example.com:tracing.git"}},
-	}, Files: map[string]FileEntry{}}
+	model := Model{Entries: map[string]Entry{
+		"observability/tracing": testRepoEntry("observability/tracing", "tracing-service", Repo{Git: "git@example.com:tracing.git"}),
+	}}
 	state := State{Version: 1, Repos: map[string]StateRepo{
 		"tracing-service": {Path: "observability/tracing", Git: "git@example.com:tracing.git"},
 	}, Files: map[string]StateFile{}}

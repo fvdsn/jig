@@ -12,7 +12,7 @@ func includeExplicitFiles(model *Model, base plan, files []string) plan {
 	}
 	var add func(string)
 	add = func(filePath string) {
-		entry, ok := model.Files[filePath]
+		entry, ok := model.entry(filePath, EntryFile)
 		if !ok {
 			return
 		}
@@ -31,7 +31,7 @@ func includeExplicitFiles(model *Model, base plan, files []string) plan {
 func excludeArchivedFiles(model *Model, base plan, installed map[string]bool) plan {
 	active := map[string]bool{}
 	for _, filePath := range base.Files {
-		entry, ok := model.Files[filePath]
+		entry, ok := model.entry(filePath, EntryFile)
 		if ok && (!entry.File.Archived || installed[entry.Identity]) {
 			active[filePath] = true
 		}
@@ -40,7 +40,7 @@ func excludeArchivedFiles(model *Model, base plan, installed map[string]bool) pl
 	for changed {
 		changed = false
 		for filePath := range active {
-			entry := model.Files[filePath]
+			entry, _ := model.entry(filePath, EntryFile)
 			if entry.File.Link != "" && !active[entry.File.Link] {
 				delete(active, filePath)
 				changed = true

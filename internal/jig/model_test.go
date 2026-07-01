@@ -31,11 +31,37 @@ func TestFlattenDefinitionWithSlashShorthandAndFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := model.Repos["platform/auth"]; !ok {
+	if entry, ok := model.entry("platform/auth", EntryRepo); !ok || entry.Identity != "auth-service" {
 		t.Fatal("missing platform/auth repo")
 	}
-	if _, ok := model.Files["scripts/dev.sh"]; !ok {
+	if entry, ok := model.entry("scripts/dev.sh", EntryFile); !ok || entry.Identity != "dev-script" {
 		t.Fatal("missing scripts/dev.sh file")
+	}
+}
+
+func TestFlattenDefinitionAssignsGroupIdentities(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 1,
+  "tree": {
+    "platform": {
+      "$group": { "id": "platform-group" }
+    },
+    "services": {
+      "$group": {}
+    }
+  }
+}`)
+	model, err := flattenDefinition(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	platform, ok := model.entry("platform", EntryGroup)
+	if !ok || platform.Identity != "platform-group" {
+		t.Fatalf("platform group = %#v", platform)
+	}
+	services, ok := model.entry("services", EntryGroup)
+	if !ok || services.Identity != "services" {
+		t.Fatalf("services group = %#v", services)
 	}
 }
 
@@ -58,13 +84,16 @@ func TestGroupArchivedIsInheritedByReposAndFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !model.Groups["legacy"].Group.Archived {
+	group, _ := model.entry("legacy", EntryGroup)
+	repo, _ := model.entry("legacy/service", EntryRepo)
+	file, _ := model.entry("legacy/README.md", EntryFile)
+	if !group.Group.Archived {
 		t.Fatal("group is not archived")
 	}
-	if !model.Repos["legacy/service"].Repo.Archived {
+	if !repo.Repo.Archived {
 		t.Fatal("repo did not inherit archived")
 	}
-	if !model.Files["legacy/README.md"].File.Archived {
+	if !file.File.Archived {
 		t.Fatal("file did not inherit archived")
 	}
 }
@@ -95,15 +124,15 @@ func TestGroupInheritanceAppliesMetadataAndDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo := model.Repos["platform/auth"].Repo
-	if repo.Description != "Platform services" {
-		t.Fatalf("description = %q", repo.Description)
+	entry, _ := model.entry("platform/auth", EntryRepo)
+	if entry.Repo.Description != "Platform services" {
+		t.Fatalf("description = %q", entry.Repo.Description)
 	}
-	if repo.Web != "https://github.com/acme/platform" {
-		t.Fatalf("web = %q", repo.Web)
+	if entry.Repo.Web != "https://github.com/acme/platform" {
+		t.Fatalf("web = %q", entry.Repo.Web)
 	}
-	if len(repo.DependsOn) != 1 || repo.DependsOn[0].Path != "shared/config" {
-		t.Fatalf("dependsOn = %#v", repo.DependsOn)
+	if len(entry.Repo.DependsOn) != 1 || entry.Repo.DependsOn[0].Path != "shared/config" {
+		t.Fatalf("dependsOn = %#v", entry.Repo.DependsOn)
 	}
 
 	plan, err := resolvePlan(&model, []string{"platform/auth"}, planOptions{IncludeRoots: false})
@@ -139,7 +168,7 @@ func TestGroupOnlyWhenIsInheritedByReposAndFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry := model.Files[".agents/skills/platform"]
+	entry, _ := model.entry(".agents/skills/platform", EntryFile)
 	if len(entry.Conditions) != 1 || entry.Conditions[0].Path != "platform" {
 		t.Fatalf("conditions = %#v", entry.Conditions)
 	}
