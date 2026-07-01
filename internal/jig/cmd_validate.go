@@ -24,6 +24,6 @@ func Validate(out io.Writer) error {
 	for _, msg := range validation.Warnings {
 		fmt.Fprintf(out, "warning: %s\n", msg)
 	}
-	fmt.Fprintln(out, "valid .jig.json")
+	fmt.Fprintln(out, "valid schema")
 	return nil
 }
