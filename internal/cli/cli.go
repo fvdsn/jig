@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime/debug"
 	"strings"
 
 	"github.com/fvdsn/jig/internal/jig"
@@ -40,12 +41,47 @@ func Run(args []string, out io.Writer, _ io.Writer) error {
 		return cmdStatus(args[1:], out)
 	case "update":
 		return cmdUpdate(args[1:], out)
+	case "version", "--version":
+		fmt.Fprintln(out, versionString())
+		return nil
 	case "help", "--help", "-h":
 		printUsage(out)
 		return nil
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+// versionString reports the module version embedded by go install, falling
+// back to the VCS revision for local builds.
+func versionString() string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "jig (unknown version)"
+	}
+	version := info.Main.Version
+	if version != "" && version != "(devel)" {
+		return "jig " + version
+	}
+	revision := ""
+	modified := ""
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			revision = setting.Value
+		case "vcs.modified":
+			if setting.Value == "true" {
+				modified = ", modified"
+			}
+		}
+	}
+	if revision == "" {
+		return "jig (devel)"
+	}
+	if len(revision) > 12 {
+		revision = revision[:12]
+	}
+	return fmt.Sprintf("jig (devel, %s%s)", revision, modified)
 }
 
 type parsedArgs struct {
@@ -134,6 +170,8 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Fast-forward the schema checkout (.jig/source) from its remote without changing local checkouts.")
 	fmt.Fprintln(out, "  update --sync [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]")
 	fmt.Fprintln(out, "      Update the schema, then sync the workspace.")
+	fmt.Fprintln(out, "  version")
+	fmt.Fprintln(out, "      Print the jig version.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Paths identify repositories, files, or groups using slash paths such as services/checkout or platform.")
 	fmt.Fprintln(out, "--tags a,b keeps only entries carrying all the listed tags; tags on groups are inherited by their children.")
