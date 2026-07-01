@@ -32,6 +32,8 @@ func Run(args []string, out io.Writer, _ io.Writer) error {
 		return cmdSync(args[1:], out)
 	case "pull":
 		return cmdPull(args[1:], out)
+	case "remove":
+		return cmdRemove(args[1:], out)
 	case "status":
 		return cmdStatus(args[1:], out)
 	case "update":
@@ -120,6 +122,8 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Clone missing repos, move renamed repos/files, update origins/files, and refresh local state.")
 	fmt.Fprintln(out, "  pull [path] [--archived] [--tags a,b]")
 	fmt.Fprintln(out, "      Run git pull in installed repositories matching a path or group.")
+	fmt.Fprintln(out, "  remove <path>... [-r|--recursive] [-f|--force]")
+	fmt.Fprintln(out, "      Uninstall repositories or files: delete the checkout and stop tracking it. -r removes groups, -f overrides dirty/unpushed checks.")
 	fmt.Fprintln(out, "  status [path] [--archived] [--tags a,b]")
 	fmt.Fprintln(out, "      Show installed, missing, moved, dirty, stale, modified, and remote-changed entries.")
 	fmt.Fprintln(out, "  update")
@@ -263,6 +267,24 @@ func cmdPull(args []string, out io.Writer) error {
 		Path:            optionalPath(parsed.Positionals),
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),
+	}, out)
+}
+
+func cmdRemove(args []string, out io.Writer) error {
+	parsed, err := parseArgs(args, map[string]flagKind{
+		"-r": boolFlag, "--recursive": boolFlag,
+		"-f": boolFlag, "--force": boolFlag,
+	})
+	if err != nil {
+		return err
+	}
+	if len(parsed.Positionals) == 0 {
+		return errors.New("usage: jig remove <path>... [-r|--recursive] [-f|--force]")
+	}
+	return jig.Remove(jig.RemoveOptions{
+		Paths:     parsed.Positionals,
+		Recursive: parsed.Flags["-r"] || parsed.Flags["--recursive"],
+		Force:     parsed.Flags["-f"] || parsed.Flags["--force"],
 	}, out)
 }
 

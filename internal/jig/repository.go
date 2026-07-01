@@ -62,7 +62,13 @@ func ensureRepo(root string, entry Entry, stateRepo StateRepo, hasState bool, al
 			return result
 		}
 		result.StateRepo = &StateRepo{Path: expectedRel, Git: repo.Git}
-		result.Messages = append(result.Messages, "cloned: "+entry.Path)
+		message := "cloned: " + entry.Path
+		if hasState {
+			// The checkout was tracked but its directory is gone: this is a
+			// restore of a locally deleted repo, not a first install.
+			message = "restored: " + entry.Path + " (use jig remove to uninstall)"
+		}
+		result.Messages = append(result.Messages, message)
 		return result
 	}
 
@@ -93,11 +99,20 @@ func ensureRepo(root string, entry Entry, stateRepo StateRepo, hasState bool, al
 	return result
 }
 
-func installedDefinedRepos(root string, model *Model, state *State) []string {
+// desiredDefinedRepos returns the defined repos the user wants installed:
+// everything installed on disk plus everything tracked in state. State acts
+// as the record of intent, so a checkout whose directory was deleted still
+// counts and gets restored by sync; jig remove is the way to uninstall.
+func desiredDefinedRepos(root string, model *Model, state *State) []string {
 	identityToPath := repoIdentityToPath(model)
 	resultSet := map[string]bool{}
 	for identity := range installedRepoIdentitySet(root, model, state) {
 		resultSet[identityToPath[identity]] = true
+	}
+	for identity := range state.Repos {
+		if repoPath, ok := identityToPath[identity]; ok {
+			resultSet[repoPath] = true
+		}
 	}
 	return sortedKeys(resultSet)
 }

@@ -35,7 +35,7 @@ func syncWorkspace(out io.Writer, ws *Workspace, options SyncOptions) error {
 			return fmt.Errorf("no repositories or files match %s", describeQuery(selection.Path, options.Tags))
 		}
 	} else {
-		roots = installedDefinedRepos(ws.Root, &ws.Model, &ws.State)
+		roots = desiredDefinedRepos(ws.Root, &ws.Model, &ws.State)
 		if len(options.Tags) > 0 {
 			var tagged []string
 			for _, repoPath := range roots {

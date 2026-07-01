@@ -967,7 +967,9 @@ If `path` matches symlink files, Jig also materializes their target files.
 
 If a matching repository has optional dependencies that are already installed locally, those optional dependencies are included in the sync set.
 
-If `path` is omitted, Jig syncs locally installed repositories known to the current `.jig.json` plus their non-optional dependencies, then writes active files. Installed optional dependencies are included. It should not clone every repository in `.jig.json` by default.
+If `path` is omitted, Jig syncs the desired repositories: those installed locally plus those tracked in `.jig/state.json`, with their non-optional dependencies, then writes active files. Installed optional dependencies are included. It should not clone every repository in the schema by default.
+
+State records intent: a tracked repository whose directory was deleted locally is restored by sync and reported as restored. `jig remove` is the way to uninstall.
 
 Archived repositories and files are skipped unless they are already installed or `--archived` is provided.
 
@@ -981,6 +983,7 @@ Sync may perform these actions:
 - Move tracked files when the same file identity has a new path and the file has not been locally modified.
 - Update `.jig/state.json` after successful clone, move, origin update, or file write operations.
 - Report repositories and files that exist locally but are no longer defined.
+- Prune state entries that are no longer defined and whose checkout or file is gone from disk.
 
 Sync must not delete local repositories or locally modified files.
 
@@ -1003,6 +1006,19 @@ If `path` is omitted, all locally installed repositories in the workspace are ma
 Files are ignored by `jig pull`.
 
 Installed archived repositories are included by default. `--archived` applies the same selection semantics as other commands, although `pull` can only act on installed repositories.
+
+### `jig remove <path>...`
+
+Uninstalls repositories and files: deletes the checkout or file and drops it from `.jig/state.json`, so sync stops restoring it. Ergonomics follow `rm`:
+
+- Multiple paths may be given.
+- An exact repository or file path is removed directly.
+- A path matching more than one entry (a group or prefix) requires `-r` / `--recursive`.
+- Failing entries are reported and the rest proceed; the command exits non-zero if anything was not removed.
+
+Safety: removal is refused for repositories with uncommitted changes, with unpushed commits, or on a branch with no upstream, and for locally modified files. `-f` / `--force` overrides.
+
+Entries tracked in state whose directory is already gone can be removed too; this only drops the state entry.
 
 ### `jig status [path]`
 
