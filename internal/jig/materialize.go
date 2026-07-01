@@ -76,9 +76,29 @@ func excludeArchivedFiles(model *Model, base plan, installed map[string]bool) pl
 }
 
 func applyPlan(out io.Writer, ws *Workspace, plan plan, allowMove bool) {
-	for _, repoPath := range plan.Repos {
-		if err := ensureRepo(out, ws.Root, &ws.Model, &ws.State, repoPath, allowMove); err != nil {
-			fmt.Fprintf(out, "skipped:\n  %s: %s\n", repoPath, err)
+	// Repositories are independent of each other, so the git work runs in
+	// parallel; state and output updates are applied serially in plan order.
+	entries := make([]Entry, len(plan.Repos))
+	results := make([]ensureRepoResult, len(plan.Repos))
+	for i, repoPath := range plan.Repos {
+		entries[i], _ = ws.Model.entry(repoPath, EntryRepo)
+	}
+	forEachParallel(len(plan.Repos), func(i int) {
+		stateRepo, hasState := ws.State.Repos[entries[i].Identity]
+		results[i] = ensureRepo(ws.Root, entries[i], stateRepo, hasState, allowMove)
+	})
+	for i, result := range results {
+		if result.Remove {
+			delete(ws.State.Repos, entries[i].Identity)
+		}
+		if result.StateRepo != nil {
+			ws.State.Repos[entries[i].Identity] = *result.StateRepo
+		}
+		for _, message := range result.Messages {
+			fmt.Fprintln(out, message)
+		}
+		if result.Err != nil {
+			fmt.Fprintf(out, "skipped:\n  %s: %s\n", plan.Repos[i], result.Err)
 		}
 	}
 	for _, filePath := range plan.Files {

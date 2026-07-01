@@ -32,9 +32,11 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 			if !allowMove {
 				return fmt.Errorf("already written at %s; run jig sync to move it", stateFile.Path)
 			}
-			if err := moveInstalledPath(out, root, filePath, stateFile.Path, expectedRel, "moved-file"); err != nil {
+			message, err := moveInstalledPath(root, filePath, stateFile.Path, expectedRel, "moved-file")
+			if err != nil {
 				return err
 			}
+			fmt.Fprintln(out, message)
 			stateFile.Path = expectedRel
 			state.Files[entry.Identity] = stateFile
 			hasState = true
@@ -115,9 +117,11 @@ func ensureLinkFile(out io.Writer, root string, model *Model, state *State, file
 			if !allowMove {
 				return fmt.Errorf("already written at %s; run jig sync to move it", stateFile.Path)
 			}
-			if err := moveInstalledPath(out, root, filePath, stateFile.Path, expectedRel, "moved-file"); err != nil {
+			message, err := moveInstalledPath(root, filePath, stateFile.Path, expectedRel, "moved-file")
+			if err != nil {
 				return err
 			}
+			fmt.Fprintln(out, message)
 			hasState = true
 		} else {
 			delete(state.Files, entry.Identity)

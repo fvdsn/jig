@@ -4,74 +4,93 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 )
 
-func ensureRepo(out io.Writer, root string, model *Model, state *State, repoPath string, allowMove bool) error {
-	entry, _ := model.entry(repoPath, EntryRepo)
+// ensureRepoResult carries the outcome of ensureRepo so state and output
+// updates can be applied serially after concurrent runs. State changes and
+// messages accumulated before Err are still valid and must be applied.
+type ensureRepoResult struct {
+	StateRepo *StateRepo // record for the identity when non-nil
+	Remove    bool       // drop the identity from state
+	Messages  []string
+	Err       error
+}
+
+func ensureRepo(root string, entry Entry, stateRepo StateRepo, hasState bool, allowMove bool) ensureRepoResult {
 	repo := entry.Repo
 	expectedRel := entry.Path
 	expectedAbs := filepath.Join(root, expectedRel)
-	stateRepo, hasState := state.Repos[entry.Identity]
+	var result ensureRepoResult
 
 	if hasState && stateRepo.Path != expectedRel {
 		oldAbs := filepath.Join(root, stateRepo.Path)
 		if isGitRepo(oldAbs) {
 			if !allowMove {
-				return fmt.Errorf("already installed at %s; run jig sync to move it", stateRepo.Path)
+				result.Err = fmt.Errorf("already installed at %s; run jig sync to move it", stateRepo.Path)
+				return result
 			}
 			if isDirty(oldAbs) {
-				return fmt.Errorf("repository has uncommitted changes and would need to be moved")
+				result.Err = fmt.Errorf("repository has uncommitted changes and would need to be moved")
+				return result
 			}
-			if err := moveInstalledPath(out, root, repoPath, stateRepo.Path, expectedRel, "moved"); err != nil {
-				return err
+			message, err := moveInstalledPath(root, entry.Path, stateRepo.Path, expectedRel, "moved")
+			if err != nil {
+				result.Err = err
+				return result
 			}
+			result.Messages = append(result.Messages, message)
 			stateRepo.Path = expectedRel
-			state.Repos[entry.Identity] = stateRepo
-			hasState = true
+			moved := stateRepo
+			result.StateRepo = &moved
 		} else {
-			delete(state.Repos, entry.Identity)
+			result.Remove = true
 			hasState = false
 		}
 	}
 
 	if !pathExists(expectedAbs) {
 		if err := os.MkdirAll(filepath.Dir(expectedAbs), 0o755); err != nil {
-			return err
+			result.Err = err
+			return result
 		}
 		if _, err := git("", "clone", repo.Git, expectedAbs); err != nil {
-			return err
+			result.Err = err
+			return result
 		}
-		state.Repos[entry.Identity] = StateRepo{Path: expectedRel, Git: repo.Git}
-		fmt.Fprintf(out, "cloned: %s\n", repoPath)
-		return nil
+		result.StateRepo = &StateRepo{Path: expectedRel, Git: repo.Git}
+		result.Messages = append(result.Messages, "cloned: "+entry.Path)
+		return result
 	}
 
 	if !isGitRepo(expectedAbs) {
-		return fmt.Errorf("expected path exists and is not a Git repository: %s", expectedRel)
+		result.Err = fmt.Errorf("expected path exists and is not a Git repository: %s", expectedRel)
+		return result
 	}
 	origin, err := gitOrigin(expectedAbs)
 	if err != nil {
-		return err
+		result.Err = err
+		return result
 	}
 	if origin != repo.Git {
-		if allowMove && hasState && state.Repos[entry.Identity].Path == expectedRel {
+		if allowMove && hasState && stateRepo.Path == expectedRel {
 			if _, err := git(expectedAbs, "remote", "set-url", "origin", repo.Git); err != nil {
-				return err
+				result.Err = err
+				return result
 			}
-			state.Repos[entry.Identity] = StateRepo{Path: expectedRel, Git: repo.Git}
-			fmt.Fprintf(out, "updated-origin: %s\n", repoPath)
-			return nil
+			result.StateRepo = &StateRepo{Path: expectedRel, Git: repo.Git}
+			result.Messages = append(result.Messages, "updated-origin: "+entry.Path)
+			return result
 		}
-		return fmt.Errorf("existing Git repository has different origin at %s", expectedRel)
+		result.Err = fmt.Errorf("existing Git repository has different origin at %s", expectedRel)
+		return result
 	}
-	state.Repos[entry.Identity] = StateRepo{Path: expectedRel, Git: repo.Git}
-	fmt.Fprintf(out, "present: %s\n", repoPath)
-	return nil
+	result.StateRepo = &StateRepo{Path: expectedRel, Git: repo.Git}
+	result.Messages = append(result.Messages, "present: "+entry.Path)
+	return result
 }
 
 func installedDefinedRepos(root string, model *Model, state *State) []string {
