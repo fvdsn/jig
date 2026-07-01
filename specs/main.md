@@ -1034,12 +1034,17 @@ Archived repositories and files are skipped unless they are already installed or
 
 Output is a single list with one line per entry, ordered by path across repositories and files. Each line shows a status glyph, the path, the current branch (for repositories), and a note spelling out any notable state. For a repository the current branch is shown, or a short `@<sha>` when the checkout is on a detached HEAD.
 
+Repositories with an upstream also report how many commits they are ahead of and behind it, computed locally without network access; run `jig fetch` first to compare against the latest remote state. Ahead/behind glyphs apply only when nothing more significant does, but the notes always spell out every state.
+
 ```text
 ✓ platform/argo-workflows        main
-● platform/dagster               main    dirty
+● platform/dagster               main    dirty, ahead 1
 ⇄ platform/terraform-operator    main    remote-changed
 ✗ platform/knative                       missing
 → platform/linkerd               main    moved from platform/old-linkerd
+↑ platform/flux                  main    ahead 2
+↓ platform/vault                 main    behind 3
+⇅ platform/consul                main    ahead 1, behind 4
 ```
 
 Glyphs: `✓` in sync, `●` uncommitted changes or a locally modified file, `⇄` origin differs from the definition, `→` checkout lives at a different path, `✗` defined but not present, `⚠` present but not what Jig expects.

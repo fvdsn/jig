@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -179,6 +180,28 @@ func gitBranch(path string) string {
 		}
 	}
 	return ""
+}
+
+// aheadBehind reports how many commits HEAD is ahead of and behind its
+// upstream. ok is false when there is no upstream (or a detached HEAD).
+func aheadBehind(path string) (ahead int, behind int, ok bool) {
+	out, err := git(path, "rev-list", "--left-right", "--count", "@{upstream}...HEAD")
+	if err != nil {
+		return 0, 0, false
+	}
+	fields := strings.Fields(out)
+	if len(fields) != 2 {
+		return 0, 0, false
+	}
+	behind, err = strconv.Atoi(fields[0])
+	if err != nil {
+		return 0, 0, false
+	}
+	ahead, err = strconv.Atoi(fields[1])
+	if err != nil {
+		return 0, 0, false
+	}
+	return ahead, behind, true
 }
 
 func isDirty(path string) bool {

@@ -102,6 +102,7 @@ The schema checkout works like any Git clone: the remote is its `origin`, and th
 - `jig remove <path>...` uninstalls: it deletes the checkout and stops tracking it, refusing to delete dirty or unpushed repositories unless `--force` is given. Removing a group requires `-r`.
 - `jig pull [path]` runs `git pull --ff-only` in installed repositories.
 - `jig fetch [path]` runs `git fetch` in installed repositories without touching working trees.
+- `jig status` shows one line per entry: glyph, path, branch, and notes including dirty state and ahead/behind counts against upstream (run `jig fetch` first for fresh counts).
 - `jig update` fast-forwards the schema checkout from its remote.
 - `jig update --sync` updates the schema, then syncs the workspace.
 - Archived entries are excluded by default unless they are already installed. Pass `--archived` to include uninstalled archived entries too.

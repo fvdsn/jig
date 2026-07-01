@@ -468,6 +468,8 @@ jig status services
 jig status --archived
 ```
 
+Each line shows a glyph, path, branch, and notes. Repositories with an upstream report ahead/behind commit counts (computed locally; run `jig fetch` first for fresh counts). `jig fetch && jig status` gives an overview of what changed across the workspace.
+
 Update the schema checkout from its Git remote (fast-forward only):
 
 ```sh

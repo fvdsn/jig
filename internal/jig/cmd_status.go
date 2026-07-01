@@ -24,6 +24,9 @@ const (
 	glyphMoved    = "→" // → checkout lives at a different path
 	glyphMissing  = "✗" // ✗ defined but not present
 	glyphConflict = "⚠" // ⚠ present but not what jig expects
+	glyphAhead    = "↑" // ↑ commits not pushed to upstream
+	glyphBehind   = "↓" // ↓ upstream has commits not pulled
+	glyphDiverged = "⇅" // ⇅ ahead and behind at the same time
 )
 
 type statusLine struct {
@@ -110,6 +113,24 @@ func repoStatusLine(ws *Workspace, entry Entry) statusLine {
 			glyph = glyphDirty
 		}
 		notes = append(notes, "dirty")
+	}
+	if ahead, behind, ok := aheadBehind(expectedAbs); ok && ahead+behind > 0 {
+		if glyph == glyphClean {
+			switch {
+			case ahead > 0 && behind > 0:
+				glyph = glyphDiverged
+			case ahead > 0:
+				glyph = glyphAhead
+			default:
+				glyph = glyphBehind
+			}
+		}
+		if ahead > 0 {
+			notes = append(notes, fmt.Sprintf("ahead %d", ahead))
+		}
+		if behind > 0 {
+			notes = append(notes, fmt.Sprintf("behind %d", behind))
+		}
 	}
 	return statusLine{glyph, repoPath, branch, strings.Join(notes, ", ")}
 }

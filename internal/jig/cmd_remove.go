@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 type RemoveOptions struct {
@@ -156,12 +155,12 @@ func removeFile(out io.Writer, ws *Workspace, entry Entry, force bool) error {
 // unpushedReason reports why deleting the checkout could lose commits: the
 // current branch is ahead of its upstream, or has no upstream at all.
 func unpushedReason(path string) string {
-	out, err := git(path, "rev-list", "--count", "@{upstream}..HEAD")
-	if err != nil {
+	ahead, _, ok := aheadBehind(path)
+	if !ok {
 		return "current branch has no upstream"
 	}
-	if count := strings.TrimSpace(out); count != "0" {
-		return count + " unpushed commits"
+	if ahead > 0 {
+		return fmt.Sprintf("%d unpushed commits", ahead)
 	}
 	return ""
 }
