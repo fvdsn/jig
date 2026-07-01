@@ -138,11 +138,11 @@ func installedRepoIdentitySet(root string, model *Model, state *State) map[strin
 }
 
 func isGitRepo(path string) bool {
-	if !pathExists(path) {
-		return false
-	}
-	_, err := git(path, "rev-parse", "--is-inside-work-tree")
-	return err == nil
+	// A checked-out repo has its own .git at its root (a directory for a normal
+	// clone, a file for worktrees/submodules). Checking for it directly avoids
+	// forking a git process per candidate path, which is costly when scanning a
+	// workspace with hundreds of repos.
+	return pathExists(filepath.Join(path, ".git"))
 }
 
 func gitOrigin(path string) (string, error) {
