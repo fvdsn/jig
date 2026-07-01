@@ -46,15 +46,25 @@ func Status(options StatusOptions, out io.Writer) error {
 	installedNodes := ws.installedNodes()
 	activeFiles := activeFilesForRepoSet(&ws.Model, map[string]bool{}, installedNodes.Repos, installedNodes.Files, options.IncludeArchived)
 
-	var lines []statusLine
-	for _, entry := range selection.Entries {
+	type result struct {
+		line statusLine
+		ok   bool
+	}
+	results := make([]result, len(selection.Entries))
+	forEachParallel(len(selection.Entries), func(i int) {
+		entry := selection.Entries[i]
 		switch entry.Kind {
 		case EntryRepo:
-			lines = append(lines, repoStatusLine(ws, entry))
+			results[i] = result{repoStatusLine(ws, entry), true}
 		case EntryFile:
-			if line, ok := fileStatusLine(ws, entry, activeFiles); ok {
-				lines = append(lines, line)
-			}
+			line, ok := fileStatusLine(ws, entry, activeFiles)
+			results[i] = result{line, ok}
+		}
+	})
+	var lines []statusLine
+	for _, r := range results {
+		if r.ok {
+			lines = append(lines, r.line)
 		}
 	}
 
