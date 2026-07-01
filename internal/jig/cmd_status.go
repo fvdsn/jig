@@ -240,4 +240,45 @@ func printStatusLines(out io.Writer, lines []statusLine) {
 		}
 		fmt.Fprintln(out, strings.TrimRight(text, " "))
 	}
+	printStatusSummary(out, lines)
+}
+
+var summaryGlyphLabels = []struct {
+	glyph string
+	label string
+}{
+	{glyphClean, "ok"},
+	{glyphDirty, "dirty"},
+	{glyphAhead, "ahead"},
+	{glyphBehind, "behind"},
+	{glyphDiverged, "diverged"},
+	{glyphMissing, "missing"},
+	{glyphMoved, "moved"},
+	{glyphRemote, "remote-changed"},
+	{glyphConflict, "conflict"},
+}
+
+func printStatusSummary(out io.Writer, lines []statusLine) {
+	if len(lines) == 0 {
+		return
+	}
+	counts := map[string]int{}
+	archived := 0
+	for _, line := range lines {
+		counts[line.glyph]++
+		if line.note == "archived" || strings.HasSuffix(line.note, ", archived") {
+			archived++
+		}
+	}
+	var parts []string
+	for _, entry := range summaryGlyphLabels {
+		if counts[entry.glyph] > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", counts[entry.glyph], entry.label))
+		}
+	}
+	summary := fmt.Sprintf("%d entries: %s", len(lines), strings.Join(parts, ", "))
+	if archived > 0 {
+		summary += fmt.Sprintf(" (%d archived)", archived)
+	}
+	fmt.Fprintln(out, summary)
 }
