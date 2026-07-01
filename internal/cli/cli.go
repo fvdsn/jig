@@ -108,26 +108,27 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Initialize a workspace: clone the schema repository into .jig/source, optionally cloning a path.")
 	fmt.Fprintln(out, "  validate [schema-file]")
 	fmt.Fprintln(out, "      Validate the current workspace schema, or a schema file given by path.")
-	fmt.Fprintln(out, "  list [path] [--archived]")
+	fmt.Fprintln(out, "  list [path] [--archived] [--tags a,b]")
 	fmt.Fprintln(out, "      List groups, repositories, and files defined in the schema.")
-	fmt.Fprintln(out, "  info <path> [--archived]")
+	fmt.Fprintln(out, "  info <path> [--archived] [--tags a,b]")
 	fmt.Fprintln(out, "      Show repository, file, or group metadata.")
-	fmt.Fprintln(out, "  deps <path> [--with-optional-deps] [--archived]")
+	fmt.Fprintln(out, "  deps <path> [--with-optional-deps] [--archived] [--tags a,b]")
 	fmt.Fprintln(out, "      Show expanded recursive dependencies for repositories matching a path.")
-	fmt.Fprintln(out, "  clone [path] [--with-optional-deps] [--archived] [--refresh]")
+	fmt.Fprintln(out, "  clone [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]")
 	fmt.Fprintln(out, "      Clone/materialize all entries, or repositories/files matching a path.")
-	fmt.Fprintln(out, "  sync [path] [--with-optional-deps] [--archived] [--refresh]")
+	fmt.Fprintln(out, "  sync [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]")
 	fmt.Fprintln(out, "      Clone missing repos, move renamed repos/files, update origins/files, and refresh local state.")
-	fmt.Fprintln(out, "  pull [path] [--archived]")
+	fmt.Fprintln(out, "  pull [path] [--archived] [--tags a,b]")
 	fmt.Fprintln(out, "      Run git pull in installed repositories matching a path or group.")
-	fmt.Fprintln(out, "  status [path] [--archived]")
+	fmt.Fprintln(out, "  status [path] [--archived] [--tags a,b]")
 	fmt.Fprintln(out, "      Show installed, missing, moved, dirty, stale, modified, and remote-changed entries.")
 	fmt.Fprintln(out, "  update")
 	fmt.Fprintln(out, "      Fast-forward the schema checkout (.jig/source) from its remote without changing local checkouts.")
-	fmt.Fprintln(out, "  update --sync [path] [--with-optional-deps] [--archived] [--refresh]")
+	fmt.Fprintln(out, "  update --sync [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]")
 	fmt.Fprintln(out, "      Update the schema, then sync the workspace.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Paths identify repositories, files, or groups using slash paths such as services/checkout or platform.")
+	fmt.Fprintln(out, "--tags a,b keeps only entries carrying all the listed tags; tags on groups are inherited by their children.")
 }
 
 func cmdInit(args []string, out io.Writer) error {
@@ -171,110 +172,117 @@ func cmdValidate(args []string, out io.Writer) error {
 }
 
 func cmdList(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig list [path] [--archived]")
+		return errors.New("usage: jig list [path] [--archived] [--tags a,b]")
 	}
 	return jig.List(jig.ListOptions{
 		Path:            optionalPath(parsed.Positionals),
 		IncludeArchived: parsed.Flags["--archived"],
+		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
 }
 
 func cmdInfo(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) != 1 {
-		return errors.New("usage: jig info <path> [--archived]")
+		return errors.New("usage: jig info <path> [--archived] [--tags a,b]")
 	}
 	return jig.Info(jig.InfoOptions{
 		Path:            parsed.Positionals[0],
 		IncludeArchived: parsed.Flags["--archived"],
+		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
 }
 
 func cmdDeps(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--archived": boolFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) != 1 {
-		return errors.New("usage: jig deps <path> [--with-optional-deps] [--archived]")
+		return errors.New("usage: jig deps <path> [--with-optional-deps] [--archived] [--tags a,b]")
 	}
 	return jig.Dependencies(jig.DependenciesOptions{
 		Path:            parsed.Positionals[0],
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
+		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
 }
 
 func cmdClone(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--archived": boolFlag, "--refresh": boolFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--archived": boolFlag, "--refresh": boolFlag, "--tags": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig clone [path] [--with-optional-deps] [--archived] [--refresh]")
+		return errors.New("usage: jig clone [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]")
 	}
 	return jig.Clone(jig.CloneOptions{
 		Path:            optionalPath(parsed.Positionals),
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
 		Refresh:         parsed.Flags["--refresh"],
+		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
 }
 
 func cmdSync(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--archived": boolFlag, "--refresh": boolFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--archived": boolFlag, "--refresh": boolFlag, "--tags": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig sync [path] [--with-optional-deps] [--archived] [--refresh]")
+		return errors.New("usage: jig sync [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]")
 	}
 	return jig.Sync(jig.SyncOptions{
 		Path:            optionalPath(parsed.Positionals),
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
 		Refresh:         parsed.Flags["--refresh"],
+		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
 }
 
 func cmdPull(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig pull [path] [--archived]")
+		return errors.New("usage: jig pull [path] [--archived] [--tags a,b]")
 	}
 	return jig.Pull(jig.PullOptions{
 		Path:            optionalPath(parsed.Positionals),
 		IncludeArchived: parsed.Flags["--archived"],
+		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
 }
 
 func cmdStatus(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig status [path] [--archived]")
+		return errors.New("usage: jig status [path] [--archived] [--tags a,b]")
 	}
 	return jig.Status(jig.StatusOptions{
 		Path:            optionalPath(parsed.Positionals),
 		IncludeArchived: parsed.Flags["--archived"],
+		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
 }
 
 func cmdUpdate(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--sync": boolFlag, "--with-optional-deps": boolFlag, "--archived": boolFlag, "--refresh": boolFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--sync": boolFlag, "--with-optional-deps": boolFlag, "--archived": boolFlag, "--refresh": boolFlag, "--tags": valueFlag})
 	if err != nil {
 		return err
 	}
@@ -290,6 +298,7 @@ func cmdUpdate(args []string, out io.Writer) error {
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
 		Refresh:         parsed.Flags["--refresh"],
+		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
 }
 
@@ -298,4 +307,14 @@ func optionalPath(positionals []string) string {
 		return ""
 	}
 	return positionals[0]
+}
+
+func parseTags(value string) []string {
+	var tags []string
+	for _, tag := range strings.Split(value, ",") {
+		if tag = strings.TrimSpace(tag); tag != "" {
+			tags = append(tags, tag)
+		}
+	}
+	return tags
 }

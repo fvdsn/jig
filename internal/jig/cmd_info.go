@@ -3,11 +3,13 @@ package jig
 import (
 	"fmt"
 	"io"
+	"strings"
 )
 
 type InfoOptions struct {
 	Path            string
 	IncludeArchived bool
+	Tags            []string
 }
 
 func Info(options InfoOptions, out io.Writer) error {
@@ -15,7 +17,7 @@ func Info(options InfoOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Select(NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived})
+	selection, err := ws.Select(NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
 	if err != nil {
 		return err
 	}
@@ -35,6 +37,7 @@ func Info(options InfoOptions, out io.Writer) error {
 		if repo.Archived {
 			fmt.Fprintln(out, "archived: true")
 		}
+		printTags(out, entry.Tags)
 		if len(entry.Conditions) > 0 {
 			printConditions(out, "onlyWhen", entry.Conditions)
 		}
@@ -63,6 +66,7 @@ func Info(options InfoOptions, out io.Writer) error {
 		if file.Archived {
 			fmt.Fprintln(out, "archived: true")
 		}
+		printTags(out, entry.Tags)
 		fmt.Fprintf(out, "executable: %v\n", file.Executable)
 		if len(entry.Conditions) > 0 {
 			printConditions(out, "onlyWhen", entry.Conditions)
@@ -86,6 +90,7 @@ func Info(options InfoOptions, out io.Writer) error {
 		if group.Group.Archived {
 			fmt.Fprintln(out, "archived: true")
 		}
+		printTags(out, group.Tags)
 		if len(group.Conditions) > 0 {
 			printConditions(out, "onlyWhen", group.Conditions)
 		}
@@ -109,6 +114,12 @@ func Info(options InfoOptions, out io.Writer) error {
 		}
 	}
 	return nil
+}
+
+func printTags(out io.Writer, tags []string) {
+	if len(tags) > 0 {
+		fmt.Fprintf(out, "tags: %s\n", strings.Join(tags, ", "))
+	}
 }
 
 func printConditions(out io.Writer, label string, conditions []Condition) {

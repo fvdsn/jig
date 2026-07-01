@@ -49,5 +49,6 @@ func entryChanged(oldEntry, newEntry Entry) bool {
 	return !reflect.DeepEqual(oldEntry.Repo, newEntry.Repo) ||
 		!reflect.DeepEqual(oldEntry.File, newEntry.File) ||
 		!reflect.DeepEqual(oldEntry.Group, newEntry.Group) ||
-		!reflect.DeepEqual(oldEntry.Conditions, newEntry.Conditions)
+		!reflect.DeepEqual(oldEntry.Conditions, newEntry.Conditions) ||
+		!reflect.DeepEqual(oldEntry.Tags, newEntry.Tags)
 }

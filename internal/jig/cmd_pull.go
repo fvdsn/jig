@@ -10,6 +10,7 @@ import (
 type PullOptions struct {
 	Path            string
 	IncludeArchived bool
+	Tags            []string
 }
 
 func Pull(options PullOptions, out io.Writer) error {
@@ -17,7 +18,7 @@ func Pull(options PullOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	query := NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived}
+	query := NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived, Tags: options.Tags}
 	selection, err := ws.Select(query)
 	if err != nil {
 		return err

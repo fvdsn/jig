@@ -4,7 +4,7 @@ Jig is a CLI tool for managing a local workspace made of many related Git reposi
 
 A workspace is described by a schema file (usually `.jig.json` or `jig.json`) hosted in its own Git repository and shared by a team. Repositories are declared with `$repo`, files are declared with `$file`, and paths map directly to where things should appear on disk.
 
-Directory nodes may also declare `$group` metadata. Group metadata such as `description`, `web`, `dependsOn`, and `onlyWhen` is inherited by child repositories or files where applicable.
+Directory nodes may also declare `$group` metadata. Group metadata such as `description`, `web`, `tags`, `dependsOn`, and `onlyWhen` is inherited by child repositories or files where applicable.
 
 ## Example
 
@@ -70,15 +70,15 @@ jig init <git-url> [workspace-dir] [--path <schema-path>]
 jig init <local-schema-file> [workspace-dir]
 jig init <git-url> [workspace-dir] --clone [path]
 jig validate [schema-file]
-jig list [path] [--archived]
-jig info <path> [--archived]
-jig deps <path> [--with-optional-deps] [--archived]
-jig clone [path] [--with-optional-deps] [--archived] [--refresh]
-jig sync [path] [--with-optional-deps] [--archived] [--refresh]
-jig pull [path] [--archived]
-jig status [path] [--archived]
+jig list [path] [--archived] [--tags a,b]
+jig info <path> [--archived] [--tags a,b]
+jig deps <path> [--with-optional-deps] [--archived] [--tags a,b]
+jig clone [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]
+jig sync [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]
+jig pull [path] [--archived] [--tags a,b]
+jig status [path] [--archived] [--tags a,b]
 jig update
-jig update --sync [path] [--with-optional-deps] [--archived] [--refresh]
+jig update --sync [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]
 ```
 
 ## Workspace Layout
@@ -102,6 +102,7 @@ The schema checkout works like any Git clone: the remote is its `origin`, and th
 - `jig update --sync` updates the schema, then syncs the workspace.
 - Archived entries are excluded by default unless they are already installed. Pass `--archived` to include uninstalled archived entries too.
 - Generated files are only refetched when missing or when their `src` changes; pass `--refresh` to refetch them unconditionally.
+- Entries may declare `tags: ["a", "b"]`; `--tags a,b` filters commands to entries carrying all the listed tags. Tags on groups are inherited by their children. Dependencies of a selected repository are always included, tagged or not.
 
 ## Editing the Schema
 

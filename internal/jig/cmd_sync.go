@@ -10,6 +10,7 @@ type SyncOptions struct {
 	IncludeOptional bool
 	IncludeArchived bool
 	Refresh         bool
+	Tags            []string
 }
 
 func Sync(options SyncOptions, out io.Writer) error {
@@ -24,17 +25,26 @@ func syncWorkspace(out io.Writer, ws *Workspace, options SyncOptions) error {
 	var roots []string
 	var explicitFiles []string
 	if options.Path != "" {
-		selection, err := ws.Select(NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived})
+		selection, err := ws.Select(NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
 		if err != nil {
 			return err
 		}
 		roots = selection.repoPaths()
 		explicitFiles = selection.filePaths()
 		if len(roots) == 0 && len(explicitFiles) == 0 {
-			return fmt.Errorf("no repositories or files match %q", selection.Path)
+			return fmt.Errorf("no repositories or files match %s", describeQuery(selection.Path, options.Tags))
 		}
 	} else {
 		roots = installedDefinedRepos(ws.Root, &ws.Model, &ws.State)
+		if len(options.Tags) > 0 {
+			var tagged []string
+			for _, repoPath := range roots {
+				if entry, ok := ws.Model.entry(repoPath, EntryRepo); ok && entry.hasAllTags(options.Tags) {
+					tagged = append(tagged, repoPath)
+				}
+			}
+			roots = tagged
+		}
 	}
 
 	if err := resolveAndApplyPlan(out, ws, roots, explicitFiles, applyOptions{

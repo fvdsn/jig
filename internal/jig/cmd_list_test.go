@@ -59,9 +59,10 @@ func TestListSupportsPathAndArchivedFlag(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
+	// Children inherit the group description through flat slash keys.
 	want := "group services\tServices\n" +
-		"repo  services/current\n" +
-		"file  services/scripts/current.sh\n"
+		"repo  services/current\tServices\n" +
+		"file  services/scripts/current.sh\tServices\n"
 	if got != want {
 		t.Fatalf("list output:\n%s\nwant:\n%s", got, want)
 	}
@@ -72,10 +73,10 @@ func TestListSupportsPathAndArchivedFlag(t *testing.T) {
 	}
 	got = out.String()
 	want = "group services\tServices\n" +
-		"repo  services/current\n" +
-		"repo  services/old\n" +
-		"file  services/scripts/current.sh\n" +
-		"file  services/scripts/old.sh\n"
+		"repo  services/current\tServices\n" +
+		"repo  services/old\tServices\n" +
+		"file  services/scripts/current.sh\tServices\n" +
+		"file  services/scripts/old.sh\tServices\n"
 	if got != want {
 		t.Fatalf("archived list output:\n%s\nwant:\n%s", got, want)
 	}

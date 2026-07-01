@@ -12,6 +12,7 @@ import (
 type StatusOptions struct {
 	Path            string
 	IncludeArchived bool
+	Tags            []string
 }
 
 // Status glyphs. Each line carries the most significant glyph plus a note that
@@ -37,7 +38,7 @@ func Status(options StatusOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	query := NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived}
+	query := NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived, Tags: options.Tags}
 	selection, err := ws.Select(query)
 	if err != nil {
 		return err
@@ -68,7 +69,7 @@ func Status(options StatusOptions, out io.Writer) error {
 		}
 	}
 
-	if selection.Path == "" {
+	if selection.Path == "" && len(options.Tags) == 0 {
 		lines = append(lines, staleStatusLines(ws)...)
 	}
 

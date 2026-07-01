@@ -9,6 +9,7 @@ type DependenciesOptions struct {
 	Path            string
 	IncludeOptional bool
 	IncludeArchived bool
+	Tags            []string
 }
 
 func Dependencies(options DependenciesOptions, out io.Writer) error {
@@ -16,7 +17,7 @@ func Dependencies(options DependenciesOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Select(NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived})
+	selection, err := ws.Select(NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
 	if err != nil {
 		return err
 	}

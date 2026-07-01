@@ -1,6 +1,7 @@
 package jig
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
@@ -8,6 +9,7 @@ import (
 type NodeQuery struct {
 	Path            string
 	IncludeArchived bool
+	Tags            []string // when set, only entries carrying all of these tags match
 	Installed       InstalledNodes
 }
 
@@ -40,12 +42,40 @@ func (model *Model) Select(query NodeQuery) (NodeSelection, error) {
 		if !nodePathMatches(path, entryPath) {
 			continue
 		}
+		if !entry.hasAllTags(query.Tags) {
+			continue
+		}
 		if entry.archived() && !query.IncludeArchived && !entryInstalled(model, entry, query.Installed) {
 			continue
 		}
 		selection.Entries = append(selection.Entries, entry)
 	}
 	return selection, nil
+}
+
+// describeQuery renders a path-and-tags query for error messages.
+func describeQuery(path string, tags []string) string {
+	description := fmt.Sprintf("%q", path)
+	if len(tags) > 0 {
+		description += " with tags " + strings.Join(tags, ",")
+	}
+	return description
+}
+
+func (entry Entry) hasAllTags(tags []string) bool {
+	for _, tag := range tags {
+		found := false
+		for _, entryTag := range entry.Tags {
+			if entryTag == tag {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 func (ws *Workspace) Select(query NodeQuery) (NodeSelection, error) {

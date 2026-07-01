@@ -256,6 +256,12 @@ Marks the group and all descendant repositories and files as archived.
 
 Archived repositories and files are excluded by default unless already installed. `--archived` includes uninstalled archived entries too.
 
+### `$group.tags`
+
+Optional list of strings.
+
+Tags label entries for filtering with the `--tags` CLI flag. Tags must be non-empty and must not contain spaces or commas. Group tags are inherited additively by descendant repositories and files.
+
 ### `$group.dependsOn`
 
 Optional array.
@@ -281,8 +287,11 @@ When flattening the tree:
 - `description` is inherited by descendant repositories and files when they do not define one locally. The nearest value wins.
 - `web` is inherited by descendant repositories when they do not define one locally. The nearest value wins.
 - `archived` is inherited by descendant repositories and files. A descendant cannot opt out of an archived ancestor.
+- `tags` are inherited additively by descendant repositories and files. An entry effective tag set is the union of its declared tags and all ancestor group tags.
 - `dependsOn` is inherited additively by descendant repositories. Ancestor dependencies come before local dependencies.
 - `onlyWhen` is inherited additively by descendant repositories and files. All conditions must match.
+
+Inheritance applies to the expanded tree: a `$group` declared at `services` applies to `services/checkout` whether the child is written nested inside the group node or as a flat `services/checkout` key.
 
 `jig info <group>` should show `$group` metadata when present.
 
@@ -350,6 +359,12 @@ Optional boolean.
 Default: `false`.
 
 Archived repositories remain valid definition entries. They are excluded by default unless already installed; `--archived` includes uninstalled archived repositories too.
+
+### `$repo.tags`
+
+Optional list of strings.
+
+Tags label entries for filtering with the `--tags` CLI flag. Tags must be non-empty and must not contain spaces or commas.
 
 ### `$repo.dependsOn`
 
@@ -493,6 +508,12 @@ Default: `false`.
 Archived files remain valid definition entries. They are excluded by default unless already installed; `--archived` includes uninstalled archived files too.
 
 If a link file points to an archived target file, the link is also skipped unless the target is already installed or `--archived` is passed.
+
+### `$file.tags`
+
+Optional list of strings.
+
+Tags label entries for filtering with the `--tags` CLI flag. Tags must be non-empty and must not contain spaces or commas.
 
 ### `$file.onlyWhen`
 

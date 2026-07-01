@@ -24,6 +24,7 @@ type Repo struct {
 	Web         string       `json:"web,omitempty"`
 	Description string       `json:"description,omitempty"`
 	Archived    bool         `json:"archived,omitempty"`
+	Tags        []string     `json:"tags,omitempty"`
 	DependsOn   []Dependency `json:"dependsOn,omitempty"`
 	OnlyWhen    *Condition   `json:"onlyWhen,omitempty"`
 }
@@ -35,6 +36,7 @@ type File struct {
 	Description string     `json:"description,omitempty"`
 	Executable  bool       `json:"executable,omitempty"`
 	Archived    bool       `json:"archived,omitempty"`
+	Tags        []string   `json:"tags,omitempty"`
 	OnlyWhen    *Condition `json:"onlyWhen,omitempty"`
 }
 
@@ -43,6 +45,7 @@ type Group struct {
 	Description string       `json:"description,omitempty"`
 	Web         string       `json:"web,omitempty"`
 	Archived    bool         `json:"archived,omitempty"`
+	Tags        []string     `json:"tags,omitempty"`
 	DependsOn   []Dependency `json:"dependsOn,omitempty"`
 	OnlyWhen    *Condition   `json:"onlyWhen,omitempty"`
 }

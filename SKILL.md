@@ -133,6 +133,7 @@ Important fields:
 - `web`: optional web URL.
 - `description`: optional human description.
 - `archived`: optional boolean; archived repos are excluded by default unless already installed. Pass `--archived` to include uninstalled archived repos too.
+- `tags`: optional list of strings used for filtering with `--tags`.
 - `dependsOn`: optional dependency list.
 - `onlyWhen`: optional activation condition.
 
@@ -223,6 +224,7 @@ Inherited behavior:
 - `description` is inherited by child repos/files when they do not define one.
 - `web` is inherited by child repos when they do not define one.
 - `archived` is inherited by child repos/files.
+- `tags` are inherited additively by child repos/files.
 - `dependsOn` is inherited additively by child repos.
 - `onlyWhen` is inherited additively by child repos/files.
 
@@ -359,6 +361,14 @@ List defined groups, repositories, and files:
 jig list
 jig list services
 jig list --archived
+```
+
+Filter by tags. `--tags a,b` keeps only entries carrying all the listed tags and works on `list`, `info`, `deps`, `clone`, `sync`, `pull`, `status`, and `update --sync`. Dependencies of a selected repository are always included, tagged or not:
+
+```sh
+jig list --tags backend
+jig clone services --tags backend,go
+jig status --tags frontend
 ```
 
 Show information about a repo, file, or group:

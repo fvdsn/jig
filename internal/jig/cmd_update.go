@@ -14,6 +14,7 @@ type UpdateOptions struct {
 	IncludeOptional bool
 	IncludeArchived bool
 	Refresh         bool
+	Tags            []string
 }
 
 // Update fast-forwards the schema source checkout to its upstream. The
@@ -72,6 +73,7 @@ func Update(options UpdateOptions, out io.Writer) error {
 			IncludeOptional: options.IncludeOptional,
 			IncludeArchived: options.IncludeArchived,
 			Refresh:         options.Refresh,
+			Tags:            options.Tags,
 		})
 	}
 	return nil

@@ -54,6 +54,11 @@ func validateDefinition(def *Definition) validationResult {
 		for _, condition := range entry.Conditions {
 			validateCondition(&result, model, path, condition)
 		}
+		for _, tag := range entry.Tags {
+			if tag == "" || strings.ContainsAny(tag, ", \t") {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s %s has invalid tag %q: tags must be non-empty without spaces or commas", kind, path, tag))
+			}
+		}
 		for _, dep := range entry.dependsOn() {
 			if err := validateSafePath(dep.Path); err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("%s %s has invalid dependency path %q: %s", kind, path, dep.Path, err))
