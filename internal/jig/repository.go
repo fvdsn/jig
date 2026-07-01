@@ -24,20 +24,12 @@ func ensureRepo(out io.Writer, root string, model *Model, state *State, repoPath
 			if !allowMove {
 				return fmt.Errorf("already installed at %s; run jig sync to move it", stateRepo.Path)
 			}
-			if pathExists(expectedAbs) {
-				return fmt.Errorf("target path already exists: %s", expectedRel)
-			}
 			if isDirty(oldAbs) {
 				return fmt.Errorf("repository has uncommitted changes and would need to be moved")
 			}
-			if err := os.MkdirAll(filepath.Dir(expectedAbs), 0o755); err != nil {
+			if err := moveInstalledPath(out, root, repoPath, stateRepo.Path, expectedRel, "moved"); err != nil {
 				return err
 			}
-			if err := os.Rename(oldAbs, expectedAbs); err != nil {
-				return err
-			}
-			pruneEmptyParents(root, filepath.Dir(stateRepo.Path))
-			fmt.Fprintf(out, "moved: %s: %s -> %s\n", repoPath, stateRepo.Path, expectedRel)
 			stateRepo.Path = expectedRel
 			state.Repos[entry.Identity] = stateRepo
 			hasState = true
@@ -85,19 +77,8 @@ func ensureRepo(out io.Writer, root string, model *Model, state *State, repoPath
 func installedDefinedRepos(root string, model *Model, state *State) []string {
 	identityToPath := repoIdentityToPath(model)
 	resultSet := map[string]bool{}
-	for identity, stateRepo := range state.Repos {
-		repoPath, ok := identityToPath[identity]
-		if !ok {
-			continue
-		}
-		if isGitRepo(filepath.Join(root, stateRepo.Path)) {
-			resultSet[repoPath] = true
-		}
-	}
-	for _, repoPath := range sortedRepoPaths(model) {
-		if isGitRepo(filepath.Join(root, repoPath)) {
-			resultSet[repoPath] = true
-		}
+	for identity := range installedRepoIdentitySet(root, model, state) {
+		resultSet[identityToPath[identity]] = true
 	}
 	return sortedKeys(resultSet)
 }

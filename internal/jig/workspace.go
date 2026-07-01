@@ -38,14 +38,12 @@ func loadWorkspace(withState bool) (*Workspace, error) {
 	if err != nil {
 		return nil, err
 	}
-	state := emptyState()
-	if withState {
-		state, err = loadState(root)
-		if err != nil {
+	state, err := loadState(root)
+	if err != nil {
+		if withState {
 			return nil, err
 		}
-	} else {
-		state, _ = loadState(root)
+		state = emptyState()
 	}
 	return &Workspace{Root: root, Def: *def, Model: model, State: state}, nil
 }

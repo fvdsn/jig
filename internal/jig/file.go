@@ -32,17 +32,9 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 			if !allowMove {
 				return fmt.Errorf("already written at %s; run jig sync to move it", stateFile.Path)
 			}
-			if pathExists(expectedAbs) {
-				return fmt.Errorf("target path already exists: %s", expectedRel)
-			}
-			if err := os.MkdirAll(filepath.Dir(expectedAbs), 0o755); err != nil {
+			if err := moveInstalledPath(out, root, filePath, stateFile.Path, expectedRel, "moved-file"); err != nil {
 				return err
 			}
-			if err := os.Rename(oldAbs, expectedAbs); err != nil {
-				return err
-			}
-			pruneEmptyParents(root, filepath.Dir(stateFile.Path))
-			fmt.Fprintf(out, "moved-file: %s: %s -> %s\n", filePath, stateFile.Path, expectedRel)
 			stateFile.Path = expectedRel
 			state.Files[entry.Identity] = stateFile
 			hasState = true
@@ -123,17 +115,9 @@ func ensureLinkFile(out io.Writer, root string, model *Model, state *State, file
 			if !allowMove {
 				return fmt.Errorf("already written at %s; run jig sync to move it", stateFile.Path)
 			}
-			if pathExists(expectedAbs) {
-				return fmt.Errorf("target path already exists: %s", expectedRel)
-			}
-			if err := os.MkdirAll(filepath.Dir(expectedAbs), 0o755); err != nil {
+			if err := moveInstalledPath(out, root, filePath, stateFile.Path, expectedRel, "moved-file"); err != nil {
 				return err
 			}
-			if err := os.Rename(oldAbs, expectedAbs); err != nil {
-				return err
-			}
-			pruneEmptyParents(root, filepath.Dir(stateFile.Path))
-			fmt.Fprintf(out, "moved-file: %s: %s -> %s\n", filePath, stateFile.Path, expectedRel)
 			hasState = true
 		} else {
 			delete(state.Files, entry.Identity)

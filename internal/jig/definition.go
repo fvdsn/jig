@@ -10,7 +10,6 @@ type Definition struct {
 	Source  *Source                    `json:"source,omitempty"`
 	Tree    map[string]json.RawMessage `json:"tree"`
 	Repos   map[string]Repo            `json:"repos,omitempty"` // legacy input is rejected by validation; kept so old files parse clearly.
-	Extra   map[string]json.RawMessage `json:"-"`
 }
 
 type Source struct {

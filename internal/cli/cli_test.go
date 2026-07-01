@@ -6,7 +6,7 @@ import (
 )
 
 func TestParseInitArgsCloneWithoutPath(t *testing.T) {
-	parsed, err := parseInitArgs([]string{"git@example.com:config.git", "--clone", "--with-optional-deps", "--archived"})
+	parsed, err := parseArgs([]string{"git@example.com:config.git", "--clone", "--with-optional-deps", "--archived"}, initFlags)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func TestParseInitArgsCloneWithoutPath(t *testing.T) {
 }
 
 func TestParseInitArgsCloneWithPath(t *testing.T) {
-	parsed, err := parseInitArgs([]string{"git@example.com:config.git", "--clone", "services/checkout"})
+	parsed, err := parseArgs([]string{"git@example.com:config.git", "--clone", "services/checkout"}, initFlags)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestInitSelectionFlagsRequireClone(t *testing.T) {
 }
 
 func TestParseUpdateFlags(t *testing.T) {
-	parsed, err := parseArgs([]string{"--sync", "--with-optional-deps", "--archived"}, nil, map[string]bool{"--sync": true, "--with-optional-deps": true, "--archived": true})
+	parsed, err := parseArgs([]string{"--sync", "--with-optional-deps", "--archived"}, map[string]flagKind{"--sync": boolFlag, "--with-optional-deps": boolFlag, "--archived": boolFlag})
 	if err != nil {
 		t.Fatal(err)
 	}

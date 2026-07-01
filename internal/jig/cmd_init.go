@@ -63,11 +63,7 @@ func Init(options InitOptions, out io.Writer) error {
 
 	fmt.Fprintf(out, "initialized workspace at %s\n", workspaceDir)
 	if options.Clone {
-		state, err := loadState(workspaceDir)
-		if err != nil {
-			return err
-		}
-		ws := Workspace{Root: workspaceDir, Def: *def, Model: model, State: state}
+		ws := Workspace{Root: workspaceDir, Def: *def, Model: model, State: emptyState()}
 		if err := clonePathIntoWorkspace(out, &ws, options.ClonePath, options.IncludeOptional, options.IncludeArchived); err != nil {
 			return err
 		}

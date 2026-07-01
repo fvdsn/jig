@@ -50,59 +50,51 @@ type parsedArgs struct {
 	Flags       map[string]bool
 }
 
-func parseArgs(args []string, valueFlags map[string]bool, boolFlags map[string]bool) (parsedArgs, error) {
+type flagKind int
+
+const (
+	boolFlag flagKind = iota
+	valueFlag
+	optionalValueFlag // set as a flag; also takes a value when the next arg is not a flag
+)
+
+func parseArgs(args []string, flags map[string]flagKind) (parsedArgs, error) {
 	parsed := parsedArgs{Values: map[string]string{}, Flags: map[string]bool{}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		if valueFlags != nil && valueFlags[arg] {
-			if i+1 >= len(args) {
+		kind, known := flags[arg]
+		if !known {
+			if strings.HasPrefix(arg, "-") {
+				return parsed, fmt.Errorf("unknown flag %s", arg)
+			}
+			parsed.Positionals = append(parsed.Positionals, arg)
+			continue
+		}
+		switch kind {
+		case valueFlag:
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
 				return parsed, fmt.Errorf("%s requires a value", arg)
 			}
 			parsed.Values[arg] = args[i+1]
 			i++
-			continue
-		}
-		if boolFlags != nil && boolFlags[arg] {
-			parsed.Flags[arg] = true
-			continue
-		}
-		if strings.HasPrefix(arg, "-") {
-			return parsed, fmt.Errorf("unknown flag %s", arg)
-		}
-		parsed.Positionals = append(parsed.Positionals, arg)
-	}
-	return parsed, nil
-}
-
-func parseInitArgs(args []string) (parsedArgs, error) {
-	parsed := parsedArgs{Values: map[string]string{}, Flags: map[string]bool{}}
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch arg {
-		case "--path":
-			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") {
-				return parsed, errors.New("--path requires a value")
-			}
-			parsed.Values[arg] = args[i+1]
-			i++
-		case "--clone":
+		case optionalValueFlag:
 			parsed.Flags[arg] = true
 			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 				parsed.Values[arg] = args[i+1]
 				i++
 			}
-		case "--with-optional-deps":
-			parsed.Flags[arg] = true
-		case "--archived":
-			parsed.Flags[arg] = true
 		default:
-			if strings.HasPrefix(arg, "-") {
-				return parsed, fmt.Errorf("unknown flag %s", arg)
-			}
-			parsed.Positionals = append(parsed.Positionals, arg)
+			parsed.Flags[arg] = true
 		}
 	}
 	return parsed, nil
+}
+
+var initFlags = map[string]flagKind{
+	"--path":               valueFlag,
+	"--clone":              optionalValueFlag,
+	"--with-optional-deps": boolFlag,
+	"--archived":           boolFlag,
 }
 
 func printUsage(out io.Writer) {
@@ -139,7 +131,7 @@ func printUsage(out io.Writer) {
 }
 
 func cmdInit(args []string, out io.Writer) error {
-	parsed, err := parseInitArgs(args)
+	parsed, err := parseArgs(args, initFlags)
 	if err != nil {
 		return err
 	}
@@ -173,7 +165,7 @@ func cmdValidate(out io.Writer) error {
 }
 
 func cmdList(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, nil, map[string]bool{"--archived": true})
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag})
 	if err != nil {
 		return err
 	}
@@ -187,7 +179,7 @@ func cmdList(args []string, out io.Writer) error {
 }
 
 func cmdInfo(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, nil, map[string]bool{"--archived": true})
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag})
 	if err != nil {
 		return err
 	}
@@ -201,7 +193,7 @@ func cmdInfo(args []string, out io.Writer) error {
 }
 
 func cmdDeps(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, nil, map[string]bool{"--with-optional-deps": true, "--archived": true})
+	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--archived": boolFlag})
 	if err != nil {
 		return err
 	}
@@ -216,7 +208,7 @@ func cmdDeps(args []string, out io.Writer) error {
 }
 
 func cmdClone(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, nil, map[string]bool{"--with-optional-deps": true, "--archived": true})
+	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--archived": boolFlag})
 	if err != nil {
 		return err
 	}
@@ -231,7 +223,7 @@ func cmdClone(args []string, out io.Writer) error {
 }
 
 func cmdSync(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, nil, map[string]bool{"--with-optional-deps": true, "--archived": true})
+	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--archived": boolFlag})
 	if err != nil {
 		return err
 	}
@@ -246,7 +238,7 @@ func cmdSync(args []string, out io.Writer) error {
 }
 
 func cmdPull(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, nil, map[string]bool{"--archived": true})
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag})
 	if err != nil {
 		return err
 	}
@@ -260,7 +252,7 @@ func cmdPull(args []string, out io.Writer) error {
 }
 
 func cmdStatus(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, nil, map[string]bool{"--archived": true})
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag})
 	if err != nil {
 		return err
 	}
@@ -274,7 +266,7 @@ func cmdStatus(args []string, out io.Writer) error {
 }
 
 func cmdUpdate(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, nil, map[string]bool{"--sync": true, "--with-optional-deps": true, "--archived": true})
+	parsed, err := parseArgs(args, map[string]flagKind{"--sync": boolFlag, "--with-optional-deps": boolFlag, "--archived": boolFlag})
 	if err != nil {
 		return err
 	}

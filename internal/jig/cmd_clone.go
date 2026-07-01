@@ -36,21 +36,5 @@ func clonePathIntoWorkspace(out io.Writer, ws *Workspace, path string, includeOp
 		}
 		return fmt.Errorf("no repositories or files match %q", selection.Path)
 	}
-	installed := ws.installedNodes()
-	plan, err := resolvePlan(&ws.Model, roots, planOptions{
-		IncludeOptional: includeOptional,
-		IncludeArchived: includeArchived,
-		IncludeRoots:    true,
-		Installed:       installed.Repos,
-		InstalledFiles:  installed.Files,
-	})
-	if err != nil {
-		return err
-	}
-	plan = includeExplicitFiles(&ws.Model, plan, explicitFiles)
-	if !includeArchived {
-		plan = excludeArchivedFiles(&ws.Model, plan, installed.Files)
-	}
-	applyPlan(out, ws, plan, false)
-	return nil
+	return resolveAndApplyPlan(out, ws, roots, explicitFiles, includeOptional, includeArchived, false)
 }

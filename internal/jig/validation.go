@@ -54,8 +54,7 @@ func validateDefinition(def *Definition) validationResult {
 			repoIDs[entry.Identity] = path
 		}
 		for _, condition := range entry.Conditions {
-			condition := condition
-			validateCondition(&result, model, path, &condition)
+			validateCondition(&result, model, path, condition)
 		}
 		for _, dep := range entry.Repo.DependsOn {
 			if err := validateSafePath(dep.Path); err != nil {
@@ -98,8 +97,7 @@ func validateDefinition(def *Definition) validationResult {
 			fileIDs[entry.Identity] = path
 		}
 		for _, condition := range entry.Conditions {
-			condition := condition
-			validateCondition(&result, model, path, &condition)
+			validateCondition(&result, model, path, condition)
 		}
 	}
 
@@ -122,58 +120,20 @@ func validateDefinition(def *Definition) validationResult {
 			}
 		}
 		for _, condition := range entry.Conditions {
-			condition := condition
-			validateCondition(&result, model, path, &condition)
+			validateCondition(&result, model, path, condition)
 		}
 	}
 
-	for _, cycle := range detectCycles(&model) {
+	for _, cycle := range detectCycles(sortedRepoPaths(&model), repoDependencyPaths(&model)) {
 		result.Warnings = append(result.Warnings, "dependency cycle detected: "+strings.Join(cycle, " -> "))
 	}
-	for _, cycle := range detectFileLinkCycles(&model) {
+	for _, cycle := range detectCycles(sortedFilePaths(&model), fileLinkPaths(&model)) {
 		result.Errors = append(result.Errors, "file link cycle detected: "+strings.Join(cycle, " -> "))
 	}
 	return result
 }
 
-func detectFileLinkCycles(model *Model) [][]string {
-	visited := map[string]int{}
-	var stack []string
-	var cycles [][]string
-	seen := map[string]bool{}
-	var visit func(string)
-	visit = func(path string) {
-		if visited[path] == 2 {
-			return
-		}
-		if visited[path] == 1 {
-			idx := indexOf(stack, path)
-			if idx >= 0 {
-				cycle := append([]string{}, stack[idx:]...)
-				cycle = append(cycle, path)
-				key := strings.Join(cycle, "\x00")
-				if !seen[key] {
-					cycles = append(cycles, cycle)
-					seen[key] = true
-				}
-			}
-			return
-		}
-		visited[path] = 1
-		stack = append(stack, path)
-		if entry, ok := model.entry(path, EntryFile); ok && entry.File.Link != "" {
-			visit(entry.File.Link)
-		}
-		stack = stack[:len(stack)-1]
-		visited[path] = 2
-	}
-	for _, path := range sortedFilePaths(model) {
-		visit(path)
-	}
-	return cycles
-}
-
-func validateCondition(result *validationResult, model Model, ownerPath string, condition *Condition) {
+func validateCondition(result *validationResult, model Model, ownerPath string, condition Condition) {
 	if condition.Path == "" {
 		result.Errors = append(result.Errors, fmt.Sprintf("%s has onlyWhen with empty path", ownerPath))
 		return
@@ -198,22 +158,24 @@ func (v validationResult) asError(prefix string) error {
 	return errors.New(b.String())
 }
 
-func detectCycles(model *Model) [][]string {
+// detectCycles reports each cycle reachable in the graph given by neighbors,
+// visiting nodes in the given order.
+func detectCycles(nodes []string, neighbors func(string) []string) [][]string {
 	visited := map[string]int{}
 	var stack []string
 	var cycles [][]string
 	seen := map[string]bool{}
 
 	var visit func(string)
-	visit = func(repoPath string) {
-		if visited[repoPath] == 2 {
+	visit = func(path string) {
+		if visited[path] == 2 {
 			return
 		}
-		if visited[repoPath] == 1 {
-			idx := indexOf(stack, repoPath)
+		if visited[path] == 1 {
+			idx := indexOf(stack, path)
 			if idx >= 0 {
 				cycle := append([]string{}, stack[idx:]...)
-				cycle = append(cycle, repoPath)
+				cycle = append(cycle, path)
 				key := strings.Join(cycle, "\x00")
 				if !seen[key] {
 					cycles = append(cycles, cycle)
@@ -222,26 +184,43 @@ func detectCycles(model *Model) [][]string {
 			}
 			return
 		}
-		visited[repoPath] = 1
-		stack = append(stack, repoPath)
+		visited[path] = 1
+		stack = append(stack, path)
+		for _, next := range neighbors(path) {
+			visit(next)
+		}
+		stack = stack[:len(stack)-1]
+		visited[path] = 2
+	}
+
+	for _, path := range nodes {
+		visit(path)
+	}
+	return cycles
+}
+
+func repoDependencyPaths(model *Model) func(string) []string {
+	return func(repoPath string) []string {
 		entry, _ := model.entry(repoPath, EntryRepo)
+		var paths []string
 		for _, dep := range entry.Repo.DependsOn {
 			selection, err := model.Select(NodeQuery{Path: dep.Path, IncludeArchived: true})
 			if err != nil {
 				continue
 			}
-			for _, match := range selection.ofKind(EntryRepo) {
-				visit(match.Path)
-			}
+			paths = append(paths, entryPaths(selection.ofKind(EntryRepo))...)
 		}
-		stack = stack[:len(stack)-1]
-		visited[repoPath] = 2
+		return paths
 	}
+}
 
-	for _, repoPath := range sortedRepoPaths(model) {
-		visit(repoPath)
+func fileLinkPaths(model *Model) func(string) []string {
+	return func(filePath string) []string {
+		if entry, ok := model.entry(filePath, EntryFile); ok && entry.File.Link != "" {
+			return []string{entry.File.Link}
+		}
+		return nil
 	}
-	return cycles
 }
 
 func indexOf(items []string, value string) int {

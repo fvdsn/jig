@@ -2,6 +2,8 @@ package jig
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,6 +44,24 @@ func relativeSymlinkTarget(linkPath string, targetPath string) (string, error) {
 		return "", err
 	}
 	return filepath.ToSlash(rel), nil
+}
+
+// moveInstalledPath relocates an installed checkout or file from oldRel to
+// newRel under root, pruning parent directories left empty by the move.
+func moveInstalledPath(out io.Writer, root string, entryPath string, oldRel string, newRel string, label string) error {
+	newAbs := filepath.Join(root, newRel)
+	if pathExists(newAbs) {
+		return fmt.Errorf("target path already exists: %s", newRel)
+	}
+	if err := os.MkdirAll(filepath.Dir(newAbs), 0o755); err != nil {
+		return err
+	}
+	if err := os.Rename(filepath.Join(root, oldRel), newAbs); err != nil {
+		return err
+	}
+	pruneEmptyParents(root, filepath.Dir(oldRel))
+	fmt.Fprintf(out, "%s: %s: %s -> %s\n", label, entryPath, oldRel, newRel)
+	return nil
 }
 
 func pruneEmptyParents(root string, relDir string) {

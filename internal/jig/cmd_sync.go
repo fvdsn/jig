@@ -36,23 +36,9 @@ func syncWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bo
 		roots = installedDefinedRepos(ws.Root, &ws.Model, &ws.State)
 	}
 
-	installed := ws.installedNodes()
-	plan, err := resolvePlan(&ws.Model, roots, planOptions{
-		IncludeOptional:          includeOptional,
-		IncludeInstalledOptional: true,
-		IncludeArchived:          includeArchived,
-		IncludeRoots:             true,
-		Installed:                installed.Repos,
-		InstalledFiles:           installed.Files,
-	})
-	if err != nil {
+	if err := resolveAndApplyPlan(out, ws, roots, explicitFiles, includeOptional, includeArchived, true); err != nil {
 		return err
 	}
-	plan = includeExplicitFiles(&ws.Model, plan, explicitFiles)
-	if !includeArchived {
-		plan = excludeArchivedFiles(&ws.Model, plan, installed.Files)
-	}
-	applyPlan(out, ws, plan, true)
 	reportStale(out, ws.Root, &ws.Model, &ws.State)
 	return saveState(ws.Root, ws.State)
 }

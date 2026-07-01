@@ -5,6 +5,30 @@ import (
 	"io"
 )
 
+// resolveAndApplyPlan expands roots into a full plan and materializes it.
+// When syncing, installed optional dependencies stay included and existing
+// checkouts may be moved to their new paths.
+func resolveAndApplyPlan(out io.Writer, ws *Workspace, roots []string, explicitFiles []string, includeOptional bool, includeArchived bool, syncing bool) error {
+	installed := ws.installedNodes()
+	plan, err := resolvePlan(&ws.Model, roots, planOptions{
+		IncludeOptional:          includeOptional,
+		IncludeInstalledOptional: syncing,
+		IncludeArchived:          includeArchived,
+		IncludeRoots:             true,
+		Installed:                installed.Repos,
+		InstalledFiles:           installed.Files,
+	})
+	if err != nil {
+		return err
+	}
+	plan = includeExplicitFiles(&ws.Model, plan, explicitFiles)
+	if !includeArchived {
+		plan = excludeArchivedFiles(&ws.Model, plan, installed.Files)
+	}
+	applyPlan(out, ws, plan, syncing)
+	return nil
+}
+
 func includeExplicitFiles(model *Model, base plan, files []string) plan {
 	active := map[string]bool{}
 	for _, filePath := range base.Files {

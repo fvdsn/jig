@@ -94,20 +94,12 @@ func flattenTreeNode(path string, raw json.RawMessage, inherited inheritedGroup,
 			if err := json.Unmarshal(obj["$repo"], &repo); err != nil {
 				return fmt.Errorf("invalid $repo at %s: %s", path, err)
 			}
-			identity := repo.ID
-			if identity == "" {
-				identity = path
-			}
 			repo = applyInheritedRepo(repo, inherited)
-			conditions := append([]Condition{}, inherited.Conditions...)
-			if repo.OnlyWhen != nil {
-				conditions = append(conditions, *repo.OnlyWhen)
-			}
 			model.Entries[path] = Entry{
 				Path:       path,
-				Identity:   identity,
+				Identity:   identityOr(repo.ID, path),
 				Kind:       EntryRepo,
-				Conditions: conditions,
+				Conditions: leafConditions(inherited, repo.OnlyWhen),
 				Repo:       &repo,
 			}
 			return nil
@@ -116,20 +108,12 @@ func flattenTreeNode(path string, raw json.RawMessage, inherited inheritedGroup,
 		if err := json.Unmarshal(obj["$file"], &file); err != nil {
 			return fmt.Errorf("invalid $file at %s: %s", path, err)
 		}
-		identity := file.ID
-		if identity == "" {
-			identity = path
-		}
 		file = applyInheritedFile(file, inherited)
-		conditions := append([]Condition{}, inherited.Conditions...)
-		if file.OnlyWhen != nil {
-			conditions = append(conditions, *file.OnlyWhen)
-		}
 		model.Entries[path] = Entry{
 			Path:       path,
-			Identity:   identity,
+			Identity:   identityOr(file.ID, path),
 			Kind:       EntryFile,
-			Conditions: conditions,
+			Conditions: leafConditions(inherited, file.OnlyWhen),
 			File:       &file,
 		}
 		return nil
@@ -144,19 +128,30 @@ func flattenTreeNode(path string, raw json.RawMessage, inherited inheritedGroup,
 		if inherited.Archived {
 			group.Archived = true
 		}
-		identity := group.ID
-		if identity == "" {
-			identity = path
-		}
 		model.Entries[path] = Entry{
 			Path:       path,
-			Identity:   identity,
+			Identity:   identityOr(group.ID, path),
 			Kind:       EntryGroup,
 			Conditions: append([]Condition{}, inherited.Conditions...),
 			Group:      &group,
 		}
 	}
 	return flattenTreeMap(obj, path, inherited, model)
+}
+
+func identityOr(id string, path string) string {
+	if id == "" {
+		return path
+	}
+	return id
+}
+
+func leafConditions(inherited inheritedGroup, onlyWhen *Condition) []Condition {
+	conditions := append([]Condition{}, inherited.Conditions...)
+	if onlyWhen != nil {
+		conditions = append(conditions, *onlyWhen)
+	}
+	return conditions
 }
 
 func applyInheritedRepo(repo Repo, inherited inheritedGroup) Repo {

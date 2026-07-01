@@ -169,25 +169,22 @@ func activeFilesForRepoSet(model *Model, activeRepos map[string]bool, installedR
 
 func conditionsMatch(conditions []Condition, activeRepos map[string]bool, installed map[string]bool, model *Model) bool {
 	for _, condition := range conditions {
-		condition := condition
-		if !conditionMatches(&condition, activeRepos, installed, model) {
+		if !conditionMatches(condition, activeRepos, installed, model) {
 			return false
 		}
 	}
 	return true
 }
 
-func conditionMatches(condition *Condition, activeRepos map[string]bool, installed map[string]bool, model *Model) bool {
-	if condition == nil {
-		return true
-	}
+func conditionMatches(condition Condition, activeRepos map[string]bool, installed map[string]bool, model *Model) bool {
 	for repoPath := range activeRepos {
 		if pathMatches(condition.Path, repoPath) {
 			return true
 		}
 	}
+	identityToPath := repoIdentityToPath(model)
 	for identity := range installed {
-		if repoPath, ok := repoIdentityToPath(model)[identity]; ok && pathMatches(condition.Path, repoPath) {
+		if repoPath, ok := identityToPath[identity]; ok && pathMatches(condition.Path, repoPath) {
 			return true
 		}
 	}

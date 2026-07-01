@@ -41,15 +41,7 @@ func Info(options InfoOptions, out io.Writer) error {
 		if len(repo.DependsOn) > 0 {
 			fmt.Fprintln(out, "dependsOn:")
 			for _, dep := range repo.DependsOn {
-				optional := ""
-				if dep.Optional {
-					optional = " optional"
-				}
-				if dep.Reason == "" {
-					fmt.Fprintf(out, "  %s%s\n", dep.Path, optional)
-				} else {
-					fmt.Fprintf(out, "  %s%s: %s\n", dep.Path, optional, dep.Reason)
-				}
+				printDependency(out, dep)
 			}
 		}
 		return nil
@@ -119,20 +111,14 @@ func Info(options InfoOptions, out io.Writer) error {
 	return nil
 }
 
-func printCondition(out io.Writer, label string, condition *Condition) {
-	if condition == nil {
-		return
-	}
-	if condition.Reason == "" {
-		fmt.Fprintf(out, "%s: %s\n", label, condition.Path)
-	} else {
-		fmt.Fprintf(out, "%s: %s: %s\n", label, condition.Path, condition.Reason)
-	}
-}
-
 func printConditions(out io.Writer, label string, conditions []Condition) {
 	if len(conditions) == 1 {
-		printCondition(out, label, &conditions[0])
+		condition := conditions[0]
+		if condition.Reason == "" {
+			fmt.Fprintf(out, "%s: %s\n", label, condition.Path)
+		} else {
+			fmt.Fprintf(out, "%s: %s: %s\n", label, condition.Path, condition.Reason)
+		}
 		return
 	}
 	fmt.Fprintf(out, "%s:\n", label)
