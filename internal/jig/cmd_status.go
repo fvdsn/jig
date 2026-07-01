@@ -59,10 +59,10 @@ func Status(options StatusOptions, out io.Writer) error {
 		entry := selection.Entries[i]
 		switch entry.Kind {
 		case EntryRepo:
-			results[i] = result{repoStatusLine(ws, entry), true}
+			results[i] = result{markArchived(repoStatusLine(ws, entry), entry), true}
 		case EntryFile:
 			line, ok := fileStatusLine(ws, entry, activeFiles)
-			results[i] = result{line, ok}
+			results[i] = result{markArchived(line, entry), ok}
 		}
 	})
 	var lines []statusLine
@@ -78,6 +78,20 @@ func Status(options StatusOptions, out io.Writer) error {
 
 	printStatusLines(out, lines)
 	return nil
+}
+
+// markArchived appends an archived note so installed archived entries are
+// visible as removal candidates.
+func markArchived(line statusLine, entry Entry) statusLine {
+	if !entry.archived() {
+		return line
+	}
+	if line.note == "" {
+		line.note = "archived"
+	} else {
+		line.note += ", archived"
+	}
+	return line
 }
 
 func repoStatusLine(ws *Workspace, entry Entry) statusLine {
