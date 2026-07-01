@@ -777,12 +777,14 @@ jig init <git-url-or-file> [workspace-dir] --clone [path]
 jig init <git-url-or-file> [workspace-dir] --clone [path] --with-optional-deps
 jig init <git-url-or-file> [workspace-dir] --clone [path] --archived
 jig validate
-jig list
+jig list [path]
+jig list [path] --archived
 jig info <path>
 jig deps <path>
 jig clone [path]
 jig pull [path]
 jig status [path]
+jig status [path] --archived
 jig update
 jig update --sync
 jig sync [path]
@@ -872,9 +874,13 @@ Validation should catch:
 
 Dependency cycles should be detected and reported, but they do not necessarily make the file invalid.
 
-### `jig list`
+### `jig list [path]`
 
 Lists known repositories and files.
+
+If `path` is provided, only repositories and files matching that path are listed.
+
+Archived repositories and files are skipped unless `--archived` is provided.
 
 The output should include the entry type.
 
@@ -985,6 +991,8 @@ Files are ignored by `jig pull`.
 Shows local checkout status for repositories and files matching `path`.
 
 If `path` is omitted, Jig reports status for all repositories and files known to `.jig.json` plus entries tracked in `.jig/state.json` that are no longer defined.
+
+Archived repositories and files are skipped unless `--archived` is provided.
 
 Status should identify:
 

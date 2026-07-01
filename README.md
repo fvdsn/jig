@@ -70,13 +70,13 @@ jig init <git-url> [workspace-dir]
 jig init <local-jig-file> [workspace-dir]
 jig init <git-url> [workspace-dir] --clone [path]
 jig validate
-jig list
+jig list [path] [--archived]
 jig info <path>
 jig deps <path>
 jig clone [path]
 jig sync [path]
 jig pull [path]
-jig status [path]
+jig status [path] [--archived]
 jig update
 jig update --sync
 ```

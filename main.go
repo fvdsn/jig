@@ -158,7 +158,7 @@ func run(args []string, out io.Writer, errOut io.Writer) error {
 	case "validate":
 		return cmdValidate(out)
 	case "list":
-		return cmdList(out)
+		return cmdList(args[1:], out)
 	case "info":
 		return cmdInfo(args[1:], out)
 	case "deps":
@@ -192,7 +192,7 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Initialize a workspace from a Git-hosted or local Jig definition, optionally cloning a path.")
 	fmt.Fprintln(out, "  validate")
 	fmt.Fprintln(out, "      Validate the current workspace .jig.json file.")
-	fmt.Fprintln(out, "  list")
+	fmt.Fprintln(out, "  list [path] [--archived]")
 	fmt.Fprintln(out, "      List repositories and files defined in .jig.json.")
 	fmt.Fprintln(out, "  info <path>")
 	fmt.Fprintln(out, "      Show repository, file, or group metadata.")
@@ -204,7 +204,7 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Clone missing repos, move renamed repos/files, update origins/files, and refresh local state.")
 	fmt.Fprintln(out, "  pull [path]")
 	fmt.Fprintln(out, "      Run git pull in installed repositories matching a path or group.")
-	fmt.Fprintln(out, "  status [path]")
+	fmt.Fprintln(out, "  status [path] [--archived]")
 	fmt.Fprintln(out, "      Show installed, missing, moved, dirty, stale, modified, and remote-changed entries.")
 	fmt.Fprintln(out, "  update")
 	fmt.Fprintln(out, "      Update .jig.json from its configured source without changing local checkouts.")
@@ -339,13 +339,34 @@ func cmdValidate(out io.Writer) error {
 	return nil
 }
 
-func cmdList(out io.Writer) error {
+func cmdList(args []string, out io.Writer) error {
+	parsed, err := parseArgs(args, nil, map[string]bool{"--archived": true})
+	if err != nil {
+		return err
+	}
+	if len(parsed.Positionals) > 1 {
+		return errors.New("usage: jig list [path] [--archived]")
+	}
 	ws, err := loadWorkspace(false)
 	if err != nil {
 		return err
 	}
+	filter := ""
+	if len(parsed.Positionals) == 1 {
+		filter = normalizeCLIPath(parsed.Positionals[0])
+		if err := validateSafePath(filter); err != nil {
+			return err
+		}
+	}
 	for _, repoPath := range sortedRepoPaths(&ws.Model) {
-		repo := ws.Model.Repos[repoPath].Repo
+		entry := ws.Model.Repos[repoPath]
+		if filter != "" && !pathMatches(filter, repoPath) {
+			continue
+		}
+		if repoArchived(entry, planOptions{IncludeArchived: parsed.Flags["--archived"]}) {
+			continue
+		}
+		repo := entry.Repo
 		fmt.Fprintf(out, "repo  %s", repoPath)
 		if repo.Description != "" {
 			fmt.Fprintf(out, "\t%s", repo.Description)
@@ -353,7 +374,14 @@ func cmdList(out io.Writer) error {
 		fmt.Fprintln(out)
 	}
 	for _, filePath := range sortedFilePaths(&ws.Model) {
-		file := ws.Model.Files[filePath].File
+		entry := ws.Model.Files[filePath]
+		if filter != "" && !pathMatches(filter, filePath) {
+			continue
+		}
+		if fileArchived(entry, parsed.Flags["--archived"]) {
+			continue
+		}
+		file := entry.File
 		fmt.Fprintf(out, "file  %s", filePath)
 		if file.Description != "" {
 			fmt.Fprintf(out, "\t%s", file.Description)
@@ -743,23 +771,27 @@ func cmdPull(args []string, out io.Writer) error {
 }
 
 func cmdStatus(args []string, out io.Writer) error {
-	if len(args) > 1 {
-		return errors.New("usage: jig status [path]")
+	parsed, err := parseArgs(args, nil, map[string]bool{"--archived": true})
+	if err != nil {
+		return err
+	}
+	if len(parsed.Positionals) > 1 {
+		return errors.New("usage: jig status [path] [--archived]")
 	}
 	ws, err := loadWorkspace(false)
 	if err != nil {
 		return err
 	}
 	filter := ""
-	if len(args) == 1 {
-		filter = normalizeCLIPath(args[0])
+	if len(parsed.Positionals) == 1 {
+		filter = normalizeCLIPath(parsed.Positionals[0])
 		if err := validateSafePath(filter); err != nil {
 			return err
 		}
 	}
 
 	installedIDs := installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State)
-	activeFiles := activeFiles(&ws.Model, installedIDs)
+	activeFiles := activeFilesForRepoSet(&ws.Model, map[string]bool{}, installedIDs, parsed.Flags["--archived"])
 
 	var installed []string
 	var missing []string
@@ -775,6 +807,9 @@ func cmdStatus(args []string, out io.Writer) error {
 			continue
 		}
 		entry := ws.Model.Repos[repoPath]
+		if repoArchived(entry, planOptions{IncludeArchived: parsed.Flags["--archived"]}) {
+			continue
+		}
 		expectedAbs := filepath.Join(ws.Root, entry.Path)
 		stateRepo, hasState := ws.State.Repos[entry.Identity]
 		if hasState && stateRepo.Path != entry.Path && isGitRepo(filepath.Join(ws.Root, stateRepo.Path)) {

@@ -348,6 +348,8 @@ List defined repositories and files:
 
 ```sh
 jig list
+jig list services
+jig list --archived
 ```
 
 Show information about a repo, file, or group:
@@ -424,6 +426,7 @@ Show workspace status:
 ```sh
 jig status
 jig status services
+jig status --archived
 ```
 
 Update `.jig.json` from its configured remote source:
