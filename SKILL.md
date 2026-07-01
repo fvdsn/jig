@@ -20,7 +20,7 @@ The `.jig/state.json` file is local and machine-owned. It tracks installed repos
 ## Install
 
 ```sh
-go install github.com/fvdsn/jig@latest
+go install github.com/fvdsn/jig/cmd/jig@latest
 ```
 
 Make sure `$(go env GOPATH)/bin` is in `PATH`.

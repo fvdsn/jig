@@ -52,7 +52,7 @@ clones `services/checkout` and its dependencies under the workspace root.
 Install directly from GitHub:
 
 ```sh
-go install github.com/fvdsn/jig@latest
+go install github.com/fvdsn/jig/cmd/jig@latest
 ```
 
 Make sure `$(go env GOPATH)/bin` is in your `PATH`.
