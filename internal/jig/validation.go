@@ -39,85 +39,38 @@ func validateDefinition(def *Definition) validationResult {
 		return result
 	}
 
-	repoIDs := map[string]string{}
-	for _, path := range sortedRepoPaths(&model) {
-		entry, _ := model.entry(path, EntryRepo)
-		if entry.Repo.Git == "" {
-			result.Errors = append(result.Errors, fmt.Sprintf("repository %s missing git", path))
+	identities := map[EntryKind]map[string]string{}
+	for _, path := range sortedEntryPaths(&model) {
+		entry := model.Entries[path]
+		kind := string(entry.Kind)
+		if identities[entry.Kind] == nil {
+			identities[entry.Kind] = map[string]string{}
 		}
-		if prev, ok := repoIDs[entry.Identity]; ok {
-			result.Errors = append(result.Errors, fmt.Sprintf("duplicate repository identity %s: %s and %s", entry.Identity, prev, path))
+		if prev, ok := identities[entry.Kind][entry.Identity]; ok {
+			result.Errors = append(result.Errors, fmt.Sprintf("duplicate %s identity %s: %s and %s", kind, entry.Identity, prev, path))
 		} else {
-			repoIDs[entry.Identity] = path
+			identities[entry.Kind][entry.Identity] = path
 		}
 		for _, condition := range entry.Conditions {
 			validateCondition(&result, model, path, condition)
 		}
-		for _, dep := range entry.Repo.DependsOn {
+		for _, dep := range entry.dependsOn() {
 			if err := validateSafePath(dep.Path); err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("repository %s has invalid dependency path %q: %s", path, dep.Path, err))
+				result.Errors = append(result.Errors, fmt.Sprintf("%s %s has invalid dependency path %q: %s", kind, path, dep.Path, err))
 				continue
 			}
 			matches, _ := model.Select(NodeQuery{Path: dep.Path, IncludeArchived: true})
 			if len(matches.ofKind(EntryRepo)) == 0 {
-				result.Errors = append(result.Errors, fmt.Sprintf("repository %s dependency %s does not resolve to any repository", path, dep.Path))
+				result.Errors = append(result.Errors, fmt.Sprintf("%s %s dependency %s does not resolve to any repository", kind, path, dep.Path))
 			}
 		}
-	}
-
-	fileIDs := map[string]string{}
-	for _, path := range sortedFilePaths(&model) {
-		entry, _ := model.entry(path, EntryFile)
-		if (entry.File.Src == "") == (entry.File.Link == "") {
-			result.Errors = append(result.Errors, fmt.Sprintf("file %s must define exactly one of src or link", path))
-		}
-		if entry.File.Src != "" {
-			if _, err := parseFileSrc(entry.File.Src); err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("file %s invalid src: %s", path, err))
+		switch entry.Kind {
+		case EntryRepo:
+			if entry.Repo.Git == "" {
+				result.Errors = append(result.Errors, fmt.Sprintf("repo %s missing git", path))
 			}
-		}
-		if entry.File.Link != "" {
-			if err := validateSafePath(entry.File.Link); err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("file %s invalid link: %s", path, err))
-			} else if _, ok := model.entry(entry.File.Link, EntryFile); !ok {
-				result.Errors = append(result.Errors, fmt.Sprintf("file %s link %s does not resolve to any file", path, entry.File.Link))
-			} else if entry.File.Link == path {
-				result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot link to itself", path))
-			}
-		}
-		if entry.File.Executable && entry.File.Link != "" {
-			result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot use executable with link", path))
-		}
-		if prev, ok := fileIDs[entry.Identity]; ok {
-			result.Errors = append(result.Errors, fmt.Sprintf("duplicate file identity %s: %s and %s", entry.Identity, prev, path))
-		} else {
-			fileIDs[entry.Identity] = path
-		}
-		for _, condition := range entry.Conditions {
-			validateCondition(&result, model, path, condition)
-		}
-	}
-
-	groupIDs := map[string]string{}
-	for _, path := range sortedGroupPaths(&model) {
-		entry, _ := model.entry(path, EntryGroup)
-		if prev, ok := groupIDs[entry.Identity]; ok {
-			result.Errors = append(result.Errors, fmt.Sprintf("duplicate group identity %s: %s and %s", entry.Identity, prev, path))
-		} else {
-			groupIDs[entry.Identity] = path
-		}
-		for _, dep := range entry.Group.DependsOn {
-			if err := validateSafePath(dep.Path); err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("group %s has invalid dependency path %q: %s", path, dep.Path, err))
-				continue
-			}
-			matches, _ := model.Select(NodeQuery{Path: dep.Path, IncludeArchived: true})
-			if len(matches.ofKind(EntryRepo)) == 0 {
-				result.Errors = append(result.Errors, fmt.Sprintf("group %s dependency %s does not resolve to any repository", path, dep.Path))
-			}
-		}
-		for _, condition := range entry.Conditions {
-			validateCondition(&result, model, path, condition)
+		case EntryFile:
+			validateFileEntry(&result, model, path, entry.File)
 		}
 	}
 
@@ -128,6 +81,29 @@ func validateDefinition(def *Definition) validationResult {
 		result.Errors = append(result.Errors, "file link cycle detected: "+strings.Join(cycle, " -> "))
 	}
 	return result
+}
+
+func validateFileEntry(result *validationResult, model Model, path string, file *File) {
+	if (file.Src == "") == (file.Link == "") {
+		result.Errors = append(result.Errors, fmt.Sprintf("file %s must define exactly one of src or link", path))
+	}
+	if file.Src != "" {
+		if _, err := parseFileSrc(file.Src); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("file %s invalid src: %s", path, err))
+		}
+	}
+	if file.Link != "" {
+		if err := validateSafePath(file.Link); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("file %s invalid link: %s", path, err))
+		} else if _, ok := model.entry(file.Link, EntryFile); !ok {
+			result.Errors = append(result.Errors, fmt.Sprintf("file %s link %s does not resolve to any file", path, file.Link))
+		} else if file.Link == path {
+			result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot link to itself", path))
+		}
+	}
+	if file.Executable && file.Link != "" {
+		result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot use executable with link", path))
+	}
 }
 
 func validateCondition(result *validationResult, model Model, ownerPath string, condition Condition) {

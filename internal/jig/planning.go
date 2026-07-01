@@ -31,7 +31,7 @@ func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
 			return plan{}, fmt.Errorf("unknown repository %q", root)
 		}
 		rootIDs[entry.Identity] = true
-		if opts.IncludeRoots && !repoArchived(entry, opts) {
+		if opts.IncludeRoots && !archivedExcluded(entry, opts.Installed, opts.IncludeArchived) {
 			active[root] = true
 		}
 	}
@@ -50,7 +50,7 @@ func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
 		}
 		for _, repoPath := range sortedRepoPaths(model) {
 			entry, _ := model.entry(repoPath, EntryRepo)
-			if repoArchived(entry, opts) {
+			if archivedExcluded(entry, opts.Installed, opts.IncludeArchived) {
 				continue
 			}
 			if active[repoPath] {
@@ -72,12 +72,10 @@ func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
 	return plan{Repos: sortedKeys(active), Files: orderFilesForApply(model, activeFilesSet)}, nil
 }
 
-func repoArchived(entry Entry, opts planOptions) bool {
-	return entry.Repo.Archived && !opts.IncludeArchived && !opts.Installed[entry.Identity]
-}
-
-func fileArchived(entry Entry, installed map[string]bool, includeArchived bool) bool {
-	return entry.File.Archived && !includeArchived && !installed[entry.Identity]
+// archivedExcluded reports whether an archived entry should be left out of a
+// plan: archived entries stay in only when requested or already installed.
+func archivedExcluded(entry Entry, installed map[string]bool, includeArchived bool) bool {
+	return entry.archived() && !includeArchived && !installed[entry.Identity]
 }
 
 func orderFilesForApply(model *Model, active map[string]bool) []string {
@@ -120,7 +118,7 @@ func addDependencies(model *Model, repoPath string, active map[string]bool, opts
 		}
 		for _, matchEntry := range matches {
 			match := matchEntry.Path
-			if repoArchived(matchEntry, opts) {
+			if archivedExcluded(matchEntry, opts.Installed, opts.IncludeArchived) {
 				continue
 			}
 			if dep.Optional && !opts.IncludeOptional && !(opts.IncludeInstalledOptional && opts.Installed[matchEntry.Identity]) {
@@ -151,7 +149,7 @@ func activeFilesForRepoSet(model *Model, activeRepos map[string]bool, installedR
 				continue
 			}
 			entry, _ := model.entry(filePath, EntryFile)
-			if fileArchived(entry, installedFiles, includeArchived) {
+			if archivedExcluded(entry, installedFiles, includeArchived) {
 				continue
 			}
 			if len(entry.Conditions) > 0 && !conditionsMatch(entry.Conditions, activeRepos, installedRepos, model) {

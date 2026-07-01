@@ -7,12 +7,12 @@ import (
 )
 
 func printDefinitionChanges(out io.Writer, oldModel *Model, newModel *Model) {
-	printEntryChanges(out, "repo", oldModel, newModel, EntryRepo, repoEntryChanged)
-	printEntryChanges(out, "file", oldModel, newModel, EntryFile, fileEntryChanged)
-	printEntryChanges(out, "group", oldModel, newModel, EntryGroup, groupEntryChanged)
+	printEntryChanges(out, "repo", oldModel, newModel, EntryRepo)
+	printEntryChanges(out, "file", oldModel, newModel, EntryFile)
+	printEntryChanges(out, "group", oldModel, newModel, EntryGroup)
 }
 
-func printEntryChanges(out io.Writer, label string, oldModel *Model, newModel *Model, kind EntryKind, entryChanged func(oldEntry, newEntry Entry) bool) {
+func printEntryChanges(out io.Writer, label string, oldModel *Model, newModel *Model, kind EntryKind) {
 	oldByID := identityToPath(oldModel, kind)
 	newByID := identityToPath(newModel, kind)
 	var added []string
@@ -45,25 +45,9 @@ func printEntryChanges(out io.Writer, label string, oldModel *Model, newModel *M
 	printGroup(out, label+"-changed", changed)
 }
 
-func repoEntryChanged(oldEntry, newEntry Entry) bool {
-	oldRepo, newRepo := oldEntry.Repo, newEntry.Repo
-	return oldRepo.Git != newRepo.Git ||
-		oldRepo.Web != newRepo.Web ||
-		oldRepo.Description != newRepo.Description ||
-		!reflect.DeepEqual(oldRepo.DependsOn, newRepo.DependsOn) ||
-		!reflect.DeepEqual(oldEntry.Conditions, newEntry.Conditions)
-}
-
-func fileEntryChanged(oldEntry, newEntry Entry) bool {
-	oldFile, newFile := oldEntry.File, newEntry.File
-	return oldFile.Src != newFile.Src ||
-		oldFile.Link != newFile.Link ||
-		oldFile.Description != newFile.Description ||
-		oldFile.Executable != newFile.Executable ||
-		!reflect.DeepEqual(oldEntry.Conditions, newEntry.Conditions)
-}
-
-func groupEntryChanged(oldEntry, newEntry Entry) bool {
-	return !reflect.DeepEqual(oldEntry.Group, newEntry.Group) ||
+func entryChanged(oldEntry, newEntry Entry) bool {
+	return !reflect.DeepEqual(oldEntry.Repo, newEntry.Repo) ||
+		!reflect.DeepEqual(oldEntry.File, newEntry.File) ||
+		!reflect.DeepEqual(oldEntry.Group, newEntry.Group) ||
 		!reflect.DeepEqual(oldEntry.Conditions, newEntry.Conditions)
 }

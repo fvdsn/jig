@@ -22,7 +22,7 @@ func List(options ListOptions, out io.Writer) error {
 	}
 	for _, entry := range selection.Entries {
 		fmt.Fprintf(out, "%-5s %s", entry.Kind, entry.Path)
-		if description := entryDescription(entry); description != "" {
+		if description := entry.description(); description != "" {
 			fmt.Fprintf(out, "\t%s", description)
 		}
 		fmt.Fprintln(out)

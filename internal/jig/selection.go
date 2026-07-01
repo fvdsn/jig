@@ -40,7 +40,7 @@ func (model *Model) Select(query NodeQuery) (NodeSelection, error) {
 		if !nodePathMatches(path, entryPath) {
 			continue
 		}
-		if entryArchived(entry) && !query.IncludeArchived && !entryInstalled(model, entry, query.Installed) {
+		if entry.archived() && !query.IncludeArchived && !entryInstalled(model, entry, query.Installed) {
 			continue
 		}
 		selection.Entries = append(selection.Entries, entry)
@@ -60,7 +60,7 @@ func (ws *Workspace) installedNodes() InstalledNodes {
 	}
 }
 
-func entryArchived(entry Entry) bool {
+func (entry Entry) archived() bool {
 	switch entry.Kind {
 	case EntryRepo:
 		return entry.Repo.Archived
@@ -73,7 +73,7 @@ func entryArchived(entry Entry) bool {
 	}
 }
 
-func entryDescription(entry Entry) string {
+func (entry Entry) description() string {
 	switch entry.Kind {
 	case EntryRepo:
 		return entry.Repo.Description
@@ -83,6 +83,17 @@ func entryDescription(entry Entry) string {
 		return entry.Group.Description
 	default:
 		return ""
+	}
+}
+
+func (entry Entry) dependsOn() []Dependency {
+	switch entry.Kind {
+	case EntryRepo:
+		return entry.Repo.DependsOn
+	case EntryGroup:
+		return entry.Group.DependsOn
+	default:
+		return nil
 	}
 }
 
@@ -202,10 +213,6 @@ func sortedFilePaths(model *Model) []string {
 	return sortedPathsOfKind(model, EntryFile)
 }
 
-func sortedGroupPaths(model *Model) []string {
-	return sortedPathsOfKind(model, EntryGroup)
-}
-
 func sortedKeys(values map[string]bool) []string {
 	keys := make([]string, 0, len(values))
 	for key := range values {
@@ -231,8 +238,4 @@ func repoIdentityToPath(model *Model) map[string]string {
 
 func fileIdentityToPath(model *Model) map[string]string {
 	return identityToPath(model, EntryFile)
-}
-
-func groupIdentityToPath(model *Model) map[string]string {
-	return identityToPath(model, EntryGroup)
 }

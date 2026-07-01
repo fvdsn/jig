@@ -56,7 +56,7 @@ func excludeArchivedFiles(model *Model, base plan, installed map[string]bool) pl
 	active := map[string]bool{}
 	for _, filePath := range base.Files {
 		entry, ok := model.entry(filePath, EntryFile)
-		if ok && (!entry.File.Archived || installed[entry.Identity]) {
+		if ok && !archivedExcluded(entry, installed, false) {
 			active[filePath] = true
 		}
 	}
