@@ -81,6 +81,18 @@ type Model struct {
 	Groups map[string]GroupEntry
 }
 
+type NodeQuery struct {
+	Path            string
+	IncludeArchived bool
+}
+
+type NodeSelection struct {
+	Path   string
+	Repos  []RepoEntry
+	Files  []FileEntry
+	Groups []GroupEntry
+}
+
 type RepoEntry struct {
 	Path       string
 	Identity   string
@@ -351,38 +363,25 @@ func cmdList(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	filter := ""
+	query := NodeQuery{IncludeArchived: parsed.Flags["--archived"]}
 	if len(parsed.Positionals) == 1 {
-		filter = normalizeCLIPath(parsed.Positionals[0])
-		if err := validateSafePath(filter); err != nil {
-			return err
-		}
+		query.Path = parsed.Positionals[0]
 	}
-	for _, repoPath := range sortedRepoPaths(&ws.Model) {
-		entry := ws.Model.Repos[repoPath]
-		if filter != "" && !pathMatches(filter, repoPath) {
-			continue
-		}
-		if repoArchived(entry, planOptions{IncludeArchived: parsed.Flags["--archived"]}) {
-			continue
-		}
+	selection, err := ws.Model.Select(query)
+	if err != nil {
+		return err
+	}
+	for _, entry := range selection.Repos {
 		repo := entry.Repo
-		fmt.Fprintf(out, "repo  %s", repoPath)
+		fmt.Fprintf(out, "repo  %s", entry.Path)
 		if repo.Description != "" {
 			fmt.Fprintf(out, "\t%s", repo.Description)
 		}
 		fmt.Fprintln(out)
 	}
-	for _, filePath := range sortedFilePaths(&ws.Model) {
-		entry := ws.Model.Files[filePath]
-		if filter != "" && !pathMatches(filter, filePath) {
-			continue
-		}
-		if fileArchived(entry, parsed.Flags["--archived"]) {
-			continue
-		}
+	for _, entry := range selection.Files {
 		file := entry.File
-		fmt.Fprintf(out, "file  %s", filePath)
+		fmt.Fprintf(out, "file  %s", entry.Path)
 		if file.Description != "" {
 			fmt.Fprintf(out, "\t%s", file.Description)
 		}
@@ -399,11 +398,12 @@ func cmdInfo(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	path := normalizeCLIPath(args[0])
-	if err := validateSafePath(path); err != nil {
+	selection, err := ws.Model.Select(NodeQuery{Path: args[0], IncludeArchived: true})
+	if err != nil {
 		return err
 	}
-	if entry, ok := ws.Model.Repos[path]; ok {
+	path := selection.Path
+	if entry, ok := selection.exactRepo(); ok {
 		repo := entry.Repo
 		fmt.Fprintf(out, "path: %s\n", path)
 		fmt.Fprintln(out, "type: repo")
@@ -437,7 +437,7 @@ func cmdInfo(args []string, out io.Writer) error {
 		}
 		return nil
 	}
-	if entry, ok := ws.Model.Files[path]; ok {
+	if entry, ok := selection.exactFile(); ok {
 		file := entry.File
 		fmt.Fprintf(out, "path: %s\n", path)
 		fmt.Fprintln(out, "type: file")
@@ -461,10 +461,8 @@ func cmdInfo(args []string, out io.Writer) error {
 		return nil
 	}
 
-	repos := matchingRepos(&ws.Model, path)
-	files := matchingFiles(&ws.Model, path)
-	group, hasGroup := ws.Model.Groups[path]
-	if len(repos) == 0 && len(files) == 0 && !hasGroup {
+	group, hasGroup := selection.exactGroup()
+	if len(selection.Repos) == 0 && len(selection.Files) == 0 && !hasGroup {
 		return fmt.Errorf("no repository, file, or group matches %q", path)
 	}
 	fmt.Fprintf(out, "group: %s\n", path)
@@ -488,16 +486,16 @@ func cmdInfo(args []string, out io.Writer) error {
 			}
 		}
 	}
-	if len(repos) > 0 {
+	if len(selection.Repos) > 0 {
 		fmt.Fprintln(out, "repos:")
-		for _, repoPath := range repos {
-			fmt.Fprintf(out, "  %s\n", repoPath)
+		for _, entry := range selection.Repos {
+			fmt.Fprintf(out, "  %s\n", entry.Path)
 		}
 	}
-	if len(files) > 0 {
+	if len(selection.Files) > 0 {
 		fmt.Fprintln(out, "files:")
-		for _, filePath := range files {
-			fmt.Fprintf(out, "  %s\n", filePath)
+		for _, entry := range selection.Files {
+			fmt.Fprintf(out, "  %s\n", entry.Path)
 		}
 	}
 	return nil
@@ -553,13 +551,13 @@ func cmdDeps(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	path := normalizeCLIPath(parsed.Positionals[0])
-	if err := validateSafePath(path); err != nil {
+	selection, err := ws.Model.Select(NodeQuery{Path: parsed.Positionals[0], IncludeArchived: true})
+	if err != nil {
 		return err
 	}
-	roots := matchingRepos(&ws.Model, path)
+	roots := selection.repoPaths()
 	if len(roots) == 0 {
-		return fmt.Errorf("no repositories match %q", path)
+		return fmt.Errorf("no repositories match %q", selection.Path)
 	}
 	plan, err := resolvePlan(&ws.Model, roots, planOptions{IncludeOptional: parsed.Flags["--with-optional-deps"], IncludeRoots: false})
 	if err != nil {
@@ -585,7 +583,7 @@ func cmdClone(args []string, out io.Writer) error {
 	}
 	path := ""
 	if len(parsed.Positionals) == 1 {
-		path = normalizeCLIPath(parsed.Positionals[0])
+		path = parsed.Positionals[0]
 	}
 	if err := clonePathIntoWorkspace(out, ws, path, parsed.Flags["--with-optional-deps"], parsed.Flags["--archived"]); err != nil {
 		return err
@@ -594,21 +592,17 @@ func cmdClone(args []string, out io.Writer) error {
 }
 
 func clonePathIntoWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bool, includeArchived bool) error {
-	roots := sortedRepoPaths(&ws.Model)
-	explicitFiles := sortedFilePaths(&ws.Model)
-	if path != "" {
-		path = normalizeCLIPath(path)
-		if err := validateSafePath(path); err != nil {
-			return err
-		}
-		roots = matchingRepos(&ws.Model, path)
-		explicitFiles = matchingFiles(&ws.Model, path)
+	selection, err := ws.Model.Select(NodeQuery{Path: path, IncludeArchived: true})
+	if err != nil {
+		return err
 	}
+	roots := selection.repoPaths()
+	explicitFiles := selection.filePaths()
 	if len(roots) == 0 && len(explicitFiles) == 0 {
-		if path == "" {
+		if selection.Path == "" {
 			return errors.New("no repositories or files defined")
 		}
-		return fmt.Errorf("no repositories or files match %q", path)
+		return fmt.Errorf("no repositories or files match %q", selection.Path)
 	}
 	plan, err := resolvePlan(&ws.Model, roots, planOptions{IncludeOptional: includeOptional, IncludeArchived: includeArchived, IncludeRoots: true, Installed: installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State)})
 	if err != nil {
@@ -637,7 +631,7 @@ func cmdSync(args []string, out io.Writer) error {
 
 	path := ""
 	if len(parsed.Positionals) == 1 {
-		path = normalizeCLIPath(parsed.Positionals[0])
+		path = parsed.Positionals[0]
 	}
 	return syncWorkspace(out, ws, path, parsed.Flags["--with-optional-deps"], parsed.Flags["--archived"])
 }
@@ -646,14 +640,14 @@ func syncWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bo
 	var roots []string
 	var explicitFiles []string
 	if path != "" {
-		path = normalizeCLIPath(path)
-		if err := validateSafePath(path); err != nil {
+		selection, err := ws.Model.Select(NodeQuery{Path: path, IncludeArchived: true})
+		if err != nil {
 			return err
 		}
-		roots = matchingRepos(&ws.Model, path)
-		explicitFiles = matchingFiles(&ws.Model, path)
+		roots = selection.repoPaths()
+		explicitFiles = selection.filePaths()
 		if len(roots) == 0 && len(explicitFiles) == 0 {
-			return fmt.Errorf("no repositories or files match %q", path)
+			return fmt.Errorf("no repositories or files match %q", selection.Path)
 		}
 	} else {
 		roots = installedDefinedRepos(ws.Root, &ws.Model, &ws.State)
@@ -739,20 +733,19 @@ func cmdPull(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	filter := ""
+	query := NodeQuery{IncludeArchived: true}
 	if len(args) == 1 {
-		filter = normalizeCLIPath(args[0])
-		if err := validateSafePath(filter); err != nil {
-			return err
-		}
+		query.Path = args[0]
+	}
+	selection, err := ws.Model.Select(query)
+	if err != nil {
+		return err
 	}
 
 	var pulled []string
 	var skipped []string
-	for _, repoPath := range sortedRepoPaths(&ws.Model) {
-		if filter != "" && !pathMatches(filter, repoPath) {
-			continue
-		}
+	for _, entry := range selection.Repos {
+		repoPath := entry.Path
 		local, ok := installedPath(ws.Root, &ws.Model, &ws.State, repoPath)
 		if !ok {
 			continue
@@ -782,12 +775,13 @@ func cmdStatus(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	filter := ""
+	query := NodeQuery{IncludeArchived: parsed.Flags["--archived"]}
 	if len(parsed.Positionals) == 1 {
-		filter = normalizeCLIPath(parsed.Positionals[0])
-		if err := validateSafePath(filter); err != nil {
-			return err
-		}
+		query.Path = parsed.Positionals[0]
+	}
+	selection, err := ws.Model.Select(query)
+	if err != nil {
+		return err
 	}
 
 	installedIDs := installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State)
@@ -802,14 +796,8 @@ func cmdStatus(args []string, out io.Writer) error {
 	var modified []string
 	var conflicts []string
 
-	for _, repoPath := range sortedRepoPaths(&ws.Model) {
-		if filter != "" && !pathMatches(filter, repoPath) {
-			continue
-		}
-		entry := ws.Model.Repos[repoPath]
-		if repoArchived(entry, planOptions{IncludeArchived: parsed.Flags["--archived"]}) {
-			continue
-		}
+	for _, entry := range selection.Repos {
+		repoPath := entry.Path
 		expectedAbs := filepath.Join(ws.Root, entry.Path)
 		stateRepo, hasState := ws.State.Repos[entry.Identity]
 		if hasState && stateRepo.Path != entry.Path && isGitRepo(filepath.Join(ws.Root, stateRepo.Path)) {
@@ -837,14 +825,11 @@ func cmdStatus(args []string, out io.Writer) error {
 		installed = append(installed, repoPath)
 	}
 
-	for _, filePath := range sortedFilePaths(&ws.Model) {
-		if filter != "" && !pathMatches(filter, filePath) {
-			continue
-		}
+	for _, entry := range selection.Files {
+		filePath := entry.Path
 		if !activeFiles[filePath] {
 			continue
 		}
-		entry := ws.Model.Files[filePath]
 		stateFile, hasState := ws.State.Files[entry.Identity]
 		expectedAbs := filepath.Join(ws.Root, entry.Path)
 		if hasState && stateFile.Path != entry.Path && pathExists(filepath.Join(ws.Root, stateFile.Path)) {
@@ -900,7 +885,7 @@ func cmdStatus(args []string, out io.Writer) error {
 	}
 
 	var stale []string
-	if filter == "" {
+	if selection.Path == "" {
 		for identity, stateRepo := range ws.State.Repos {
 			if _, ok := repoIdentityToPath(&ws.Model)[identity]; !ok {
 				stale = append(stale, fmt.Sprintf("%s at %s is no longer defined", identity, stateRepo.Path))
@@ -1034,7 +1019,8 @@ func validateDefinition(def *Definition) validationResult {
 				result.Errors = append(result.Errors, fmt.Sprintf("repository %s has invalid dependency path %q: %s", path, dep.Path, err))
 				continue
 			}
-			if len(matchingRepos(&model, dep.Path)) == 0 {
+			matches, _ := model.Select(NodeQuery{Path: dep.Path, IncludeArchived: true})
+			if len(matches.Repos) == 0 {
 				result.Errors = append(result.Errors, fmt.Sprintf("repository %s dependency %s does not resolve to any repository", path, dep.Path))
 			}
 		}
@@ -1080,7 +1066,8 @@ func validateDefinition(def *Definition) validationResult {
 				result.Errors = append(result.Errors, fmt.Sprintf("group %s has invalid dependency path %q: %s", path, dep.Path, err))
 				continue
 			}
-			if len(matchingRepos(&model, dep.Path)) == 0 {
+			matches, _ := model.Select(NodeQuery{Path: dep.Path, IncludeArchived: true})
+			if len(matches.Repos) == 0 {
 				result.Errors = append(result.Errors, fmt.Sprintf("group %s dependency %s does not resolve to any repository", path, dep.Path))
 			}
 		}
@@ -1145,7 +1132,8 @@ func validateCondition(result *validationResult, model Model, ownerPath string, 
 		result.Errors = append(result.Errors, fmt.Sprintf("%s has invalid onlyWhen path %q: %s", ownerPath, condition.Path, err))
 		return
 	}
-	if len(matchingRepos(&model, condition.Path)) == 0 {
+	matches, _ := model.Select(NodeQuery{Path: condition.Path, IncludeArchived: true})
+	if len(matches.Repos) == 0 {
 		result.Errors = append(result.Errors, fmt.Sprintf("%s onlyWhen path %s does not resolve to any repository", ownerPath, condition.Path))
 	}
 }
@@ -1401,8 +1389,12 @@ func detectCycles(model *Model) [][]string {
 		visited[repoPath] = 1
 		stack = append(stack, repoPath)
 		for _, dep := range model.Repos[repoPath].Repo.DependsOn {
-			for _, match := range matchingRepos(model, dep.Path) {
-				visit(match)
+			selection, err := model.Select(NodeQuery{Path: dep.Path, IncludeArchived: true})
+			if err != nil {
+				continue
+			}
+			for _, match := range selection.Repos {
+				visit(match.Path)
 			}
 		}
 		stack = stack[:len(stack)-1]
@@ -1528,12 +1520,15 @@ func addDependencies(model *Model, repoPath string, active map[string]bool, opts
 	entry := model.Repos[repoPath]
 	changed := false
 	for _, dep := range entry.Repo.DependsOn {
-		matches := matchingRepos(model, dep.Path)
-		if len(matches) == 0 {
+		selection, err := model.Select(NodeQuery{Path: dep.Path, IncludeArchived: true})
+		if err != nil {
+			return false, fmt.Errorf("invalid dependency %s for %s: %w", dep.Path, repoPath, err)
+		}
+		if len(selection.Repos) == 0 {
 			return false, fmt.Errorf("dependency %s for %s does not resolve to any repository", dep.Path, repoPath)
 		}
-		for _, match := range matches {
-			matchEntry := model.Repos[match]
+		for _, matchEntry := range selection.Repos {
+			match := matchEntry.Path
 			if repoArchived(matchEntry, opts) {
 				continue
 			}
@@ -1612,24 +1607,85 @@ func conditionMatches(condition *Condition, activeRepos map[string]bool, install
 	return false
 }
 
-func matchingRepos(model *Model, path string) []string {
-	var matches []string
-	for _, repoPath := range sortedRepoPaths(model) {
-		if pathMatches(path, repoPath) {
-			matches = append(matches, repoPath)
+func (model *Model) Select(query NodeQuery) (NodeSelection, error) {
+	path := query.Path
+	if path != "" {
+		path = normalizeCLIPath(path)
+		if err := validateSafePath(path); err != nil {
+			return NodeSelection{}, err
 		}
 	}
-	return matches
+
+	selection := NodeSelection{Path: path}
+	for _, repoPath := range sortedRepoPaths(model) {
+		entry := model.Repos[repoPath]
+		if !nodePathMatches(path, repoPath) || entry.Repo.Archived && !query.IncludeArchived {
+			continue
+		}
+		selection.Repos = append(selection.Repos, entry)
+	}
+	for _, filePath := range sortedFilePaths(model) {
+		entry := model.Files[filePath]
+		if !nodePathMatches(path, filePath) || entry.File.Archived && !query.IncludeArchived {
+			continue
+		}
+		selection.Files = append(selection.Files, entry)
+	}
+	for _, groupPath := range sortedGroupPaths(model) {
+		entry := model.Groups[groupPath]
+		if !nodePathMatches(path, groupPath) || entry.Group.Archived && !query.IncludeArchived {
+			continue
+		}
+		selection.Groups = append(selection.Groups, entry)
+	}
+	return selection, nil
 }
 
-func matchingFiles(model *Model, path string) []string {
-	var matches []string
-	for _, filePath := range sortedFilePaths(model) {
-		if pathMatches(path, filePath) {
-			matches = append(matches, filePath)
+func nodePathMatches(queryPath string, entryPath string) bool {
+	return queryPath == "" || pathMatches(queryPath, entryPath)
+}
+
+func (selection NodeSelection) repoPaths() []string {
+	paths := make([]string, 0, len(selection.Repos))
+	for _, entry := range selection.Repos {
+		paths = append(paths, entry.Path)
+	}
+	return paths
+}
+
+func (selection NodeSelection) filePaths() []string {
+	paths := make([]string, 0, len(selection.Files))
+	for _, entry := range selection.Files {
+		paths = append(paths, entry.Path)
+	}
+	return paths
+}
+
+func (selection NodeSelection) exactRepo() (RepoEntry, bool) {
+	for _, entry := range selection.Repos {
+		if entry.Path == selection.Path {
+			return entry, true
 		}
 	}
-	return matches
+	return RepoEntry{}, false
+}
+
+func (selection NodeSelection) exactFile() (FileEntry, bool) {
+	for _, entry := range selection.Files {
+		if entry.Path == selection.Path {
+			return entry, true
+		}
+	}
+	return FileEntry{}, false
+}
+
+func (selection NodeSelection) exactGroup() (GroupEntry, bool) {
+	for _, entry := range selection.Groups {
+		if entry.Path == selection.Path {
+			return entry, true
+		}
+	}
+	return GroupEntry{}, false
 }
 
 func pathMatches(path string, entryPath string) bool {
@@ -1648,6 +1704,15 @@ func sortedRepoPaths(model *Model) []string {
 func sortedFilePaths(model *Model) []string {
 	paths := make([]string, 0, len(model.Files))
 	for path := range model.Files {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func sortedGroupPaths(model *Model) []string {
+	paths := make([]string, 0, len(model.Groups))
+	for path := range model.Groups {
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)

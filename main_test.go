@@ -48,6 +48,83 @@ func TestNormalizeCLIPathTrimsTrailingSlashes(t *testing.T) {
 	}
 }
 
+func TestSelectNodesAppliesPathArchiveAndOrdering(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 1,
+  "tree": {
+    "services": {
+      "$group": { "description": "Services" },
+      "current": {
+        "$repo": { "git": "git@example.com:current.git" }
+      },
+      "old": {
+        "$repo": {
+          "git": "git@example.com:old.git",
+          "archived": true
+        }
+      },
+      "scripts": {
+        "current.sh": {
+          "$file": { "src": "git:git@example.com:config.git#scripts/current.sh" }
+        },
+        "old.sh": {
+          "$file": {
+            "src": "git:git@example.com:config.git#scripts/old.sh",
+            "archived": true
+          }
+        }
+      }
+    },
+    "platform": {
+      "$repo": { "git": "git@example.com:platform.git" }
+    }
+  }
+}`)
+	model, err := flattenDefinition(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	selection, err := model.Select(NodeQuery{Path: "services/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selection.Path != "services" {
+		t.Fatalf("normalized selection path = %q", selection.Path)
+	}
+	if got, want := selection.repoPaths(), []string{"services/current"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("repos = %#v, want %#v", got, want)
+	}
+	if got, want := selection.filePaths(), []string{"services/scripts/current.sh"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("files = %#v, want %#v", got, want)
+	}
+	if len(selection.Groups) != 1 || selection.Groups[0].Path != "services" {
+		t.Fatalf("groups = %#v, want services", selection.Groups)
+	}
+
+	selection, err = model.Select(NodeQuery{Path: "services", IncludeArchived: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := selection.repoPaths(), []string{"services/current", "services/old"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("repos with archived = %#v, want %#v", got, want)
+	}
+	if got, want := selection.filePaths(), []string{"services/scripts/current.sh", "services/scripts/old.sh"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("files with archived = %#v, want %#v", got, want)
+	}
+}
+
+func TestSelectNodesRejectsUnsafePath(t *testing.T) {
+	model := Model{
+		Repos:  map[string]RepoEntry{},
+		Files:  map[string]FileEntry{},
+		Groups: map[string]GroupEntry{},
+	}
+	if _, err := model.Select(NodeQuery{Path: "../services"}); err == nil {
+		t.Fatal("expected unsafe query path to fail")
+	}
+}
+
 func TestFlattenDefinitionWithSlashShorthandAndFile(t *testing.T) {
 	def := testDefinition(t, `{
   "version": 1,
@@ -197,7 +274,11 @@ func TestResolvePlanForGroupDeduplicatesDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	roots := matchingRepos(&model, "services")
+	selection, err := model.Select(NodeQuery{Path: "services", IncludeArchived: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := selection.repoPaths()
 
 	plan, err := resolvePlan(&model, roots, planOptions{IncludeRoots: false})
 	if err != nil {
@@ -258,11 +339,11 @@ func TestTrailingSlashPathMatchesGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := normalizeCLIPath("platform/")
-	if err := validateSafePath(path); err != nil {
+	selection, err := model.Select(NodeQuery{Path: "platform/", IncludeArchived: true})
+	if err != nil {
 		t.Fatal(err)
 	}
-	roots := matchingRepos(&model, path)
+	roots := selection.repoPaths()
 	if !reflect.DeepEqual(roots, []string{"platform/auth"}) {
 		t.Fatalf("roots = %#v", roots)
 	}
