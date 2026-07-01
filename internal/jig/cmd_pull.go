@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 )
 
 type PullOptions struct {
@@ -22,23 +23,31 @@ func Pull(options PullOptions, out io.Writer) error {
 		return err
 	}
 
-	var pulled []string
-	var skipped []string
-	for _, entry := range selection.ofKind(EntryRepo) {
-		repoPath := entry.Path
-		local, ok := installedPath(ws.Root, &ws.Model, &ws.State, repoPath)
-		if !ok {
-			continue
-		}
-		fmt.Fprintf(out, "pulling: %s\n", repoPath)
-		if _, err := git(local, "pull"); err != nil {
-			msg := strings.ReplaceAll(strings.TrimSpace(err.Error()), "\n", "\n  ")
-			skipped = append(skipped, fmt.Sprintf("%s: %s", repoPath, msg))
-			continue
-		}
-		pulled = append(pulled, repoPath)
+	type candidate struct {
+		repoPath string
+		local    string
 	}
-	printGroup(out, "pulled", pulled)
+	var candidates []candidate
+	for _, entry := range selection.ofKind(EntryRepo) {
+		if local, ok := installedPath(ws.Root, &ws.Model, &ws.State, entry.Path); ok {
+			candidates = append(candidates, candidate{entry.Path, local})
+		}
+	}
+
+	var mu sync.Mutex
+	var skipped []string
+	forEachParallel(len(candidates), func(i int) {
+		if _, err := git(candidates[i].local, "pull", "--ff-only"); err != nil {
+			msg := strings.ReplaceAll(strings.TrimSpace(err.Error()), "\n", "\n  ")
+			mu.Lock()
+			skipped = append(skipped, fmt.Sprintf("%s: %s", candidates[i].repoPath, msg))
+			mu.Unlock()
+			return
+		}
+		mu.Lock()
+		fmt.Fprintf(out, "pulled: %s\n", candidates[i].repoPath)
+		mu.Unlock()
+	})
 	printGroup(out, "skipped", skipped)
 	return nil
 }
