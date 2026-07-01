@@ -150,6 +150,22 @@ func gitOrigin(path string) (string, error) {
 	return strings.TrimSpace(out), err
 }
 
+// gitBranch returns the current branch name, or a short "@<sha>" for a
+// detached HEAD, or "" if neither can be determined.
+func gitBranch(path string) string {
+	if out, err := git(path, "branch", "--show-current"); err == nil {
+		if branch := strings.TrimSpace(out); branch != "" {
+			return branch
+		}
+	}
+	if out, err := git(path, "rev-parse", "--short", "HEAD"); err == nil {
+		if sha := strings.TrimSpace(out); sha != "" {
+			return "@" + sha
+		}
+	}
+	return ""
+}
+
 func isDirty(path string) bool {
 	out, err := git(path, "status", "--porcelain")
 	return err == nil && strings.TrimSpace(out) != ""

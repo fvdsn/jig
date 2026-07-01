@@ -5,11 +5,31 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"unicode/utf8"
 )
 
 type StatusOptions struct {
 	Path            string
 	IncludeArchived bool
+}
+
+// Status glyphs. Each line carries the most significant glyph plus a note that
+// spells out every applicable state, so the glyphs never need to be read alone.
+const (
+	glyphClean    = "✓" // ✓ present, tracked, in sync
+	glyphDirty    = "●" // ● uncommitted changes / modified file
+	glyphRemote   = "⇄" // ⇄ origin differs from the definition
+	glyphMoved    = "→" // → checkout lives at a different path
+	glyphMissing  = "✗" // ✗ defined but not present
+	glyphConflict = "⚠" // ⚠ present but not what jig expects
+)
+
+type statusLine struct {
+	glyph  string
+	path   string
+	branch string
+	note   string
 }
 
 func Status(options StatusOptions, out io.Writer) error {
@@ -26,125 +46,152 @@ func Status(options StatusOptions, out io.Writer) error {
 	installedNodes := ws.installedNodes()
 	activeFiles := activeFilesForRepoSet(&ws.Model, map[string]bool{}, installedNodes.Repos, installedNodes.Files, options.IncludeArchived)
 
-	var installed []string
-	var missing []string
-	var moved []string
-	var remoteChanged []string
-	var dirty []string
-	var written []string
-	var modified []string
-	var conflicts []string
-
-	for _, entry := range selection.ofKind(EntryRepo) {
-		repoPath := entry.Path
-		expectedAbs := filepath.Join(ws.Root, entry.Path)
-		stateRepo, hasState := ws.State.Repos[entry.Identity]
-		if hasState && stateRepo.Path != entry.Path && isGitRepo(filepath.Join(ws.Root, stateRepo.Path)) {
-			moved = append(moved, fmt.Sprintf("%s: %s -> %s", repoPath, stateRepo.Path, entry.Path))
-			if isDirty(filepath.Join(ws.Root, stateRepo.Path)) {
-				dirty = append(dirty, repoPath)
+	var lines []statusLine
+	for _, entry := range selection.Entries {
+		switch entry.Kind {
+		case EntryRepo:
+			lines = append(lines, repoStatusLine(ws, entry))
+		case EntryFile:
+			if line, ok := fileStatusLine(ws, entry, activeFiles); ok {
+				lines = append(lines, line)
 			}
-			continue
-		}
-		if !pathExists(expectedAbs) {
-			missing = append(missing, repoPath)
-			continue
-		}
-		if !isGitRepo(expectedAbs) {
-			conflicts = append(conflicts, fmt.Sprintf("%s: expected path is not a Git repository", repoPath))
-			continue
-		}
-		origin, err := gitOrigin(expectedAbs)
-		if err != nil || origin != entry.Repo.Git {
-			remoteChanged = append(remoteChanged, fmt.Sprintf("%s: %s -> %s", repoPath, origin, entry.Repo.Git))
-		}
-		if isDirty(expectedAbs) {
-			dirty = append(dirty, repoPath)
-		}
-		installed = append(installed, repoPath)
-	}
-
-	for _, entry := range selection.ofKind(EntryFile) {
-		filePath := entry.Path
-		if !activeFiles[filePath] {
-			continue
-		}
-		stateFile, hasState := ws.State.Files[entry.Identity]
-		expectedAbs := filepath.Join(ws.Root, entry.Path)
-		if hasState && stateFile.Path != entry.Path && pathExists(filepath.Join(ws.Root, stateFile.Path)) {
-			moved = append(moved, fmt.Sprintf("%s: %s -> %s", filePath, stateFile.Path, entry.Path))
-			continue
-		}
-		if !pathExists(expectedAbs) {
-			missing = append(missing, filePath)
-			continue
-		}
-		if !hasState {
-			conflicts = append(conflicts, fmt.Sprintf("%s: existing file is not tracked", filePath))
-			continue
-		}
-		if entry.File.Link != "" {
-			info, err := os.Lstat(expectedAbs)
-			if err != nil {
-				conflicts = append(conflicts, fmt.Sprintf("%s: %s", filePath, err))
-				continue
-			}
-			if info.Mode()&os.ModeSymlink == 0 {
-				conflicts = append(conflicts, fmt.Sprintf("%s: expected symlink path is not a symlink", filePath))
-				continue
-			}
-			targetEntry, _ := ws.Model.entry(entry.File.Link, EntryFile)
-			expectedTarget, err := relativeSymlinkTarget(entry.Path, targetEntry.Path)
-			if err != nil {
-				conflicts = append(conflicts, fmt.Sprintf("%s: %s", filePath, err))
-				continue
-			}
-			currentTarget, err := os.Readlink(expectedAbs)
-			if err != nil {
-				conflicts = append(conflicts, fmt.Sprintf("%s: %s", filePath, err))
-				continue
-			}
-			if currentTarget != expectedTarget {
-				modified = append(modified, filePath)
-			} else {
-				written = append(written, filePath)
-			}
-			continue
-		}
-		currentHash, err := fileSHA256(expectedAbs)
-		if err != nil {
-			conflicts = append(conflicts, fmt.Sprintf("%s: %s", filePath, err))
-			continue
-		}
-		if currentHash != stateFile.SHA256 {
-			modified = append(modified, filePath)
-		} else {
-			written = append(written, filePath)
 		}
 	}
 
-	var stale []string
 	if selection.Path == "" {
-		for identity, stateRepo := range ws.State.Repos {
-			if _, ok := repoIdentityToPath(&ws.Model)[identity]; !ok {
-				stale = append(stale, fmt.Sprintf("%s at %s is no longer defined", identity, stateRepo.Path))
-			}
-		}
-		for identity, stateFile := range ws.State.Files {
-			if _, ok := fileIdentityToPath(&ws.Model)[identity]; !ok {
-				stale = append(stale, fmt.Sprintf("%s at %s is no longer defined", identity, stateFile.Path))
-			}
-		}
+		lines = append(lines, staleStatusLines(ws)...)
 	}
 
-	printGroup(out, "installed", installed)
-	printGroup(out, "written", written)
-	printGroup(out, "moved", moved)
-	printGroup(out, "missing", missing)
-	printGroup(out, "remote-changed", remoteChanged)
-	printGroup(out, "dirty", dirty)
-	printGroup(out, "modified", modified)
-	printGroup(out, "conflicts", conflicts)
-	printGroup(out, "stale", stale)
+	printStatusLines(out, lines)
 	return nil
+}
+
+func repoStatusLine(ws *Workspace, entry Entry) statusLine {
+	repoPath := entry.Path
+	expectedAbs := filepath.Join(ws.Root, entry.Path)
+
+	if stateRepo, ok := ws.State.Repos[entry.Identity]; ok && stateRepo.Path != entry.Path {
+		oldAbs := filepath.Join(ws.Root, stateRepo.Path)
+		if isGitRepo(oldAbs) {
+			note := "moved from " + stateRepo.Path
+			if isDirty(oldAbs) {
+				note += ", dirty"
+			}
+			return statusLine{glyphMoved, repoPath, gitBranch(oldAbs), note}
+		}
+	}
+	if !pathExists(expectedAbs) {
+		return statusLine{glyphMissing, repoPath, "", "missing"}
+	}
+	if !isGitRepo(expectedAbs) {
+		return statusLine{glyphConflict, repoPath, "", "not a git repository"}
+	}
+
+	branch := gitBranch(expectedAbs)
+	glyph := glyphClean
+	var notes []string
+	if origin, err := gitOrigin(expectedAbs); err != nil || origin != entry.Repo.Git {
+		glyph = glyphRemote
+		notes = append(notes, "remote-changed")
+	}
+	if isDirty(expectedAbs) {
+		if glyph == glyphClean {
+			glyph = glyphDirty
+		}
+		notes = append(notes, "dirty")
+	}
+	return statusLine{glyph, repoPath, branch, strings.Join(notes, ", ")}
+}
+
+func fileStatusLine(ws *Workspace, entry Entry, activeFiles map[string]bool) (statusLine, bool) {
+	filePath := entry.Path
+	if !activeFiles[filePath] {
+		return statusLine{}, false
+	}
+	expectedAbs := filepath.Join(ws.Root, entry.Path)
+	stateFile, hasState := ws.State.Files[entry.Identity]
+
+	if hasState && stateFile.Path != entry.Path && pathExists(filepath.Join(ws.Root, stateFile.Path)) {
+		return statusLine{glyphMoved, filePath, "", "moved from " + stateFile.Path}, true
+	}
+	if !pathExists(expectedAbs) {
+		return statusLine{glyphMissing, filePath, "", "missing"}, true
+	}
+	if !hasState {
+		return statusLine{glyphConflict, filePath, "", "untracked"}, true
+	}
+	if entry.File.Link != "" {
+		return symlinkStatusLine(ws, entry, expectedAbs), true
+	}
+	currentHash, err := fileSHA256(expectedAbs)
+	if err != nil {
+		return statusLine{glyphConflict, filePath, "", err.Error()}, true
+	}
+	if currentHash != stateFile.SHA256 {
+		return statusLine{glyphDirty, filePath, "", "modified"}, true
+	}
+	return statusLine{glyphClean, filePath, "", ""}, true
+}
+
+func symlinkStatusLine(ws *Workspace, entry Entry, expectedAbs string) statusLine {
+	filePath := entry.Path
+	info, err := os.Lstat(expectedAbs)
+	if err != nil {
+		return statusLine{glyphConflict, filePath, "", err.Error()}
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return statusLine{glyphConflict, filePath, "", "not a symlink"}
+	}
+	targetEntry, _ := ws.Model.entry(entry.File.Link, EntryFile)
+	expectedTarget, err := relativeSymlinkTarget(entry.Path, targetEntry.Path)
+	if err != nil {
+		return statusLine{glyphConflict, filePath, "", err.Error()}
+	}
+	currentTarget, err := os.Readlink(expectedAbs)
+	if err != nil {
+		return statusLine{glyphConflict, filePath, "", err.Error()}
+	}
+	if currentTarget != expectedTarget {
+		return statusLine{glyphDirty, filePath, "", "modified"}
+	}
+	return statusLine{glyphClean, filePath, "", ""}
+}
+
+func staleStatusLines(ws *Workspace) []statusLine {
+	var lines []statusLine
+	repoPaths := repoIdentityToPath(&ws.Model)
+	for identity, stateRepo := range ws.State.Repos {
+		if _, ok := repoPaths[identity]; !ok {
+			lines = append(lines, statusLine{glyphConflict, stateRepo.Path, "", "stale: no longer defined"})
+		}
+	}
+	filePaths := fileIdentityToPath(&ws.Model)
+	for identity, stateFile := range ws.State.Files {
+		if _, ok := filePaths[identity]; !ok {
+			lines = append(lines, statusLine{glyphConflict, stateFile.Path, "", "stale: no longer defined"})
+		}
+	}
+	return lines
+}
+
+func printStatusLines(out io.Writer, lines []statusLine) {
+	maxPath, maxBranch := 0, 0
+	for _, line := range lines {
+		if w := utf8.RuneCountInString(line.path); w > maxPath {
+			maxPath = w
+		}
+		if w := utf8.RuneCountInString(line.branch); w > maxBranch {
+			maxBranch = w
+		}
+	}
+	for _, line := range lines {
+		text := fmt.Sprintf("%s %-*s", line.glyph, maxPath, line.path)
+		if maxBranch > 0 {
+			text += fmt.Sprintf("  %-*s", maxBranch, line.branch)
+		}
+		if line.note != "" {
+			text += "  " + line.note
+		}
+		fmt.Fprintln(out, strings.TrimRight(text, " "))
+	}
 }

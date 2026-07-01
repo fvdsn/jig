@@ -1020,9 +1020,21 @@ If `path` is omitted, Jig reports status for all repositories and files known to
 
 Archived repositories and files are skipped unless they are already installed or `--archived` is provided.
 
+Output is a single list with one line per entry, ordered by path across repositories and files. Each line shows a status glyph, the path, the current branch (for repositories), and a note spelling out any notable state. For a repository the current branch is shown, or a short `@<sha>` when the checkout is on a detached HEAD.
+
+```text
+✓ platform/argo-workflows        main
+● platform/dagster               main    dirty
+⇄ platform/terraform-operator    main    remote-changed
+✗ platform/knative                       missing
+→ platform/linkerd               main    moved from platform/old-linkerd
+```
+
+Glyphs: `✓` in sync, `●` uncommitted changes or a locally modified file, `⇄` origin differs from the definition, `→` checkout lives at a different path, `✗` defined but not present, `⚠` present but not what Jig expects.
+
 Status should identify:
 
-- Installed repositories.
+- Installed repositories and their current branch.
 - Missing repositories.
 - Written files.
 - Missing active files.
