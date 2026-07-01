@@ -6,12 +6,26 @@ import (
 	"io"
 )
 
-func Validate(out io.Writer) error {
-	ws, err := loadWorkspace(false)
-	if err != nil {
-		return err
+type ValidateOptions struct {
+	File string // validate this schema file instead of the current workspace's
+}
+
+func Validate(options ValidateOptions, out io.Writer) error {
+	var def *Definition
+	if options.File != "" {
+		loaded, err := loadDefinition(options.File)
+		if err != nil {
+			return err
+		}
+		def = loaded
+	} else {
+		ws, err := loadWorkspace(false)
+		if err != nil {
+			return err
+		}
+		def = &ws.Def
 	}
-	validation := validateDefinition(&ws.Def)
+	validation := validateDefinition(def)
 	if len(validation.Errors) > 0 {
 		for _, msg := range validation.Errors {
 			fmt.Fprintf(out, "error: %s\n", msg)

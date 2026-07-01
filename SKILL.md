@@ -347,6 +347,12 @@ Validate the definition:
 jig validate
 ```
 
+Validate a schema file directly (for example in the schema repository CI, no workspace needed):
+
+```sh
+jig validate jig.json
+```
+
 List defined groups, repositories, and files:
 
 ```sh

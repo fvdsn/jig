@@ -19,7 +19,7 @@ func Run(args []string, out io.Writer, _ io.Writer) error {
 	case "init":
 		return cmdInit(args[1:], out)
 	case "validate":
-		return cmdValidate(out)
+		return cmdValidate(args[1:], out)
 	case "list":
 		return cmdList(args[1:], out)
 	case "info":
@@ -106,8 +106,8 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "Commands:")
 	fmt.Fprintln(out, "  init <git-url-or-file> [workspace-dir] [--path <path>] [--clone [path]] [--with-optional-deps] [--archived]")
 	fmt.Fprintln(out, "      Initialize a workspace: clone the schema repository into .jig/source, optionally cloning a path.")
-	fmt.Fprintln(out, "  validate")
-	fmt.Fprintln(out, "      Validate the current workspace schema.")
+	fmt.Fprintln(out, "  validate [schema-file]")
+	fmt.Fprintln(out, "      Validate the current workspace schema, or a schema file given by path.")
 	fmt.Fprintln(out, "  list [path] [--archived]")
 	fmt.Fprintln(out, "      List groups, repositories, and files defined in the schema.")
 	fmt.Fprintln(out, "  info <path> [--archived]")
@@ -157,8 +157,17 @@ func cmdInit(args []string, out io.Writer) error {
 	return jig.Init(options, out)
 }
 
-func cmdValidate(out io.Writer) error {
-	return jig.Validate(out)
+func cmdValidate(args []string, out io.Writer) error {
+	parsed, err := parseArgs(args, nil)
+	if err != nil {
+		return err
+	}
+	if len(parsed.Positionals) > 1 {
+		return errors.New("usage: jig validate [schema-file]")
+	}
+	return jig.Validate(jig.ValidateOptions{
+		File: optionalPath(parsed.Positionals),
+	}, out)
 }
 
 func cmdList(args []string, out io.Writer) error {

@@ -69,7 +69,7 @@ jig help
 jig init <git-url> [workspace-dir] [--path <schema-path>]
 jig init <local-schema-file> [workspace-dir]
 jig init <git-url> [workspace-dir] --clone [path]
-jig validate
+jig validate [schema-file]
 jig list [path] [--archived]
 jig info <path> [--archived]
 jig deps <path> [--with-optional-deps] [--archived]
