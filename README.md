@@ -76,6 +76,7 @@ jig deps <path> [--with-optional-deps] [--archived] [--tags a,b]
 jig clone [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]
 jig sync [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]
 jig pull [path] [--archived] [--tags a,b]
+jig fetch [path] [--archived] [--tags a,b]
 jig remove <path>... [-r|--recursive] [-f|--force]
 jig status [path] [--archived] [--tags a,b]
 jig update
@@ -100,6 +101,7 @@ The schema checkout works like any Git clone: the remote is its `origin`, and th
 - `jig sync [path]` converges the workspace to the schema: it moves renamed checkouts, fixes origins, refreshes files, and restores tracked repositories whose directory was deleted. It never uninstalls anything.
 - `jig remove <path>...` uninstalls: it deletes the checkout and stops tracking it, refusing to delete dirty or unpushed repositories unless `--force` is given. Removing a group requires `-r`.
 - `jig pull [path]` runs `git pull --ff-only` in installed repositories.
+- `jig fetch [path]` runs `git fetch` in installed repositories without touching working trees.
 - `jig update` fast-forwards the schema checkout from its remote.
 - `jig update --sync` updates the schema, then syncs the workspace.
 - Archived entries are excluded by default unless they are already installed. Pass `--archived` to include uninstalled archived entries too.

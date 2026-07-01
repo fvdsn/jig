@@ -1007,6 +1007,10 @@ Files are ignored by `jig pull`.
 
 Installed archived repositories are included by default. `--archived` applies the same selection semantics as other commands, although `pull` can only act on installed repositories.
 
+### `jig fetch [path]`
+
+Runs `git fetch` in installed repositories matching `path`, or in all installed repositories when `path` is omitted. Selection semantics match `jig pull`. Fetch never touches working trees or local branches.
+
 ### `jig remove <path>...`
 
 Uninstalls repositories and files: deletes the checkout or file and drops it from `.jig/state.json`, so sync stops restoring it. Ergonomics follow `rm`:

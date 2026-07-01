@@ -32,6 +32,8 @@ func Run(args []string, out io.Writer, _ io.Writer) error {
 		return cmdSync(args[1:], out)
 	case "pull":
 		return cmdPull(args[1:], out)
+	case "fetch":
+		return cmdFetch(args[1:], out)
 	case "remove":
 		return cmdRemove(args[1:], out)
 	case "status":
@@ -121,7 +123,9 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "  sync [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]")
 	fmt.Fprintln(out, "      Clone missing repos, move renamed repos/files, update origins/files, and refresh local state.")
 	fmt.Fprintln(out, "  pull [path] [--archived] [--tags a,b]")
-	fmt.Fprintln(out, "      Run git pull in installed repositories matching a path or group.")
+	fmt.Fprintln(out, "      Run git pull --ff-only in installed repositories matching a path or group.")
+	fmt.Fprintln(out, "  fetch [path] [--archived] [--tags a,b]")
+	fmt.Fprintln(out, "      Run git fetch in installed repositories matching a path or group.")
 	fmt.Fprintln(out, "  remove <path>... [-r|--recursive] [-f|--force]")
 	fmt.Fprintln(out, "      Uninstall repositories or files: delete the checkout and stop tracking it. -r removes groups, -f overrides dirty/unpushed checks.")
 	fmt.Fprintln(out, "  status [path] [--archived] [--tags a,b]")
@@ -264,6 +268,21 @@ func cmdPull(args []string, out io.Writer) error {
 		return errors.New("usage: jig pull [path] [--archived] [--tags a,b]")
 	}
 	return jig.Pull(jig.PullOptions{
+		Path:            optionalPath(parsed.Positionals),
+		IncludeArchived: parsed.Flags["--archived"],
+		Tags:            parseTags(parsed.Values["--tags"]),
+	}, out)
+}
+
+func cmdFetch(args []string, out io.Writer) error {
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag})
+	if err != nil {
+		return err
+	}
+	if len(parsed.Positionals) > 1 {
+		return errors.New("usage: jig fetch [path] [--archived] [--tags a,b]")
+	}
+	return jig.Fetch(jig.FetchOptions{
 		Path:            optionalPath(parsed.Positionals),
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),

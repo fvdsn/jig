@@ -435,12 +435,19 @@ Sync uninstalled archived repositories and files too:
 jig sync --archived
 ```
 
-Pull installed repositories:
+Pull installed repositories (fast-forward only):
 
 ```sh
 jig pull
 jig pull platform
 jig pull --archived
+```
+
+Fetch installed repositories without touching working trees:
+
+```sh
+jig fetch
+jig fetch platform
 ```
 
 Uninstall repositories or files (deletes the checkout and stops tracking it; `-r` for groups, `-f` to override the dirty/unpushed safety checks):
