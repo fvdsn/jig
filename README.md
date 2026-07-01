@@ -73,12 +73,12 @@ jig validate
 jig list [path] [--archived]
 jig info <path> [--archived]
 jig deps <path> [--with-optional-deps] [--archived]
-jig clone [path] [--with-optional-deps] [--archived]
-jig sync [path] [--with-optional-deps] [--archived]
+jig clone [path] [--with-optional-deps] [--archived] [--refresh]
+jig sync [path] [--with-optional-deps] [--archived] [--refresh]
 jig pull [path] [--archived]
 jig status [path] [--archived]
 jig update
-jig update --sync [path] [--with-optional-deps] [--archived]
+jig update --sync [path] [--with-optional-deps] [--archived] [--refresh]
 ```
 
 ## Concepts
@@ -92,6 +92,7 @@ jig update --sync [path] [--with-optional-deps] [--archived]
 - `jig pull [path]` runs `git pull` in installed repositories.
 - `jig update` refreshes `.jig.json` from its configured source.
 - `jig update --sync` refreshes `.jig.json`, then syncs the workspace.
+- Generated files are only refetched when missing or when their `src` changes; pass `--refresh` to refetch them unconditionally.
 - Archived entries are excluded by default unless they are already installed. Pass `--archived` to include uninstalled archived entries too.
 
 ## Remote Jig File

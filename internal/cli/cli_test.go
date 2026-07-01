@@ -53,7 +53,7 @@ func TestParseUpdateFlags(t *testing.T) {
 
 func TestUpdateSelectionFlagsRequireSync(t *testing.T) {
 	err := cmdUpdate([]string{"--archived"}, io.Discard)
-	if err == nil || err.Error() != "--with-optional-deps and --archived require --sync" {
+	if err == nil || err.Error() != "--with-optional-deps, --archived, and --refresh require --sync" {
 		t.Fatalf("expected --sync requirement, got %v", err)
 	}
 }

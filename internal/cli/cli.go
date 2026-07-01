@@ -114,9 +114,9 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Show repository, file, or group metadata.")
 	fmt.Fprintln(out, "  deps <path> [--with-optional-deps] [--archived]")
 	fmt.Fprintln(out, "      Show expanded recursive dependencies for repositories matching a path.")
-	fmt.Fprintln(out, "  clone [path] [--with-optional-deps] [--archived]")
+	fmt.Fprintln(out, "  clone [path] [--with-optional-deps] [--archived] [--refresh]")
 	fmt.Fprintln(out, "      Clone/materialize all entries, or repositories/files matching a path.")
-	fmt.Fprintln(out, "  sync [path] [--with-optional-deps] [--archived]")
+	fmt.Fprintln(out, "  sync [path] [--with-optional-deps] [--archived] [--refresh]")
 	fmt.Fprintln(out, "      Clone missing repos, move renamed repos/files, update origins/files, and refresh local state.")
 	fmt.Fprintln(out, "  pull [path] [--archived]")
 	fmt.Fprintln(out, "      Run git pull in installed repositories matching a path or group.")
@@ -124,7 +124,7 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Show installed, missing, moved, dirty, stale, modified, and remote-changed entries.")
 	fmt.Fprintln(out, "  update")
 	fmt.Fprintln(out, "      Update .jig.json from its configured source without changing local checkouts.")
-	fmt.Fprintln(out, "  update --sync [path] [--with-optional-deps] [--archived]")
+	fmt.Fprintln(out, "  update --sync [path] [--with-optional-deps] [--archived] [--refresh]")
 	fmt.Fprintln(out, "      Update .jig.json, then sync the workspace.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Paths identify repositories, files, or groups using slash paths such as services/checkout or platform.")
@@ -208,32 +208,34 @@ func cmdDeps(args []string, out io.Writer) error {
 }
 
 func cmdClone(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--archived": boolFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--archived": boolFlag, "--refresh": boolFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig clone [path] [--with-optional-deps] [--archived]")
+		return errors.New("usage: jig clone [path] [--with-optional-deps] [--archived] [--refresh]")
 	}
 	return jig.Clone(jig.CloneOptions{
 		Path:            optionalPath(parsed.Positionals),
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
+		Refresh:         parsed.Flags["--refresh"],
 	}, out)
 }
 
 func cmdSync(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--archived": boolFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--archived": boolFlag, "--refresh": boolFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig sync [path] [--with-optional-deps] [--archived]")
+		return errors.New("usage: jig sync [path] [--with-optional-deps] [--archived] [--refresh]")
 	}
 	return jig.Sync(jig.SyncOptions{
 		Path:            optionalPath(parsed.Positionals),
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
+		Refresh:         parsed.Flags["--refresh"],
 	}, out)
 }
 
@@ -266,21 +268,22 @@ func cmdStatus(args []string, out io.Writer) error {
 }
 
 func cmdUpdate(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--sync": boolFlag, "--with-optional-deps": boolFlag, "--archived": boolFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--sync": boolFlag, "--with-optional-deps": boolFlag, "--archived": boolFlag, "--refresh": boolFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 || len(parsed.Positionals) == 1 && !parsed.Flags["--sync"] {
-		return errors.New("usage: jig update | jig update --sync [path] [--with-optional-deps] [--archived]")
+		return errors.New("usage: jig update | jig update --sync [path] [--with-optional-deps] [--archived] [--refresh]")
 	}
-	if !parsed.Flags["--sync"] && (parsed.Flags["--with-optional-deps"] || parsed.Flags["--archived"]) {
-		return errors.New("--with-optional-deps and --archived require --sync")
+	if !parsed.Flags["--sync"] && (parsed.Flags["--with-optional-deps"] || parsed.Flags["--archived"] || parsed.Flags["--refresh"]) {
+		return errors.New("--with-optional-deps, --archived, and --refresh require --sync")
 	}
 	return jig.Update(jig.UpdateOptions{
 		Sync:            parsed.Flags["--sync"],
 		Path:            optionalPath(parsed.Positionals),
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
+		Refresh:         parsed.Flags["--refresh"],
 	}, out)
 }
 

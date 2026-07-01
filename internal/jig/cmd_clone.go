@@ -10,6 +10,7 @@ type CloneOptions struct {
 	Path            string
 	IncludeOptional bool
 	IncludeArchived bool
+	Refresh         bool
 }
 
 func Clone(options CloneOptions, out io.Writer) error {
@@ -17,14 +18,14 @@ func Clone(options CloneOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if err := clonePathIntoWorkspace(out, ws, options.Path, options.IncludeOptional, options.IncludeArchived); err != nil {
+	if err := clonePathIntoWorkspace(out, ws, options); err != nil {
 		return err
 	}
 	return saveState(ws.Root, ws.State)
 }
 
-func clonePathIntoWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bool, includeArchived bool) error {
-	selection, err := ws.Select(NodeQuery{Path: path, IncludeArchived: includeArchived})
+func clonePathIntoWorkspace(out io.Writer, ws *Workspace, options CloneOptions) error {
+	selection, err := ws.Select(NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived})
 	if err != nil {
 		return err
 	}
@@ -36,5 +37,9 @@ func clonePathIntoWorkspace(out io.Writer, ws *Workspace, path string, includeOp
 		}
 		return fmt.Errorf("no repositories or files match %q", selection.Path)
 	}
-	return resolveAndApplyPlan(out, ws, roots, explicitFiles, includeOptional, includeArchived, false)
+	return resolveAndApplyPlan(out, ws, roots, explicitFiles, applyOptions{
+		IncludeOptional: options.IncludeOptional,
+		IncludeArchived: options.IncludeArchived,
+		RefreshFiles:    options.Refresh,
+	})
 }

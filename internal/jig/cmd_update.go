@@ -12,6 +12,7 @@ type UpdateOptions struct {
 	Path            string
 	IncludeOptional bool
 	IncludeArchived bool
+	Refresh         bool
 }
 
 func Update(options UpdateOptions, out io.Writer) error {
@@ -60,7 +61,12 @@ func Update(options UpdateOptions, out io.Writer) error {
 	if options.Sync {
 		ws.Def = *incoming
 		ws.Model = incomingModel
-		return syncWorkspace(out, ws, options.Path, options.IncludeOptional, options.IncludeArchived)
+		return syncWorkspace(out, ws, SyncOptions{
+			Path:            options.Path,
+			IncludeOptional: options.IncludeOptional,
+			IncludeArchived: options.IncludeArchived,
+			Refresh:         options.Refresh,
+		})
 	}
 	return nil
 }

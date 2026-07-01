@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 )
 
-func ensureFile(out io.Writer, root string, model *Model, state *State, filePath string, allowMove bool) error {
+func ensureFile(out io.Writer, root string, model *Model, state *State, filePath string, allowMove bool, refresh bool) error {
 	entry, _ := model.entry(filePath, EntryFile)
 	file := entry.File
 	if file.Link != "" {
@@ -63,6 +63,17 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 		}
 		if currentHash != stateFile.SHA256 {
 			return fmt.Errorf("locally modified")
+		}
+		// The tracked content is unmodified and comes from the same source;
+		// skip the network fetch unless a refresh was requested.
+		if !refresh && stateFile.Src == file.Src {
+			if file.Executable && info.Mode().Perm() != 0o755 {
+				if err := os.Chmod(expectedAbs, 0o755); err != nil {
+					return err
+				}
+			}
+			fmt.Fprintf(out, "present-file: %s\n", filePath)
+			return nil
 		}
 	} else if hasState {
 		delete(state.Files, entry.Identity)

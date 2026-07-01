@@ -9,6 +9,7 @@ type SyncOptions struct {
 	Path            string
 	IncludeOptional bool
 	IncludeArchived bool
+	Refresh         bool
 }
 
 func Sync(options SyncOptions, out io.Writer) error {
@@ -16,14 +17,14 @@ func Sync(options SyncOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return syncWorkspace(out, ws, options.Path, options.IncludeOptional, options.IncludeArchived)
+	return syncWorkspace(out, ws, options)
 }
 
-func syncWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bool, includeArchived bool) error {
+func syncWorkspace(out io.Writer, ws *Workspace, options SyncOptions) error {
 	var roots []string
 	var explicitFiles []string
-	if path != "" {
-		selection, err := ws.Select(NodeQuery{Path: path, IncludeArchived: includeArchived})
+	if options.Path != "" {
+		selection, err := ws.Select(NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived})
 		if err != nil {
 			return err
 		}
@@ -36,7 +37,12 @@ func syncWorkspace(out io.Writer, ws *Workspace, path string, includeOptional bo
 		roots = installedDefinedRepos(ws.Root, &ws.Model, &ws.State)
 	}
 
-	if err := resolveAndApplyPlan(out, ws, roots, explicitFiles, includeOptional, includeArchived, true); err != nil {
+	if err := resolveAndApplyPlan(out, ws, roots, explicitFiles, applyOptions{
+		IncludeOptional: options.IncludeOptional,
+		IncludeArchived: options.IncludeArchived,
+		Sync:            true,
+		RefreshFiles:    options.Refresh,
+	}); err != nil {
 		return err
 	}
 	reportStale(out, ws.Root, &ws.Model, &ws.State)

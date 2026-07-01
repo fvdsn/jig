@@ -5,15 +5,20 @@ import (
 	"io"
 )
 
+type applyOptions struct {
+	IncludeOptional bool
+	IncludeArchived bool
+	Sync            bool // keep installed optional deps and allow moving installed entries
+	RefreshFiles    bool // refetch file content even when the local copy is unmodified
+}
+
 // resolveAndApplyPlan expands roots into a full plan and materializes it.
-// When syncing, installed optional dependencies stay included and existing
-// checkouts may be moved to their new paths.
-func resolveAndApplyPlan(out io.Writer, ws *Workspace, roots []string, explicitFiles []string, includeOptional bool, includeArchived bool, syncing bool) error {
+func resolveAndApplyPlan(out io.Writer, ws *Workspace, roots []string, explicitFiles []string, opts applyOptions) error {
 	installed := ws.installedNodes()
 	plan, err := resolvePlan(&ws.Model, roots, planOptions{
-		IncludeOptional:          includeOptional,
-		IncludeInstalledOptional: syncing,
-		IncludeArchived:          includeArchived,
+		IncludeOptional:          opts.IncludeOptional,
+		IncludeInstalledOptional: opts.Sync,
+		IncludeArchived:          opts.IncludeArchived,
 		IncludeRoots:             true,
 		Installed:                installed.Repos,
 		InstalledFiles:           installed.Files,
@@ -22,10 +27,10 @@ func resolveAndApplyPlan(out io.Writer, ws *Workspace, roots []string, explicitF
 		return err
 	}
 	plan = includeExplicitFiles(&ws.Model, plan, explicitFiles)
-	if !includeArchived {
+	if !opts.IncludeArchived {
 		plan = excludeArchivedFiles(&ws.Model, plan, installed.Files)
 	}
-	applyPlan(out, ws, plan, syncing)
+	applyPlan(out, ws, plan, opts)
 	return nil
 }
 
@@ -75,7 +80,7 @@ func excludeArchivedFiles(model *Model, base plan, installed map[string]bool) pl
 	return base
 }
 
-func applyPlan(out io.Writer, ws *Workspace, plan plan, allowMove bool) {
+func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions) {
 	// Repositories are independent of each other, so the git work runs in
 	// parallel; state and output updates are applied serially in plan order.
 	entries := make([]Entry, len(plan.Repos))
@@ -85,7 +90,7 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, allowMove bool) {
 	}
 	forEachParallel(len(plan.Repos), func(i int) {
 		stateRepo, hasState := ws.State.Repos[entries[i].Identity]
-		results[i] = ensureRepo(ws.Root, entries[i], stateRepo, hasState, allowMove)
+		results[i] = ensureRepo(ws.Root, entries[i], stateRepo, hasState, opts.Sync)
 	})
 	for i, result := range results {
 		if result.Remove {
@@ -102,7 +107,7 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, allowMove bool) {
 		}
 	}
 	for _, filePath := range plan.Files {
-		if err := ensureFile(out, ws.Root, &ws.Model, &ws.State, filePath, allowMove); err != nil {
+		if err := ensureFile(out, ws.Root, &ws.Model, &ws.State, filePath, opts.Sync, opts.RefreshFiles); err != nil {
 			fmt.Fprintf(out, "skipped:\n  %s: %s\n", filePath, err)
 		}
 	}
