@@ -3,6 +3,7 @@ package jig
 import (
 	"fmt"
 	"io"
+	"sync"
 )
 
 type applyOptions struct {
@@ -82,17 +83,20 @@ func excludeArchivedFiles(model *Model, base plan, installed map[string]bool) pl
 
 func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions) {
 	// Repositories are independent of each other, so the git work runs in
-	// parallel; state and output updates are applied serially in plan order.
+	// parallel; each result is applied to state and printed as it completes,
+	// so long runs show progress instead of a report at the end.
 	entries := make([]Entry, len(plan.Repos))
-	results := make([]ensureRepoResult, len(plan.Repos))
 	for i, repoPath := range plan.Repos {
 		entries[i], _ = ws.Model.entry(repoPath, EntryRepo)
 	}
+	var mu sync.Mutex
 	forEachParallel(len(plan.Repos), func(i int) {
+		mu.Lock()
 		stateRepo, hasState := ws.State.Repos[entries[i].Identity]
-		results[i] = ensureRepo(ws.Root, entries[i], stateRepo, hasState, opts.Sync)
-	})
-	for i, result := range results {
+		mu.Unlock()
+		result := ensureRepo(ws.Root, entries[i], stateRepo, hasState, opts.Sync)
+		mu.Lock()
+		defer mu.Unlock()
 		if result.Remove {
 			delete(ws.State.Repos, entries[i].Identity)
 		}
@@ -105,7 +109,7 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions) {
 		if result.Err != nil {
 			fmt.Fprintf(out, "skipped:\n  %s: %s\n", plan.Repos[i], result.Err)
 		}
-	}
+	})
 	for _, filePath := range plan.Files {
 		if err := ensureFile(out, ws.Root, &ws.Model, &ws.State, filePath, opts.Sync, opts.RefreshFiles); err != nil {
 			fmt.Fprintf(out, "skipped:\n  %s: %s\n", filePath, err)
