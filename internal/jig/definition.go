@@ -9,7 +9,6 @@ type Definition struct {
 	Version int                        `json:"version"`
 	Source  *Source                    `json:"source,omitempty"`
 	Tree    map[string]json.RawMessage `json:"tree"`
-	Repos   map[string]Repo            `json:"repos,omitempty"` // legacy input is rejected by validation; kept so old files parse clearly.
 }
 
 type Source struct {

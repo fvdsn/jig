@@ -19,9 +19,6 @@ func validateDefinition(def *Definition) validationResult {
 	if def.Tree == nil {
 		result.Errors = append(result.Errors, "missing tree")
 	}
-	if len(def.Repos) > 0 {
-		result.Errors = append(result.Errors, "legacy repos field is not supported; use tree with $repo nodes")
-	}
 	if def.Source != nil {
 		if def.Source.Type != "git" {
 			result.Errors = append(result.Errors, "source.type must be git")
