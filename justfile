@@ -6,11 +6,11 @@ default:
 
 # Install the jig binary to $GOBIN / $GOPATH/bin
 install:
-    go install ./cmd/jig
+    go install .
 
 # Build the binary into ./bin/jig
 build:
-    go build -o bin/jig ./cmd/jig
+    go build -o bin/jig .
 
 # Run the test suite
 test:
