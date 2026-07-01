@@ -39,12 +39,12 @@ func TestPathMatchesSegmentBoundary(t *testing.T) {
 	}
 }
 
-func TestNormalizeCLIPathTrimsTrailingSlashes(t *testing.T) {
-	if got := normalizeCLIPath("platform/"); got != "platform" {
-		t.Fatalf("normalizeCLIPath trailing slash = %q", got)
+func TestNormalizeQueryPathTrimsTrailingSlashes(t *testing.T) {
+	if got := normalizeQueryPath("platform/"); got != "platform" {
+		t.Fatalf("normalizeQueryPath trailing slash = %q", got)
 	}
-	if got := normalizeCLIPath("codabox/sourcery///"); got != "codabox/sourcery" {
-		t.Fatalf("normalizeCLIPath multiple trailing slashes = %q", got)
+	if got := normalizeQueryPath("codabox/sourcery///"); got != "codabox/sourcery" {
+		t.Fatalf("normalizeQueryPath multiple trailing slashes = %q", got)
 	}
 }
 
