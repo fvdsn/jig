@@ -2,18 +2,19 @@
 
 Jig manages a local workspace made of many Git repositories and generated support files.
 
-Use Jig when a team has many related repositories and wants one shared `.jig.json` file to define how a workspace should be laid out, which repositories depend on which other repositories, and which helper files should be materialized locally.
+Use Jig when a team has many related repositories and wants one shared schema file to define how a workspace should be laid out, which repositories depend on which other repositories, and which helper files should be materialized locally.
 
 ## Core Idea
 
-A workspace contains:
+A workspace keeps everything Jig manages under `.jig/`:
 
 ```text
-.jig.json        shared workspace definition
-.jig/state.json  local machine state
+.jig/source/       Git checkout of the schema repository
+.jig/config.json   which file inside the checkout is the schema
+.jig/state.json    local machine state
 ```
 
-The `.jig.json` file is usually hosted in a Git repository and shared by a team. Users run `jig init` to fetch it and create a local workspace.
+The schema file (usually `.jig.json` or `jig.json`) lives in its own Git repository shared by the team. `jig init` clones that repository into `.jig/source/`, and Jig always reads the schema live from the checkout.
 
 The `.jig/state.json` file is local and machine-owned. It tracks installed repositories and generated files so Jig can safely handle moves, remote changes, and local edits.
 
@@ -54,10 +55,10 @@ jig init git@github.com:acme/jig-definition.git ~/Code/acme --clone services/che
 Initialize from a local file while testing a draft definition:
 
 ```sh
-jig init ./draft.jig.json ~/Code/acme-test
+jig init ./draft.json ~/Code/acme-test
 ```
 
-When initialized from a local file, Jig does not record a remote `source` in `.jig.json`.
+When initialized from a local file, `.jig/source/` is created as a fresh Git repository containing the schema as `jig.json`, with no remote configured.
 
 ## Definition Shape
 
@@ -282,7 +283,7 @@ Files can also be symbolic links to other files in the same schema.
 Rules for links:
 
 - A `$file` defines exactly one of `src` or `link`.
-- `link` points to another `$file` path in the same `.jig.json`.
+- `link` points to another `$file` path in the same schema.
 - Jig creates relative symlinks.
 - Link files are active only when their target file is active.
 - Jig skips existing non-symlink paths instead of overwriting them.
@@ -434,24 +435,38 @@ jig status services
 jig status --archived
 ```
 
-Update `.jig.json` from its configured remote source:
+Update the schema checkout from its Git remote (fast-forward only):
 
 ```sh
 jig update
 ```
 
-Update `.jig.json` and immediately sync the workspace:
+Update the schema and immediately sync the workspace:
 
 ```sh
 jig update --sync
 jig update --sync services
 ```
 
+## Editing The Schema
+
+The schema in `.jig/source/` is a normal Git working copy. To change the shared workspace definition:
+
+```sh
+$EDITOR .jig/source/.jig.json      # edit the schema
+jig validate                       # check it
+jig sync                           # test it: jig reads the live file
+git -C .jig/source commit -am "describe the change"
+git -C .jig/source push            # publish to the team
+```
+
+If local schema edits conflict with upstream, `jig update` refuses to fast-forward; resolve with Git inside `.jig/source`.
+
 ## Update And Sync Model
 
-Use `jig update` to update the definition file.
+Use `jig update` to update the schema from its remote.
 
-Use `jig update --sync` to update the definition file and then apply the updated map in one command.
+Use `jig update --sync` to update the schema and then apply the updated map in one command.
 
 Use `jig sync` to apply the current definition to the local workspace.
 

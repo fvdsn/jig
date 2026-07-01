@@ -2,7 +2,7 @@
 
 This document describes example workflows for Jig. The scenarios are intentionally concrete so the CLI behavior can be refined before implementation.
 
-Filesystem trees are shown relative to the workspace root. The workspace root is the directory containing `.jig.json`.
+Filesystem trees are shown relative to the workspace root. The workspace root is the directory containing `.jig/config.json`. The schema is read live from the checkout at `.jig/source/`.
 
 ## Current Scenario A: Tree With Repositories And Files
 
@@ -73,8 +73,9 @@ services/checkout
 
 ```text
 workspace/
-  .jig.json
   .jig/
+    config.json
+    source/
     state.json
   platform/
     auth/
@@ -222,7 +223,7 @@ jig init git@github.com:acme/jig-definition.git ~/Code/acme --clone services/che
 
 ### Expected Behavior
 
-Jig initializes the workspace at `~/Code/acme`, writes `.jig.json`, creates `.jig/state.json`, then clones:
+Jig initializes the workspace at `~/Code/acme`, clones the schema repository into `.jig/source/`, writes `.jig/config.json` and `.jig/state.json`, then clones:
 
 ```text
 services/checkout
@@ -352,8 +353,9 @@ Jig previously wrote `scripts/dev.sh` and recorded its hash:
 
 ```text
 workspace/
-  .jig.json
   .jig/
+    config.json
+    source/
     state.json
   scripts/
     dev.sh
@@ -369,7 +371,7 @@ jig sync
 
 ### Expected Behavior
 
-Jig fetches the latest source content for `scripts/dev.sh`, but does not overwrite the local file because it was modified locally.
+Jig detects that `scripts/dev.sh` was modified locally and does not overwrite it.
 
 ### Example Output
 

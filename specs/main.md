@@ -2,25 +2,21 @@
 
 ## Purpose
 
-Jig is a CLI tool for working with many related Git repositories and workspace files. It uses a declarative `.jig.json` file to describe the desired workspace tree, then clones repositories, materializes files, updates local checkouts, and reports workspace status.
+Jig is a CLI tool for working with many related Git repositories and workspace files. It uses a declarative schema file to describe the desired workspace tree, then clones repositories, materializes files, updates local checkouts, and reports workspace status.
 
 The primary goal is to make it easy to create and maintain a local workspace containing the repositories and support files needed for development.
 
 ## Workspace Definition File
 
-The shared workspace definition is stored in `.jig.json` at the workspace root.
+The shared workspace definition (the schema) lives in its own Git repository. Each workspace keeps a full checkout of that repository at `.jig/source/`, and Jig reads the schema live from that checkout. `.jig/config.json` records which file inside the checkout is the schema.
+
+The schema file is usually named `.jig.json`, `jig.json`, or `schema.json` at the root of the schema repository; `jig init --path` selects any other safe path.
 
 Initial schema:
 
 ```json
 {
   "version": 1,
-  "source": {
-    "type": "git",
-    "url": "git@github.com:org/jig-definition.git",
-    "ref": "main",
-    "path": ".jig.json"
-  },
   "tree": {
     "platform/auth": {
       "$repo": {
@@ -85,29 +81,7 @@ Initial supported version: `1`.
 
 ### `source`
 
-Optional object.
-
-Describes where `.jig.json` can be updated from.
-
-Initial supported source type: `git`.
-
-Example:
-
-```json
-{
-  "type": "git",
-  "url": "git@github.com:org/jig-definition.git",
-  "ref": "main",
-  "path": ".jig.json"
-}
-```
-
-Fields:
-
-- `type`: required string. Initial supported value: `git`.
-- `url`: required string. Git URL of the repository containing the definition file.
-- `ref`: optional string. Branch, tag, or revision to read from. `jig init` records the discovered default branch here.
-- `path`: optional string. Safe source repo file path to the definition file inside the source repository. Default: `.jig.json`.
+Deprecated and ignored. The schema's remote is the `origin` of the `.jig/source/` checkout, and the tracked branch is whatever the checkout is on, exactly as with any Git clone. Older schemas that still carry a `source` object continue to parse.
 
 ### `tree`
 
@@ -709,15 +683,16 @@ For node selection, a repository is installed when a Git checkout exists at its 
 
 ## Workspace Discovery
 
-The workspace root is defined by the presence of a `.jig.json` file.
+The workspace root is defined by the presence of `.jig/config.json`.
 
-All commands should work from the workspace root or any subdirectory inside the workspace. When a command starts, Jig walks up from the current working directory until it finds `.jig.json`.
+All commands should work from the workspace root or any subdirectory inside the workspace. When a command starts, Jig walks up from the current working directory until it finds `.jig/config.json`.
 
-The directory containing `.jig.json` is the workspace root.
+If no workspace is found, the command should fail with a clear error. If a legacy root `.jig.json` is found instead, the error should say the layout is no longer supported and suggest re-running `jig init`.
 
-If no `.jig.json` file is found, the command should fail with a clear error.
+`.jig/config.json` fields:
 
-`.jig.json` is the shared, human-editable workspace definition. It may be updated from a remote `source` and should not contain local checkout metadata.
+- `version`: required integer. Initial supported value: `1`.
+- `schema`: required safe path of the schema file inside `.jig/source/`.
 
 `.jig/` contains Jig-owned local workspace metadata.
 
@@ -746,24 +721,22 @@ Jig should never overwrite local file modifications.
 
 ## Definition Updates
 
-`.jig.json` is the active local definition file.
-
-If `.jig.json` contains a `source` object, Jig can update it from that source.
+The schema checkout at `.jig/source/` is a normal Git working copy. Editing the shared definition is a plain Git workflow: edit the schema file, test with `jig sync` (Jig reads the live file), then commit and push inside `.jig/source/`.
 
 Updating the definition and updating repository contents are separate operations:
 
 ```text
-jig update       updates .jig.json
-jig update --sync updates .jig.json, then syncs the workspace
-jig pull [path]  pulls existing local Git repositories
-jig sync [path]  applies the current .jig.json to the local checkout shape
+jig update        fast-forwards .jig/source from its remote
+jig update --sync updates the schema, then syncs the workspace
+jig pull [path]   pulls existing local Git repositories
+jig sync [path]   applies the current schema to the local checkout shape
 ```
 
-`jig update` should fetch the latest definition from `source`, validate it, compare it to the current local `.jig.json`, and replace the local `.jig.json` only if validation succeeds.
+`jig update` should fetch from the checkout's upstream, validate the upstream schema, and fast-forward the checkout only if validation succeeds. If the checkout has diverged from upstream or local edits conflict, `jig update` should fail and direct the user to resolve with Git in `.jig/source/`.
 
 `jig update` should not clone repositories, pull repositories, delete repositories, move directories, write files, or update Git remotes unless `--sync` is provided.
 
-When comparing the current and incoming definitions, Jig should use repository and file identities.
+When reporting changes between the previous and updated definitions, Jig should use repository and file identities.
 
 ## Operation Rules
 
@@ -811,9 +784,9 @@ jig sync [path] --archived
 
 ### `jig init <git-url-or-file> [workspace-dir]`
 
-Initializes a Jig workspace from a Git-hosted or local definition file.
+Initializes a Jig workspace from a Git-hosted or local schema.
 
-If the first argument is an existing local file, Jig reads that file as the definition. The written workspace `.jig.json` does not get a `source` object. This is useful for testing a definition before pushing it to a Git repository.
+If the first argument is an existing local file, Jig creates `.jig/source/` as a fresh Git repository containing that file as `jig.json`, with no remote configured. This is useful for testing a schema before pushing it to a Git repository.
 
 If the first argument is not an existing local file, Jig treats it as a Git URL.
 
@@ -823,12 +796,11 @@ The command should:
 
 - Resolve the workspace directory.
 - Create the workspace directory if it does not exist.
-- Fail if `.jig.json` already exists in the workspace directory.
-- Discover the source repository default branch with `git ls-remote --symref <git-url> HEAD`.
-- Fetch the definition file from the discovered default branch.
-- Validate the fetched definition.
-- Write `.jig.json` in the workspace directory.
-- Inject or replace the top-level `source` object in the written `.jig.json`.
+- Fail if `.jig/config.json` or `.jig/source/` already exists in the workspace directory.
+- Clone the schema repository into `.jig/source/` (a full clone, so it can be pushed from).
+- Locate the schema file: the `--path` value, or the first of `.jig.json`, `jig.json`, `schema.json` at the checkout root.
+- Validate the schema.
+- Write `.jig/config.json` recording the schema path.
 - Create `.jig/state.json` with empty local state.
 
 By default, the command should not clone repositories or write files declared in the tree.
@@ -855,7 +827,7 @@ If `path` is provided, Jig clones repositories matching `path` and all non-optio
 
 Archived repositories and files are skipped unless they are already installed or `--archived` is provided.
 
-The clone step should run only after `.jig.json` and `.jig/state.json` have been written successfully.
+The clone step should run only after `.jig/config.json` and `.jig/state.json` have been written successfully.
 
 The clone behavior is the same as `jig clone <path>`.
 
@@ -877,7 +849,6 @@ Validation should catch:
 - Unsupported schema version.
 - Missing top-level `version`.
 - Missing top-level `tree`.
-- Invalid `source` object.
 - Invalid tree node objects.
 - Invalid safe paths.
 - Invalid `$group` objects.
@@ -1049,27 +1020,31 @@ The initial implementation may omit ahead/behind information if computing it wou
 
 ### `jig update`
 
-Updates `.jig.json` from its configured `source`.
+Fast-forwards the schema checkout at `.jig/source/` from its Git remote.
 
 The command should:
 
-- Fetch the incoming definition.
-- Validate the incoming definition.
-- Compare the current and incoming definitions by repository and file identity.
+- Fail with a clear error when the checkout has no `origin` remote.
+- Fetch from the checkout's upstream.
+- Validate the upstream schema before touching the checkout.
+- Fast-forward the checkout only if the upstream schema is valid.
+- Fail and direct the user to Git when the checkout has diverged or local edits conflict.
+- Compare the previous and updated live definitions by repository and file identity.
 - Report added, removed, moved, and changed groups, repositories, and files.
-- Replace `.jig.json` only if the incoming definition is valid.
+
+Uncommitted local schema edits that do not conflict with upstream are preserved by the fast-forward and do not appear in the reported changes.
 
 The command should not change local repository checkouts, write files, or update `.jig/state.json`.
 
-`--with-optional-deps`, `--archived`, and a node path are valid only when `--sync` is present.
+`--with-optional-deps`, `--archived`, `--refresh`, and a node path are valid only when `--sync` is present.
 
 ### `jig update --sync [path]`
 
-Updates `.jig.json` from its configured `source`, then applies the updated definition with the same behavior as `jig sync`.
+Updates the schema, then applies the updated definition with the same behavior as `jig sync`.
 
-If `path` is provided, only matching nodes are included in the sync step. The definition update itself is always global.
+If `path` is provided, only matching nodes are included in the sync step. The schema update itself is always global.
 
-The sync step should run only after the incoming definition has been fetched, validated, and written successfully.
+The sync step should run only after the schema has been fetched, validated, and fast-forwarded successfully.
 
 `jig update --sync --with-optional-deps` includes optional dependencies during the sync step.
 

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestInitFromLocalFileDoesNotSetSource(t *testing.T) {
+func TestInitFromLocalFileCreatesSourceCheckout(t *testing.T) {
 	root := t.TempDir()
 	sourcePath := filepath.Join(root, "source.jig.json")
 	workspacePath := filepath.Join(root, "workspace")
@@ -24,19 +24,28 @@ func TestInitFromLocalFileDoesNotSetSource(t *testing.T) {
 
 	var out bytes.Buffer
 	if err := Init(InitOptions{
-		SourceArg:      sourcePath,
-		WorkspaceDir:   workspacePath,
-		DefinitionPath: DefaultDefinitionPath,
+		SourceArg:    sourcePath,
+		WorkspaceDir: workspacePath,
 	}, &out); err != nil {
 		t.Fatal(err)
 	}
 
-	def, err := loadDefinition(filepath.Join(workspacePath, definitionFile))
+	config, err := loadConfig(workspacePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if def.Source != nil {
-		t.Fatalf("expected local init not to set source, got %#v", def.Source)
+	if config.Schema != "jig.json" {
+		t.Fatalf("expected schema jig.json, got %q", config.Schema)
+	}
+	def, err := loadDefinition(filepath.Join(workspacePath, sourceDir, "jig.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := flattenDefinition(def); err != nil {
+		t.Fatal(err)
+	}
+	if !isGitRepo(filepath.Join(workspacePath, sourceDir)) {
+		t.Fatal("expected source checkout to be a git repository")
 	}
 	state, err := loadState(workspacePath)
 	if err != nil {
@@ -55,9 +64,9 @@ func TestInitFromLocalFileRejectsPathFlag(t *testing.T) {
 	}
 
 	err := Init(InitOptions{
-		SourceArg:      sourcePath,
-		WorkspaceDir:   filepath.Join(root, "workspace"),
-		DefinitionPath: "nested/.jig.json",
+		SourceArg:    sourcePath,
+		WorkspaceDir: filepath.Join(root, "workspace"),
+		SchemaPath:   "nested/jig.json",
 	}, ioDiscard{})
 	if err == nil || err.Error() != "--path can only be used with Git sources" {
 		t.Fatalf("expected --path error, got %v", err)

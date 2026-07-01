@@ -2,7 +2,7 @@
 
 Jig is a CLI tool for managing a local workspace made of many related Git repositories and generated support files.
 
-It uses a `.jig.json` file to describe the desired workspace tree. Repositories are declared with `$repo`, files are declared with `$file`, and paths map directly to where things should appear on disk.
+A workspace is described by a schema file (usually `.jig.json` or `jig.json`) hosted in its own Git repository and shared by a team. Repositories are declared with `$repo`, files are declared with `$file`, and paths map directly to where things should appear on disk.
 
 Directory nodes may also declare `$group` metadata. Group metadata such as `description`, `web`, `dependsOn`, and `onlyWhen` is inherited by child repositories or files where applicable.
 
@@ -66,8 +66,8 @@ jig help
 ## Common Commands
 
 ```sh
-jig init <git-url> [workspace-dir]
-jig init <local-jig-file> [workspace-dir]
+jig init <git-url> [workspace-dir] [--path <schema-path>]
+jig init <local-schema-file> [workspace-dir]
 jig init <git-url> [workspace-dir] --clone [path]
 jig validate
 jig list [path] [--archived]
@@ -81,47 +81,70 @@ jig update
 jig update --sync [path] [--with-optional-deps] [--archived] [--refresh]
 ```
 
+## Workspace Layout
+
+Everything jig manages lives under `.jig/` at the workspace root:
+
+- `.jig/source/` is a Git checkout of the schema repository. The workspace always reads the schema live from this checkout.
+- `.jig/config.json` records which file inside the checkout is the schema.
+- `.jig/state.json` is local state tracking installed repositories and generated files.
+
+The schema checkout works like any Git clone: the remote is its `origin`, and the tracked branch is whatever the checkout is on.
+
 ## Concepts
 
-- `.jig.json` is the shared workspace definition.
-- `.jig/state.json` is local state used to track installed repositories and generated files.
 - Paths use workspace-style `/` separators, such as `services/checkout` or `platform`.
 - A path may refer to one repository or a group of repositories.
 - `jig clone [path]` clones/materializes all entries, or matching repositories/files when a path is provided.
 - `jig sync [path]` updates the local checkout shape without deleting local repositories.
-- `jig pull [path]` runs `git pull` in installed repositories.
-- `jig update` refreshes `.jig.json` from its configured source.
-- `jig update --sync` refreshes `.jig.json`, then syncs the workspace.
-- Generated files are only refetched when missing or when their `src` changes; pass `--refresh` to refetch them unconditionally.
+- `jig pull [path]` runs `git pull --ff-only` in installed repositories.
+- `jig update` fast-forwards the schema checkout from its remote.
+- `jig update --sync` updates the schema, then syncs the workspace.
 - Archived entries are excluded by default unless they are already installed. Pass `--archived` to include uninstalled archived entries too.
+- Generated files are only refetched when missing or when their `src` changes; pass `--refresh` to refetch them unconditionally.
 
-## Remote Jig File
+## Editing the Schema
 
-The `.jig.json` file is designed to be hosted in a remote Git repository and shared by a team.
-
-Use `jig init` to create a local workspace from that remote definition:
+The schema in `.jig/source/` is a normal Git working copy, so testing and publishing changes is a plain Git workflow:
 
 ```sh
-jig init git@github.com:acme/jig-definition.git ~/Code/acme
+$EDITOR .jig/source/.jig.json   # edit the schema
+jig sync                        # jig reads the live file, so test immediately
+git -C .jig/source diff         # review
+git -C .jig/source commit -am "add checkout service"
+git -C .jig/source push         # publish to the team
 ```
 
-This fetches the remote `.jig.json`, writes it into the workspace, records the source repository, and creates local Jig state.
+Teammates pick the change up with `jig update --sync`. If your local schema edits conflict with upstream, `jig update` refuses to fast-forward and you resolve it with Git in `.jig/source` like any other repository.
+
+## Initializing a Workspace
+
+Create a local workspace from a schema repository:
+
+```sh
+jig init git@github.com:acme/jig-schema.git ~/Code/acme
+```
+
+This clones the schema repository into `.jig/source/`, finds the schema file (`.jig.json`, `jig.json`, or `schema.json` at the repository root, or the file given with `--path`), and creates local Jig state.
 
 You can also initialize and clone a path in one command:
 
 ```sh
-jig init git@github.com:acme/jig-definition.git ~/Code/acme --clone services/checkout
+jig init git@github.com:acme/jig-schema.git ~/Code/acme --clone services/checkout
 ```
 
-Later, run `jig update` to refresh the local `.jig.json` from the configured remote source.
-
-You can also initialize from a local Jig file while testing changes before pushing them:
+To experiment locally, initialize from a plain schema file:
 
 ```sh
-jig init ./draft.jig.json ~/Code/acme-test
+jig init ./draft.json ~/Code/acme-test
 ```
 
-When initialized from a local file, Jig does not record a remote source.
+This creates `.jig/source/` as a fresh Git repository containing your schema as `jig.json`. To promote the experiment to a shared schema later, add a remote and push:
+
+```sh
+git -C .jig/source remote add origin git@github.com:acme/jig-schema.git
+git -C .jig/source push -u origin main
+```
 
 ## Files
 

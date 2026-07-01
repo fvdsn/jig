@@ -98,18 +98,18 @@ var initFlags = map[string]flagKind{
 }
 
 func printUsage(out io.Writer) {
-	fmt.Fprintln(out, "Jig is a workspace CLI for managing many related Git repositories and generated files from a shared .jig.json definition.")
+	fmt.Fprintln(out, "Jig is a workspace CLI for managing many related Git repositories and generated files from a shared schema.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Usage:")
 	fmt.Fprintln(out, "  jig <command> [args]")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Commands:")
 	fmt.Fprintln(out, "  init <git-url-or-file> [workspace-dir] [--path <path>] [--clone [path]] [--with-optional-deps] [--archived]")
-	fmt.Fprintln(out, "      Initialize a workspace from a Git-hosted or local Jig definition, optionally cloning a path.")
+	fmt.Fprintln(out, "      Initialize a workspace: clone the schema repository into .jig/source, optionally cloning a path.")
 	fmt.Fprintln(out, "  validate")
-	fmt.Fprintln(out, "      Validate the current workspace .jig.json file.")
+	fmt.Fprintln(out, "      Validate the current workspace schema.")
 	fmt.Fprintln(out, "  list [path] [--archived]")
-	fmt.Fprintln(out, "      List groups, repositories, and files defined in .jig.json.")
+	fmt.Fprintln(out, "      List groups, repositories, and files defined in the schema.")
 	fmt.Fprintln(out, "  info <path> [--archived]")
 	fmt.Fprintln(out, "      Show repository, file, or group metadata.")
 	fmt.Fprintln(out, "  deps <path> [--with-optional-deps] [--archived]")
@@ -123,9 +123,9 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "  status [path] [--archived]")
 	fmt.Fprintln(out, "      Show installed, missing, moved, dirty, stale, modified, and remote-changed entries.")
 	fmt.Fprintln(out, "  update")
-	fmt.Fprintln(out, "      Update .jig.json from its configured source without changing local checkouts.")
+	fmt.Fprintln(out, "      Fast-forward the schema checkout (.jig/source) from its remote without changing local checkouts.")
 	fmt.Fprintln(out, "  update --sync [path] [--with-optional-deps] [--archived] [--refresh]")
-	fmt.Fprintln(out, "      Update .jig.json, then sync the workspace.")
+	fmt.Fprintln(out, "      Update the schema, then sync the workspace.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Paths identify repositories, files, or groups using slash paths such as services/checkout or platform.")
 }
@@ -145,7 +145,7 @@ func cmdInit(args []string, out io.Writer) error {
 	options := jig.InitOptions{
 		SourceArg:       parsed.Positionals[0],
 		WorkspaceDir:    ".",
-		DefinitionPath:  jig.DefaultDefinitionPath,
+		SchemaPath:      parsed.Values["--path"],
 		Clone:           parsed.Flags["--clone"],
 		ClonePath:       parsed.Values["--clone"],
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
@@ -153,9 +153,6 @@ func cmdInit(args []string, out io.Writer) error {
 	}
 	if len(parsed.Positionals) == 2 {
 		options.WorkspaceDir = parsed.Positionals[1]
-	}
-	if parsed.Values["--path"] != "" {
-		options.DefinitionPath = parsed.Values["--path"]
 	}
 	return jig.Init(options, out)
 }

@@ -1,10 +1,11 @@
 package jig
 
 import (
-	"errors"
+	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 )
 
 type UpdateOptions struct {
@@ -15,52 +16,57 @@ type UpdateOptions struct {
 	Refresh         bool
 }
 
+// Update fast-forwards the schema source checkout to its upstream. The
+// upstream schema is validated before the checkout is touched, so an invalid
+// upstream never becomes the live definition.
 func Update(options UpdateOptions, out io.Writer) error {
 	ws, err := loadWorkspace(options.Sync)
 	if err != nil {
 		return err
 	}
-	if ws.Def.Source == nil {
-		return errors.New(".jig.json has no source")
+	src := filepath.Join(ws.Root, sourceDir)
+	if _, err := gitOrigin(src); err != nil {
+		return fmt.Errorf("schema checkout has no origin remote (%s): %s", sourceDir, shortError(err))
 	}
-	source := *ws.Def.Source
-	if source.Type != "git" {
-		return fmt.Errorf("unsupported source type %q", source.Type)
+	if _, err := git(src, "fetch", "--quiet"); err != nil {
+		return err
 	}
-	if source.Path == "" {
-		source.Path = definitionFile
+	data, err := git(src, "show", "@{upstream}:"+ws.Config.Schema)
+	if err != nil {
+		return fmt.Errorf("could not read upstream schema: %s", shortError(err))
 	}
-	if err := validateSafePath(source.Path); err != nil {
-		return fmt.Errorf("invalid source path: %s", err)
+	var incoming Definition
+	if err := json.Unmarshal([]byte(data), &incoming); err != nil {
+		return fmt.Errorf("invalid upstream schema: %s", err)
 	}
-	if source.Ref == "" {
-		ref, err := discoverDefaultBranch(source.URL)
-		if err != nil {
-			return fmt.Errorf("could not determine default branch for %s", source.URL)
-		}
-		source.Ref = ref
+	validation := validateDefinition(&incoming)
+	if len(validation.Errors) > 0 {
+		return validation.asError("invalid upstream schema")
+	}
+	if _, err := flattenDefinition(&incoming); err != nil {
+		return err
 	}
 
-	incoming, err := fetchDefinition(source.URL, source.Ref, source.Path)
+	if mergeOut, err := git(src, "merge", "--ff-only", "@{upstream}"); err != nil {
+		return fmt.Errorf("could not fast-forward schema checkout: local history has diverged or local edits conflict; resolve with git in %s", sourceDir)
+	} else if strings.Contains(mergeOut, "Already up to date") {
+		fmt.Fprintln(out, "schema already up to date")
+	}
+
+	// Diff and sync against the live schema file after the merge; it may
+	// carry uncommitted local edits on top of the upstream state.
+	def, err := loadDefinition(ws.SchemaFile())
 	if err != nil {
 		return err
 	}
-	incoming.Source = &source
-	validation := validateDefinition(incoming)
-	if len(validation.Errors) > 0 {
-		return validation.asError("invalid incoming definition")
-	}
-	incomingModel, err := flattenDefinition(incoming)
+	model, err := flattenDefinition(def)
 	if err != nil {
 		return err
 	}
-	printDefinitionChanges(out, &ws.Model, &incomingModel)
-	if err := writeJSON(filepath.Join(ws.Root, definitionFile), incoming); err != nil {
-		return err
-	}
+	printDefinitionChanges(out, &ws.Model, &model)
 	if options.Sync {
-		ws.Def = *incoming
-		ws.Model = incomingModel
+		ws.Def = *def
+		ws.Model = model
 		return syncWorkspace(out, ws, SyncOptions{
 			Path:            options.Path,
 			IncludeOptional: options.IncludeOptional,

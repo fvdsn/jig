@@ -3,22 +3,39 @@ package jig
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 )
 
 const (
-	definitionFile = ".jig.json"
-	stateFile      = ".jig/state.json"
+	configFile           = ".jig/config.json"
+	stateFile            = ".jig/state.json"
+	sourceDir            = ".jig/source"
+	legacyDefinitionFile = ".jig.json"
 )
 
-const DefaultDefinitionPath = definitionFile
+// schemaCandidates are the schema file names probed at the root of a source
+// repository when no explicit path is given, in order of preference.
+var schemaCandidates = []string{".jig.json", "jig.json", "schema.json"}
+
+type Config struct {
+	Version int    `json:"version"`
+	Schema  string `json:"schema"` // schema file path inside the source checkout
+}
 
 type Workspace struct {
-	Root  string
-	Def   Definition
-	Model Model
-	State State
+	Root   string
+	Config Config
+	Def    Definition
+	Model  Model
+	State  State
+}
+
+// SchemaFile returns the absolute path of the live schema file inside the
+// workspace's source checkout.
+func (ws *Workspace) SchemaFile() string {
+	return filepath.Join(ws.Root, sourceDir, filepath.FromSlash(ws.Config.Schema))
 }
 
 func loadWorkspace(withState bool) (*Workspace, error) {
@@ -30,7 +47,12 @@ func loadWorkspace(withState bool) (*Workspace, error) {
 	if err != nil {
 		return nil, err
 	}
-	def, err := loadDefinition(filepath.Join(root, definitionFile))
+	config, err := loadConfig(root)
+	if err != nil {
+		return nil, err
+	}
+	ws := &Workspace{Root: root, Config: config}
+	def, err := loadDefinition(ws.SchemaFile())
 	if err != nil {
 		return nil, err
 	}
@@ -38,14 +60,16 @@ func loadWorkspace(withState bool) (*Workspace, error) {
 	if err != nil {
 		return nil, err
 	}
-	state, err := loadState(root)
+	ws.Def = *def
+	ws.Model = model
+	ws.State, err = loadState(root)
 	if err != nil {
 		if withState {
 			return nil, err
 		}
-		state = emptyState()
+		ws.State = emptyState()
 	}
-	return &Workspace{Root: root, Def: *def, Model: model, State: state}, nil
+	return ws, nil
 }
 
 func findWorkspace(start string) (string, error) {
@@ -54,15 +78,40 @@ func findWorkspace(start string) (string, error) {
 		return "", err
 	}
 	for {
-		if _, err := os.Stat(filepath.Join(dir, definitionFile)); err == nil {
+		if pathExists(filepath.Join(dir, configFile)) {
 			return dir, nil
+		}
+		if pathExists(filepath.Join(dir, legacyDefinitionFile)) {
+			return "", fmt.Errorf("found legacy .jig.json at %s; this layout is no longer supported, delete it and re-run jig init", dir)
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", errors.New("could not find .jig.json in current directory or parents")
+			return "", errors.New("could not find a .jig workspace in current directory or parents")
 		}
 		dir = parent
 	}
+}
+
+func loadConfig(root string) (Config, error) {
+	data, err := os.ReadFile(filepath.Join(root, configFile))
+	if err != nil {
+		return Config{}, err
+	}
+	var config Config
+	if err := json.Unmarshal(data, &config); err != nil {
+		return Config{}, err
+	}
+	if config.Schema == "" {
+		return Config{}, errors.New("workspace config is missing the schema path")
+	}
+	if err := validateSafePath(config.Schema); err != nil {
+		return Config{}, fmt.Errorf("invalid schema path in workspace config: %s", err)
+	}
+	return config, nil
+}
+
+func saveConfig(root string, config Config) error {
+	return writeJSON(filepath.Join(root, configFile), &config)
 }
 
 func writeJSON(path string, value any) error {

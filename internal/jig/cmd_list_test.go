@@ -3,13 +3,12 @@ package jig
 import (
 	"bytes"
 	"os"
-	"path/filepath"
 	"testing"
 )
 
 func TestListSupportsPathAndArchivedFlag(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, definitionFile), []byte(`{
+	writeTestWorkspace(t, root, `{
   "version": 1,
   "tree": {
     "services": {
@@ -40,12 +39,7 @@ func TestListSupportsPathAndArchivedFlag(t *testing.T) {
       }
     }
   }
-}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := saveState(root, emptyState()); err != nil {
-		t.Fatal(err)
-	}
+}`)
 
 	oldWd, err := os.Getwd()
 	if err != nil {

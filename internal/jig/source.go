@@ -1,10 +1,8 @@
 package jig
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -33,42 +31,7 @@ func parseFileSrc(src string) (fileSrc, error) {
 	return parsed, nil
 }
 
-func discoverDefaultBranch(gitURL string) (string, error) {
-	out, err := exec.Command("git", "ls-remote", "--symref", gitURL, "HEAD").Output()
-	if err != nil {
-		return "", err
-	}
-	for _, line := range strings.Split(string(out), "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "ref: refs/heads/") {
-			continue
-		}
-		line = strings.TrimPrefix(line, "ref: refs/heads/")
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-		return fields[0], nil
-	}
-	return "", errors.New("default branch not found")
-}
-
-func fetchDefinition(gitURL, ref, definitionPath string) (*Definition, error) {
-	data, err := fetchGitFile(gitURL, ref, definitionPath)
-	if err != nil {
-		return nil, err
-	}
-	var def Definition
-	if err := json.Unmarshal(data, &def); err != nil {
-		return nil, err
-	}
-	return &def, nil
-}
-
 func fetchGitFile(gitURL, ref, sourcePath string) ([]byte, error) {
-	if sourcePath == "" {
-		sourcePath = definitionFile
-	}
 	if err := validateSafePath(sourcePath); err != nil {
 		return nil, err
 	}
