@@ -34,7 +34,7 @@ func Run(args []string, out io.Writer, _ io.Writer) error {
 		return cmdPull(args[1:], out)
 	case "fetch":
 		return cmdFetch(args[1:], out)
-	case "remove":
+	case "rm":
 		return cmdRemove(args[1:], out)
 	case "status":
 		return cmdStatus(args[1:], out)
@@ -126,7 +126,7 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Run git pull --ff-only in installed repositories matching a path or group.")
 	fmt.Fprintln(out, "  fetch [path] [--archived] [--tags a,b]")
 	fmt.Fprintln(out, "      Run git fetch in installed repositories matching a path or group.")
-	fmt.Fprintln(out, "  remove <path>... [-r|--recursive] [-f|--force]")
+	fmt.Fprintln(out, "  rm <path>... [-r|--recursive] [-f|--force]")
 	fmt.Fprintln(out, "      Uninstall repositories or files: delete the checkout and stop tracking it. -r removes groups, -f overrides dirty/unpushed checks.")
 	fmt.Fprintln(out, "  status [path] [--archived] [--tags a,b]")
 	fmt.Fprintln(out, "      Show installed, missing, moved, dirty, stale, modified, and remote-changed entries.")
@@ -298,7 +298,7 @@ func cmdRemove(args []string, out io.Writer) error {
 		return err
 	}
 	if len(parsed.Positionals) == 0 {
-		return errors.New("usage: jig remove <path>... [-r|--recursive] [-f|--force]")
+		return errors.New("usage: jig rm <path>... [-r|--recursive] [-f|--force]")
 	}
 	return jig.Remove(jig.RemoveOptions{
 		Paths:     parsed.Positionals,

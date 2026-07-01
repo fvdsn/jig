@@ -77,7 +77,7 @@ jig clone [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]
 jig sync [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]
 jig pull [path] [--archived] [--tags a,b]
 jig fetch [path] [--archived] [--tags a,b]
-jig remove <path>... [-r|--recursive] [-f|--force]
+jig rm <path>... [-r|--recursive] [-f|--force]
 jig status [path] [--archived] [--tags a,b]
 jig update
 jig update --sync [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]
@@ -99,7 +99,7 @@ The schema checkout works like any Git clone: the remote is its `origin`, and th
 - A path may refer to one repository or a group of repositories.
 - `jig clone [path]` clones/materializes all entries, or matching repositories/files when a path is provided.
 - `jig sync [path]` converges the workspace to the schema: it moves renamed checkouts, fixes origins, refreshes files, and restores tracked repositories whose directory was deleted. It never uninstalls anything.
-- `jig remove <path>...` uninstalls: it deletes the checkout and stops tracking it, refusing to delete dirty or unpushed repositories unless `--force` is given. Removing a group requires `-r`.
+- `jig rm <path>...` uninstalls: it deletes the checkout and stops tracking it, refusing to delete dirty or unpushed repositories unless `--force` is given. Removing a group requires `-r`.
 - `jig pull [path]` runs `git pull --ff-only` in installed repositories.
 - `jig fetch [path]` runs `git fetch` in installed repositories without touching working trees.
 - `jig status` shows one line per entry: glyph, path, branch, and notes including dirty state and ahead/behind counts against upstream (run `jig fetch` first for fresh counts).

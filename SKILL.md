@@ -453,12 +453,12 @@ jig fetch platform
 Uninstall repositories or files (deletes the checkout and stops tracking it; `-r` for groups, `-f` to override the dirty/unpushed safety checks):
 
 ```sh
-jig remove services/checkout
-jig remove -r legacy
-jig remove -r -f legacy
+jig rm services/checkout
+jig rm -r legacy
+jig rm -r -f legacy
 ```
 
-Deleting a repository directory by hand does not uninstall it: `jig sync` restores tracked repositories whose directory is missing. `jig remove` is the way to uninstall.
+Deleting a repository directory by hand does not uninstall it: `jig sync` restores tracked repositories whose directory is missing. `jig rm` is the way to uninstall.
 
 Show workspace status:
 

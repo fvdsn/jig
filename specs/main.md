@@ -969,7 +969,7 @@ If a matching repository has optional dependencies that are already installed lo
 
 If `path` is omitted, Jig syncs the desired repositories: those installed locally plus those tracked in `.jig/state.json`, with their non-optional dependencies, then writes active files. Installed optional dependencies are included. It should not clone every repository in the schema by default.
 
-State records intent: a tracked repository whose directory was deleted locally is restored by sync and reported as restored. `jig remove` is the way to uninstall.
+State records intent: a tracked repository whose directory was deleted locally is restored by sync and reported as restored. `jig rm` is the way to uninstall.
 
 Archived repositories and files are skipped unless they are already installed or `--archived` is provided.
 
@@ -1011,7 +1011,7 @@ Installed archived repositories are included by default. `--archived` applies th
 
 Runs `git fetch` in installed repositories matching `path`, or in all installed repositories when `path` is omitted. Selection semantics match `jig pull`. Fetch never touches working trees or local branches.
 
-### `jig remove <path>...`
+### `jig rm <path>...`
 
 Uninstalls repositories and files: deletes the checkout or file and drops it from `.jig/state.json`, so sync stops restoring it. Ergonomics follow `rm`:
 
