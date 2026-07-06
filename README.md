@@ -65,7 +65,7 @@ A JSON tree where paths are the directory layout. Repos, files, and dirs are lea
     "platform": {
       "$group": { "description": "Shared platform services", "tags": ["backend"] },
       "auth":   { "$repo": { "id": "auth-service", "git": "git@github.com:acme/auth.git" } },
-      "dev.sh": { "$file": { "src": "git:git@github.com:acme/config.git#scripts/dev.sh", "executable": true } }
+      "dev.sh": { "$file": { "src": "git@github.com:acme/config.git#scripts/dev.sh", "executable": true } }
     },
     "services/checkout": {
       "$repo": {
@@ -76,7 +76,7 @@ A JSON tree where paths are the directory layout. Repos, files, and dirs are lea
       }
     },
     "tools/ci": {
-      "$dir": { "src": "git:git@github.com:acme/config.git#scripts/ci" }
+      "$dir": { "src": "git@github.com:acme/config.git#scripts/ci" }
     }
   }
 }

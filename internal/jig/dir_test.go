@@ -106,7 +106,7 @@ func TestDirValidationAndWholeRepoSrc(t *testing.T) {
       "$dir": { "id": "config", "src": "git:git@example.com:config.git" }
     },
     "tools/bad": {
-      "$dir": { "id": "bad", "src": "https://not-git" }
+      "$dir": { "id": "bad", "src": "git@example.com:config.git#" }
     }
   }
 }`)

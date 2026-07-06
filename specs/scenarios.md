@@ -42,7 +42,7 @@ Filesystem trees are shown relative to the workspace root. The workspace root is
     "scripts/dev.sh": {
       "$file": {
         "id": "dev-script",
-        "src": "git:git@github.com:acme/workspace-config.git#scripts/dev.sh",
+        "src": "git@github.com:acme/workspace-config.git#scripts/dev.sh",
         "description": "Starts the local development stack",
         "executable": true
       }
@@ -111,7 +111,7 @@ workspace/
   "files": {
     "dev-script": {
       "path": "scripts/dev.sh",
-      "src": "git:git@github.com:acme/workspace-config.git#scripts/dev.sh",
+      "src": "git@github.com:acme/workspace-config.git#scripts/dev.sh",
       "sha256": "abc123"
     }
   }
@@ -141,7 +141,7 @@ workspace/
     ".agents/skills/platform": {
       "$file": {
         "id": "platform-skill",
-        "src": "git:git@github.com:acme/workspace-config.git#agents/skills/platform.md",
+        "src": "git@github.com:acme/workspace-config.git#agents/skills/platform.md",
         "description": "Agent skill for platform repositories",
         "onlyWhen": {
           "path": "platform",
@@ -342,7 +342,7 @@ Jig previously wrote `scripts/dev.sh` and recorded its hash:
   "files": {
     "dev-script": {
       "path": "scripts/dev.sh",
-      "src": "git:git@github.com:acme/workspace-config.git#scripts/dev.sh",
+      "src": "git@github.com:acme/workspace-config.git#scripts/dev.sh",
       "sha256": "abc123"
     }
   }
@@ -390,12 +390,12 @@ skipped:
   "tree": {
     "../outside": {
       "$file": {
-        "src": "git:git@github.com:acme/workspace-config.git#files/outside"
+        "src": "git@github.com:acme/workspace-config.git#files/outside"
       }
     },
     "~/home-file": {
       "$file": {
-        "src": "git:git@github.com:acme/workspace-config.git#files/home-file"
+        "src": "git@github.com:acme/workspace-config.git#files/home-file"
       }
     },
     "/absolute": {

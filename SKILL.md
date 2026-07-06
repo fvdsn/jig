@@ -79,7 +79,7 @@ The definition uses a top-level `tree`.
     "scripts/dev.sh": {
       "$file": {
         "id": "dev-script",
-        "src": "git:git@github.com:acme/workspace-config.git#scripts/dev.sh",
+        "src": "git@github.com:acme/workspace-config.git#scripts/dev.sh",
         "executable": true
       }
     }
@@ -240,7 +240,7 @@ Declare files with `$file`.
     "scripts/dev.sh": {
       "$file": {
         "id": "dev-script",
-        "src": "git:git@github.com:acme/workspace-config.git#scripts/dev.sh",
+        "src": "git@github.com:acme/workspace-config.git#scripts/dev.sh",
         "description": "Starts the local development stack",
         "executable": true
       }
@@ -252,7 +252,7 @@ Declare files with `$file`.
 The `src` format is:
 
 ```text
-git:<repo-url>#<path-inside-source-repo>
+<repo-url>#<path-inside-source-repo>
 ```
 
 Files are written during `clone` and `sync` when active. A file without an explicit `onlyWhen` is active when any repository in its scope is active or installed; the scope is the nearest ancestor path containing repositories (the whole workspace for root-level files). A support file placed next to a group of repos therefore follows those repos automatically. Installed files stay active until removed with `jig rm`.
@@ -269,7 +269,7 @@ Files can also be symbolic links to other files in the same schema.
     "scripts/dev.sh": {
       "$file": {
         "id": "dev-script",
-        "src": "git:git@github.com:acme/workspace-config.git#scripts/dev.sh",
+        "src": "git@github.com:acme/workspace-config.git#scripts/dev.sh",
         "executable": true
       }
     },
@@ -302,7 +302,7 @@ Declare whole subtrees with `$dir`. The subtree of the source repository is mate
     "tools/ci-scripts": {
       "$dir": {
         "id": "ci-scripts",
-        "src": "git:git@github.com:acme/workspace-config.git#scripts/ci"
+        "src": "git@github.com:acme/workspace-config.git#scripts/ci"
       }
     }
   }
@@ -333,7 +333,7 @@ Use `onlyWhen` to make a repo or file active only when another repository path o
       "platform": {
         "$file": {
           "id": "platform-skill",
-          "src": "git:git@github.com:acme/workspace-config.git#agents/skills/platform.md"
+          "src": "git@github.com:acme/workspace-config.git#agents/skills/platform.md"
         }
       }
     }

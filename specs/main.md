@@ -57,7 +57,7 @@ Initial schema:
     ".agents/skills/platform": {
       "$file": {
         "id": "platform-skill",
-        "src": "git:git@github.com:org/workspace-config.git#agents/skills/platform.md",
+        "src": "git@github.com:org/workspace-config.git#agents/skills/platform.md",
         "description": "Agent skill for platform repositories",
         "onlyWhen": {
           "path": "platform",
@@ -396,7 +396,7 @@ Example:
     "scripts/dev.sh": {
       "$file": {
         "id": "dev-script",
-        "src": "git:git@github.com:org/workspace-config.git#scripts/dev.sh",
+        "src": "git@github.com:org/workspace-config.git#scripts/dev.sh",
         "description": "Starts the local development stack",
         "executable": true
       }
@@ -428,26 +428,26 @@ Optional string.
 
 Identifies where the file content comes from.
 
-Initial supported source syntax:
+Source syntax:
 
 ```text
-git:<repo-url>#<safe-source-repo-file-path>
+<repo-url>#<safe-source-repo-file-path>
 ```
 
 Examples:
 
 ```text
-git:git@github.com:org/workspace-config.git#compose/backend.yml
-git:https://github.com/org/workspace-config.git#scripts/dev.sh
+git@github.com:org/workspace-config.git#compose/backend.yml
+https://github.com/org/workspace-config.git#scripts/dev.sh
 ```
 
 Parsing rules:
 
-- `src` must start with `git:`.
-- The remaining string is split at `#`.
+- The string is split at the last `#`.
 - The left side is the Git URL.
 - The right side is a safe source repo file path.
 - The source repo file path must not contain `#`.
+- A legacy `git:` prefix is accepted and ignored (real `git://` protocol URLs are untouched).
 
 ### `$file.link`
 
@@ -463,7 +463,7 @@ Example:
     "scripts/dev.sh": {
       "$file": {
         "id": "dev-script",
-        "src": "git:git@github.com:org/workspace-config.git#scripts/dev.sh"
+        "src": "git@github.com:org/workspace-config.git#scripts/dev.sh"
       }
     },
     "bin/dev": {
@@ -535,14 +535,14 @@ Directory nodes are declared with `$dir` and materialize a whole subtree of a so
     "tools/ci-scripts": {
       "$dir": {
         "id": "ci-scripts",
-        "src": "git:git@github.com:org/workspace-config.git#scripts/ci"
+        "src": "git@github.com:org/workspace-config.git#scripts/ci"
       }
     }
   }
 }
 ```
 
-Fields: `id` (optional identity, defaults to the path), `src` (required, `git:<repo-url>[#<subtree-path>]`; without a path the whole repository tree is materialized), `description`, `archived`, `tags`, and `onlyWhen` behave as for `$file`. There is no `executable` field (modes come from the git tree) and directories cannot be link targets.
+Fields: `id` (optional identity, defaults to the path), `src` (required, `<repo-url>[#<subtree-path>]`; without a path the whole repository tree is materialized), `description`, `archived`, `tags`, and `onlyWhen` behave as for `$file`. There is no `executable` field (modes come from the git tree) and directories cannot be link targets.
 
 State records the source tree id and a manifest mapping each written file to its content hash. Rules:
 
@@ -711,7 +711,7 @@ Initial state schema:
   "files": {
     "dev-script": {
       "path": "scripts/dev.sh",
-      "src": "git:git@github.com:org/workspace-config.git#scripts/dev.sh",
+      "src": "git@github.com:org/workspace-config.git#scripts/dev.sh",
       "sha256": "abc123"
     }
   }

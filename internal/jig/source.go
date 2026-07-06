@@ -12,14 +12,20 @@ type fileSrc struct {
 	Path   string
 }
 
-func parseFileSrc(src string) (fileSrc, error) {
-	if !strings.HasPrefix(src, "git:") {
-		return fileSrc{}, errors.New("src must start with git:")
+// stripLegacySrcPrefix drops the historical "git:" prefix; sources are plain
+// <repo-url>[#<path>]. Real git protocol URLs (git://) are left untouched.
+func stripLegacySrcPrefix(src string) string {
+	if strings.HasPrefix(src, "git:") && !strings.HasPrefix(src, "git://") {
+		return strings.TrimPrefix(src, "git:")
 	}
-	value := strings.TrimPrefix(src, "git:")
+	return src
+}
+
+func parseFileSrc(src string) (fileSrc, error) {
+	value := stripLegacySrcPrefix(src)
 	idx := strings.LastIndex(value, "#")
 	if idx <= 0 || idx == len(value)-1 {
-		return fileSrc{}, errors.New("src must be git:<repo-url>#<file-path>")
+		return fileSrc{}, errors.New("src must be <repo-url>#<file-path>")
 	}
 	parsed := fileSrc{GitURL: value[:idx], Path: value[idx+1:]}
 	if strings.Contains(parsed.Path, "#") {
@@ -31,23 +37,20 @@ func parseFileSrc(src string) (fileSrc, error) {
 	return parsed, nil
 }
 
-// parseDirSrc parses a $dir source: git:<repo-url>[#<subtree-path>]. Without
-// a path the whole repository tree is materialized.
+// parseDirSrc parses a $dir source: <repo-url>[#<subtree-path>]. Without a
+// path the whole repository tree is materialized.
 func parseDirSrc(src string) (fileSrc, error) {
-	if !strings.HasPrefix(src, "git:") {
-		return fileSrc{}, errors.New("src must start with git:")
-	}
-	value := strings.TrimPrefix(src, "git:")
+	value := stripLegacySrcPrefix(src)
 	idx := strings.LastIndex(value, "#")
 	if idx < 0 {
 		if value == "" {
-			return fileSrc{}, errors.New("src must be git:<repo-url>[#<subtree-path>]")
+			return fileSrc{}, errors.New("src must be <repo-url>[#<subtree-path>]")
 		}
 		return fileSrc{GitURL: value}, nil
 	}
 	parsed := fileSrc{GitURL: value[:idx], Path: value[idx+1:]}
 	if parsed.GitURL == "" || parsed.Path == "" {
-		return fileSrc{}, errors.New("src must be git:<repo-url>[#<subtree-path>]")
+		return fileSrc{}, errors.New("src must be <repo-url>[#<subtree-path>]")
 	}
 	if strings.Contains(parsed.Path, "#") {
 		return fileSrc{}, errors.New("source subtree path must not contain #")
