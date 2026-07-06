@@ -167,8 +167,8 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Run git fetch in installed repositories matching a path or group.")
 	fmt.Fprintln(out, "  rm <path>... [-r|--recursive] [-f|--force]")
 	fmt.Fprintln(out, "      Uninstall repositories or files: delete the checkout and stop tracking it. -r removes groups, -f overrides dirty/unpushed checks.")
-	fmt.Fprintln(out, "  status [path] [--archived] [--tags a,b]")
-	fmt.Fprintln(out, "      Show installed, missing, moved, dirty, stale, modified, and remote-changed entries.")
+	fmt.Fprintln(out, "  status [path] [--all] [--archived] [--tags a,b]")
+	fmt.Fprintln(out, "      Show the state of installed entries; repos never installed are only counted unless --all is given.")
 	fmt.Fprintln(out, "  update")
 	fmt.Fprintln(out, "      Fast-forward the schema checkout (.jig/source) from its remote without changing local checkouts.")
 	fmt.Fprintln(out, "  update --sync [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]")
@@ -377,16 +377,17 @@ func cmdRemove(args []string, out io.Writer) error {
 }
 
 func cmdStatus(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--all": boolFlag, "--tags": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig status [path] [--archived] [--tags a,b]")
+		return errors.New("usage: jig status [path] [--all] [--archived] [--tags a,b]")
 	}
 	return jig.Status(jig.StatusOptions{
 		Path:            optionalPath(parsed.Positionals),
 		IncludeArchived: parsed.Flags["--archived"],
+		All:             parsed.Flags["--all"],
 		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
 }

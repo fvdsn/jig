@@ -53,8 +53,21 @@ func TestStatusSkipsArchivedMissingEntriesUnlessIncluded(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
+	// Uninstalled repos are only counted by default.
+	if strings.Contains(got, "services/current") {
+		t.Fatalf("did not expect uninstalled repo in status, got:\n%s", got)
+	}
+	if !strings.Contains(got, "not installed") {
+		t.Fatalf("expected not-installed count in summary, got:\n%s", got)
+	}
+
+	out.Reset()
+	if err := Status(StatusOptions{All: true}, &out); err != nil {
+		t.Fatal(err)
+	}
+	got = out.String()
 	if !strings.Contains(got, "services/current") {
-		t.Fatalf("expected current repo in status, got:\n%s", got)
+		t.Fatalf("expected current repo in status --all, got:\n%s", got)
 	}
 	// With no repository installed, scope-activated files are inactive.
 	if strings.Contains(got, "scripts/current.sh") {

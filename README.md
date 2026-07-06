@@ -110,7 +110,7 @@ Clones are fully independent of the cache (local clones hardlink immutable objec
 - `jig rm <path>...` uninstalls: it deletes the checkout and stops tracking it, refusing to delete dirty or unpushed repositories unless `--force` is given. Removing a group requires `-r`.
 - `jig pull [path]` runs `git pull --ff-only` in installed repositories.
 - `jig fetch [path]` runs `git fetch` in installed repositories without touching working trees.
-- `jig status` shows one line per entry: glyph, path, branch, and notes including dirty state and ahead/behind counts against upstream (run `jig fetch` first for fresh counts).
+- `jig status` shows the state of installed entries: glyph, path, branch, and notes including dirty state and ahead/behind counts against upstream (run `jig fetch` first for fresh counts). Repos that were never installed are only counted in the summary; pass `--all` to list them. A tracked repo whose directory was deleted still shows as missing.
 - `jig update` fast-forwards the schema checkout from its remote.
 - `jig update --sync` updates the schema, then syncs the workspace.
 - Archived entries are excluded by default unless they are already installed. Pass `--archived` to include uninstalled archived entries too.

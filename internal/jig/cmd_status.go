@@ -12,6 +12,7 @@ import (
 type StatusOptions struct {
 	Path            string
 	IncludeArchived bool
+	All             bool // also list defined repos that are not installed
 	Tags            []string
 }
 
@@ -52,25 +53,36 @@ func Status(options StatusOptions, out io.Writer) error {
 	activeDirs := activeDirsForRepoSet(&ws.Model, map[string]bool{}, installedNodes.Repos, installedNodes.Dirs, options.IncludeArchived)
 
 	type result struct {
-		line statusLine
-		ok   bool
+		line         statusLine
+		ok           bool
+		notInstalled bool
 	}
 	results := make([]result, len(selection.Entries))
 	forEachParallel(len(selection.Entries), func(i int) {
 		entry := selection.Entries[i]
 		switch entry.Kind {
 		case EntryRepo:
-			results[i] = result{markArchived(repoStatusLine(ws, entry), entry), true}
+			// Status reports the workspace, not the catalog: repos that were
+			// never installed are only counted unless --all is given.
+			if !options.All && !repoInstalledOrTracked(ws, entry) {
+				results[i] = result{notInstalled: true}
+				return
+			}
+			results[i] = result{line: markArchived(repoStatusLine(ws, entry), entry), ok: true}
 		case EntryFile:
 			line, ok := fileStatusLine(ws, entry, activeFiles)
-			results[i] = result{markArchived(line, entry), ok}
+			results[i] = result{line: markArchived(line, entry), ok: ok}
 		case EntryDir:
 			line, ok := dirStatusLine(ws, entry, activeDirs)
-			results[i] = result{markArchived(line, entry), ok}
+			results[i] = result{line: markArchived(line, entry), ok: ok}
 		}
 	})
 	var lines []statusLine
+	notInstalled := 0
 	for _, r := range results {
+		if r.notInstalled {
+			notInstalled++
+		}
 		if r.ok {
 			lines = append(lines, r.line)
 		}
@@ -80,8 +92,18 @@ func Status(options StatusOptions, out io.Writer) error {
 		lines = append(lines, staleStatusLines(ws)...)
 	}
 
-	printStatusLines(out, lines)
+	printStatusLines(out, lines, notInstalled)
 	return nil
+}
+
+// repoInstalledOrTracked reports whether the repo is part of the workspace:
+// checked out on disk, or tracked in state (possibly with its directory
+// deleted, which sync would restore).
+func repoInstalledOrTracked(ws *Workspace, entry Entry) bool {
+	if _, tracked := ws.State.Repos[entry.Identity]; tracked {
+		return true
+	}
+	return isGitRepo(filepath.Join(ws.Root, entry.Path))
 }
 
 // markArchived appends an archived note so installed archived entries are
@@ -274,7 +296,7 @@ func staleStatusLines(ws *Workspace) []statusLine {
 	return lines
 }
 
-func printStatusLines(out io.Writer, lines []statusLine) {
+func printStatusLines(out io.Writer, lines []statusLine, notInstalled int) {
 	maxPath, maxBranch := 0, 0
 	for _, line := range lines {
 		if w := utf8.RuneCountInString(line.path); w > maxPath {
@@ -294,7 +316,7 @@ func printStatusLines(out io.Writer, lines []statusLine) {
 		}
 		fmt.Fprintln(out, strings.TrimRight(text, " "))
 	}
-	printStatusSummary(out, lines)
+	printStatusSummary(out, lines, notInstalled)
 }
 
 var summaryGlyphLabels = []struct {
@@ -312,8 +334,8 @@ var summaryGlyphLabels = []struct {
 	{glyphConflict, "conflict"},
 }
 
-func printStatusSummary(out io.Writer, lines []statusLine) {
-	if len(lines) == 0 {
+func printStatusSummary(out io.Writer, lines []statusLine, notInstalled int) {
+	if len(lines) == 0 && notInstalled == 0 {
 		return
 	}
 	counts := map[string]int{}
@@ -330,9 +352,19 @@ func printStatusSummary(out io.Writer, lines []statusLine) {
 			parts = append(parts, fmt.Sprintf("%d %s", counts[entry.glyph], entry.label))
 		}
 	}
-	summary := fmt.Sprintf("%d entries: %s", len(lines), strings.Join(parts, ", "))
+	summary := fmt.Sprintf("%d entries", len(lines))
+	if len(parts) > 0 {
+		summary += ": " + strings.Join(parts, ", ")
+	}
+	var extras []string
 	if archived > 0 {
-		summary += fmt.Sprintf(" (%d archived)", archived)
+		extras = append(extras, fmt.Sprintf("%d archived", archived))
+	}
+	if notInstalled > 0 {
+		extras = append(extras, fmt.Sprintf("%d not installed", notInstalled))
+	}
+	if len(extras) > 0 {
+		summary += " (" + strings.Join(extras, ", ") + ")"
 	}
 	fmt.Fprintln(out, summary)
 }

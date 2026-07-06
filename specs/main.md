@@ -1090,7 +1090,9 @@ Entries tracked in state whose directory is already gone can be removed too; thi
 
 Shows local checkout status for repositories and files matching `path`.
 
-If `path` is omitted, Jig reports status for all repositories and files known to `.jig.json` plus entries tracked in `.jig/state.json` that are no longer defined.
+Status reports the state of the workspace, not the catalog: repositories that are neither installed nor tracked in state are only counted in the summary line as not installed, unless `--all` is given. A tracked repository whose directory was deleted locally is reported as missing (sync restores it). Inactive files and dirs are hidden.
+
+If `path` is omitted, Jig reports status for the installed entries plus entries tracked in `.jig/state.json` that are no longer defined.
 
 Archived repositories and files are skipped unless they are already installed or `--archived` is provided.
 
