@@ -775,6 +775,11 @@ Rules:
   never cause an operation to fail.
 - Mirror creation and updates are serialized with a lock file per mirror;
   locks older than ten minutes are treated as abandoned.
+- Each successful use touches a `jig-last-used` marker inside the mirror.
+  `jig cache` reports the cache location, mirror count, and size;
+  `jig cache clean [--unused <days>]` removes mirrors (all of them, or only
+  those unused for at least the given number of days), skipping mirrors
+  locked by another process.
 
 ## Operation Rules
 

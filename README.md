@@ -99,6 +99,8 @@ Jig keeps a bare mirror of each remote it clones under the user cache directory 
 
 Clones are fully independent of the cache (local clones hardlink immutable object files), so deleting the cache directory is always safe. Any cache failure falls back to a direct network clone. Set `JIG_CACHE_DIR` to relocate the cache, or set it to an empty string to disable it.
 
+`jig cache` shows the cache location and size; `jig cache clean --unused 30` removes mirrors not used in the last 30 days (omit `--unused` to remove everything).
+
 ## Concepts
 
 - Paths use workspace-style `/` separators, such as `services/checkout` or `platform`.

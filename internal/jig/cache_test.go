@@ -1,10 +1,12 @@
 package jig
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func testRemoteRepo(t *testing.T, dir string) {
@@ -87,6 +89,53 @@ func TestCloneRepoFallsBackWhenCacheDisabled(t *testing.T) {
 	}
 	if !pathExists(filepath.Join(target, "README.md")) {
 		t.Fatal("expected checkout content")
+	}
+}
+
+func TestCacheCleanRespectsLastUsed(t *testing.T) {
+	root := t.TempDir()
+	cache := filepath.Join(root, "cache")
+	t.Setenv("JIG_CACHE_DIR", cache)
+	remoteA := filepath.Join(root, "remote-a")
+	remoteB := filepath.Join(root, "remote-b")
+	testRemoteRepo(t, remoteA)
+	testRemoteRepo(t, remoteB)
+	if err := cloneRepo(remoteA, filepath.Join(root, "a")); err != nil {
+		t.Fatal(err)
+	}
+	if err := cloneRepo(remoteB, filepath.Join(root, "b")); err != nil {
+		t.Fatal(err)
+	}
+	mirrorA := mirrorDir(cache, remoteA)
+	mirrorB := mirrorDir(cache, remoteB)
+	if !pathExists(filepath.Join(mirrorA, lastUsedMarker)) {
+		t.Fatal("expected last-used marker on mirror")
+	}
+
+	// Age mirror A's marker by 40 days, keep B fresh.
+	old := time.Now().AddDate(0, 0, -40)
+	if err := os.Chtimes(filepath.Join(mirrorA, lastUsedMarker), old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	if err := CacheClean(CacheCleanOptions{UnusedDays: 30}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if pathExists(mirrorA) {
+		t.Fatalf("expected stale mirror removed:\n%s", out.String())
+	}
+	if !pathExists(mirrorB) {
+		t.Fatalf("expected fresh mirror kept:\n%s", out.String())
+	}
+
+	// Without --unused, everything goes.
+	out.Reset()
+	if err := CacheClean(CacheCleanOptions{UnusedDays: -1}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if pathExists(mirrorB) {
+		t.Fatalf("expected all mirrors removed:\n%s", out.String())
 	}
 }
 

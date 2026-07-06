@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"runtime/debug"
+	"strconv"
 	"strings"
 
 	"github.com/fvdsn/jig/internal/jig"
@@ -41,6 +42,8 @@ func Run(args []string, out io.Writer, _ io.Writer) error {
 		return cmdStatus(args[1:], out)
 	case "update":
 		return cmdUpdate(args[1:], out)
+	case "cache":
+		return cmdCache(args[1:], out)
 	case "version", "--version":
 		fmt.Fprintln(out, versionString())
 		return nil
@@ -170,6 +173,10 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Fast-forward the schema checkout (.jig/source) from its remote without changing local checkouts.")
 	fmt.Fprintln(out, "  update --sync [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]")
 	fmt.Fprintln(out, "      Update the schema, then sync the workspace.")
+	fmt.Fprintln(out, "  cache")
+	fmt.Fprintln(out, "      Show the clone cache location, mirror count, and size.")
+	fmt.Fprintln(out, "  cache clean [--unused <days>]")
+	fmt.Fprintln(out, "      Remove cached mirrors, optionally only those unused for at least <days> days.")
 	fmt.Fprintln(out, "  version")
 	fmt.Fprintln(out, "      Print the jig version.")
 	fmt.Fprintln(out)
@@ -310,6 +317,30 @@ func cmdPull(args []string, out io.Writer) error {
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
+}
+
+func cmdCache(args []string, out io.Writer) error {
+	if len(args) == 0 {
+		return jig.CacheInfo(out)
+	}
+	if args[0] != "clean" {
+		return errors.New("usage: jig cache | jig cache clean [--unused <days>]")
+	}
+	parsed, err := parseArgs(args[1:], map[string]flagKind{"--unused": valueFlag})
+	if err != nil {
+		return err
+	}
+	if len(parsed.Positionals) > 0 {
+		return errors.New("usage: jig cache clean [--unused <days>]")
+	}
+	days := -1
+	if value := parsed.Values["--unused"]; value != "" {
+		days, err = strconv.Atoi(strings.TrimSuffix(value, "d"))
+		if err != nil || days < 0 {
+			return errors.New("--unused requires a number of days")
+		}
+	}
+	return jig.CacheClean(jig.CacheCleanOptions{UnusedDays: days}, out)
 }
 
 func cmdFetch(args []string, out io.Writer) error {

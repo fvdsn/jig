@@ -78,6 +78,45 @@ func lockMirror(dir string) (func(), error) {
 	}
 }
 
+// lastUsedMarker records when a mirror was last successfully used, so cache
+// eviction has exact data. Git ignores unknown files in a bare repository.
+const lastUsedMarker = "jig-last-used"
+
+func touchLastUsed(dir string) {
+	path := filepath.Join(dir, lastUsedMarker)
+	now := time.Now()
+	if err := os.Chtimes(path, now, now); err != nil {
+		_ = os.WriteFile(path, nil, 0o644)
+	}
+}
+
+// mirrorLastUsed reports when the mirror was last used, falling back to
+// fetch and directory timestamps for mirrors predating the marker.
+func mirrorLastUsed(dir string) time.Time {
+	for _, name := range []string{lastUsedMarker, "FETCH_HEAD"} {
+		if info, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return info.ModTime()
+		}
+	}
+	if info, err := os.Stat(dir); err == nil {
+		return info.ModTime()
+	}
+	return time.Time{}
+}
+
+// tryLockMirror acquires the mirror lock without waiting; ok is false when
+// another process holds it.
+func tryLockMirror(dir string) (func(), bool) {
+	lockPath := dir + ".lock"
+	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, false
+	}
+	fmt.Fprintf(file, "%d\n", os.Getpid())
+	file.Close()
+	return func() { os.Remove(lockPath) }, true
+}
+
 // ensureMirror creates or freshens the bare mirror for gitURL and returns
 // its directory. The caller must hold the mirror lock.
 func ensureMirror(root string, gitURL string) (string, error) {
@@ -86,6 +125,7 @@ func ensureMirror(root string, gitURL string) (string, error) {
 		if _, err := git(dir, "remote", "update", "--prune"); err != nil {
 			return "", err
 		}
+		touchLastUsed(dir)
 		return dir, nil
 	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
@@ -95,6 +135,7 @@ func ensureMirror(root string, gitURL string) (string, error) {
 		os.RemoveAll(dir)
 		return "", err
 	}
+	touchLastUsed(dir)
 	return dir, nil
 }
 
