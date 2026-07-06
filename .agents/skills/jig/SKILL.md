@@ -260,6 +260,15 @@ The `src` format is:
 <repo-url>#<path-inside-source-repo>
 ```
 
+`src` also accepts file URLs copied from a forge's web UI (GitHub, GitLab, Bitbucket, Gitea/Forgejo):
+
+```text
+https://github.com/acme/workspace-config/blob/main/scripts/dev.sh
+https://gitlab.com/acme/workspace-config/-/blob/main/scripts/dev.sh
+```
+
+Such a URL is treated as the repository's https clone URL plus the in-repo path; line anchors and query parameters are ignored. The URL must point at the repository's default branch.
+
 Files are written during `clone` and `sync` when active. A file without an explicit `onlyWhen` is active when any repository in its scope is active or installed; the scope is the nearest ancestor path containing repositories (the whole workspace for root-level files). A support file placed next to a group of repos therefore follows those repos automatically. Installed files stay active until removed with `jig rm`.
 
 Files can set `archived: true` to exclude them by default. Files already installed by Jig remain included; pass `--archived` to include uninstalled archived files too.
@@ -299,7 +308,7 @@ Rules for links:
 
 ## Directory Nodes
 
-Declare whole subtrees with `$dir`. The subtree of the source repository is materialized at the entry path; executable bits come from git. Omit `#path` to materialize the whole repository tree.
+Declare whole subtrees with `$dir`. The subtree of the source repository is materialized at the entry path; executable bits come from git. Omit `#path` to materialize the whole repository tree. Like `$file`, `src` also accepts directory URLs copied from a forge's web UI, such as `https://github.com/acme/workspace-config/tree/main/scripts/ci` (default branch only).
 
 ```json
 {

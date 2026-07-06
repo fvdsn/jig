@@ -83,8 +83,8 @@ A JSON tree where paths are the directory layout. Repos, files, and dirs are lea
 ```
 
 - **`$repo`** — a Git checkout. `id` is a stable identity that survives renames: move the entry in the schema and `jig sync` moves the checkout on disk.
-- **`$file`** — a single generated file fetched from a source repo (or a symlink to another file via `link`). Updated on sync when the source changes; never overwritten if locally modified.
-- **`$dir`** — a whole subtree materialized from a source repo. `src` may also be a list of sources merged in order (first wins on conflicts) — e.g. one `.agents/skills` assembled from several skill repositories; list entries can be `{ "src": ..., "onlyWhen": ... }` objects to gate individual sources. A `$dir` can instead declare `link` to become a relative symlink to another `$dir` — one real skills directory, symlinked into every harness path. Jig tracks a manifest of what it wrote, so updates touch only unmodified files and user files inside are never touched.
+- **`$file`** — a single generated file fetched from a source repo (or a symlink to another file via `link`). Updated on sync when the source changes; never overwritten if locally modified. `src` is `<clone-url>#<path>`, or simply a file URL pasted from the forge web UI (`https://github.com/o/r/blob/main/…`, GitLab/Bitbucket/Gitea equivalents; default branch only).
+- **`$dir`** — a whole subtree materialized from a source repo (`<clone-url>#<subtree>`, or a pasted `…/tree/main/…` web URL). `src` may also be a list of sources merged in order (first wins on conflicts) — e.g. one `.agents/skills` assembled from several skill repositories; list entries can be `{ "src": ..., "onlyWhen": ... }` objects to gate individual sources. A `$dir` can instead declare `link` to become a relative symlink to another `$dir` — one real skills directory, symlinked into every harness path. Jig tracks a manifest of what it wrote, so updates touch only unmodified files and user files inside are never touched.
 - **`$group`** — metadata on a directory: `description`, `tags`, `dependsOn`, `archived`, `onlyWhen` are inherited by everything beneath it.
 - **`dependsOn`** — cloning a repo brings its dependency closure along (`optional: true` deps only with `--with-optional-deps`).
 - **`onlyWhen`** — conditional entries, active only when some repository path is installed.
@@ -103,7 +103,7 @@ Files and dirs follow the repositories around them: a support file placed inside
       "$dir": {
         "id": "agent-skills",
         "src": [
-          "git@github.com:fvdsn/jig.git#.agents/skills",
+          "https://github.com/fvdsn/jig/tree/master/.agents/skills",
           { "src": "git@github.com:acme/billing-skills.git#skills",
             "onlyWhen": { "path": "billing" } }
         ]
@@ -114,7 +114,7 @@ Files and dirs follow the repositories around them: a support file placed inside
 }
 ```
 
-`jig sync` merges the sources into `.agents/skills` (first wins on conflicts, `onlyWhen` gates per source) and symlinks it into harness-specific paths — every agent working in the workspace then knows how to use jig.
+`jig sync` merges the sources into `.agents/skills` (first wins on conflicts, `onlyWhen` gates per source) and symlinks it into harness-specific paths — every agent working in the workspace then knows how to use jig. Note the first source is a directory URL pasted straight from the GitHub UI; jig resolves it to the clone URL and subtree path.
 
 ## How it works
 

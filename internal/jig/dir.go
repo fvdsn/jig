@@ -69,9 +69,13 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 			}
 			return err
 		}
+		srcPath, err := resolveSrcPath(mirror, parsed)
+		if err != nil {
+			return err
+		}
 		treeRef := "HEAD^{tree}"
-		if parsed.Path != "" {
-			treeRef = "HEAD:" + parsed.Path
+		if srcPath != "" {
+			treeRef = "HEAD:" + srcPath
 		}
 		treeOut, err := git(mirror, "rev-parse", treeRef)
 		if err != nil {
@@ -79,7 +83,7 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 		}
 		treeOID := strings.TrimSpace(treeOut)
 		if objType, err := git(mirror, "cat-file", "-t", treeOID); err != nil || strings.TrimSpace(objType) != "tree" {
-			return fmt.Errorf("source path %s is not a directory in the source repository", parsed.Path)
+			return fmt.Errorf("source path %s is not a directory in the source repository", srcPath)
 		}
 		sources = append(sources, resolvedSource{mirror, treeOID})
 		treeOIDs = append(treeOIDs, treeOID)
