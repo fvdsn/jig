@@ -104,6 +104,7 @@ Clones are fully independent of the cache (local clones hardlink immutable objec
 ## Concepts
 
 - Paths use workspace-style `/` separators, such as `services/checkout` or `platform`.
+- `jig list` prints aligned one-line entries with truncated descriptions on a terminal, and full tab-separated output when piped.
 - A path may refer to one repository or a group of repositories.
 - `jig clone [path]` clones/materializes all entries, or matching repositories/files when a path is provided.
 - `jig sync [path]` converges the workspace to the schema: it moves renamed checkouts, fixes origins, refreshes files, and restores tracked repositories whose directory was deleted. It never uninstalls anything.
