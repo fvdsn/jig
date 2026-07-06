@@ -169,9 +169,9 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Show repository, file, or group metadata.")
 	fmt.Fprintln(out, "  deps <path> [--with-optional-deps] [--archived] [--tags a,b]")
 	fmt.Fprintln(out, "      Show expanded recursive dependencies for repositories matching a path.")
-	fmt.Fprintln(out, "  clone [path] [--no-deps] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]")
+	fmt.Fprintln(out, "  clone [path] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]")
 	fmt.Fprintln(out, "      Clone/materialize all entries, or repositories/files matching a path. --no-deps skips dependencies.")
-	fmt.Fprintln(out, "  sync [path] [--no-deps] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]")
+	fmt.Fprintln(out, "  sync [path] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]")
 	fmt.Fprintln(out, "      Clone missing repos, move renamed repos/files, update origins/files, and refresh local state.")
 	fmt.Fprintln(out, "  pull [path] [--archived] [--tags a,b]")
 	fmt.Fprintln(out, "      Run git pull --ff-only in installed repositories matching a path or group.")
@@ -185,7 +185,7 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Show the state of installed entries; repos never installed are only counted unless --all is given.")
 	fmt.Fprintln(out, "  update")
 	fmt.Fprintln(out, "      Fast-forward the schema checkout (.jig/source) from its remote without changing local checkouts.")
-	fmt.Fprintln(out, "  update --sync [path] [--no-deps] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]")
+	fmt.Fprintln(out, "  update --sync [path] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]")
 	fmt.Fprintln(out, "      Update the schema, then sync the workspace.")
 	fmt.Fprintln(out, "  cache")
 	fmt.Fprintln(out, "      Show the clone cache location, mirror count, and size.")
@@ -294,12 +294,12 @@ func cmdDeps(args []string, out io.Writer) error {
 }
 
 func cmdClone(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--archived": boolFlag, "--refresh": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig clone [path] [--no-deps] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]")
+		return errors.New("usage: jig clone [path] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]")
 	}
 	if err := checkDepsFlags(parsed); err != nil {
 		return err
@@ -309,18 +309,17 @@ func cmdClone(args []string, out io.Writer) error {
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
 		SkipDeps:        parsed.Flags["--no-deps"],
-		Refresh:         parsed.Flags["--refresh"],
 		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
 }
 
 func cmdSync(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--archived": boolFlag, "--refresh": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig sync [path] [--no-deps] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]")
+		return errors.New("usage: jig sync [path] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]")
 	}
 	if err := checkDepsFlags(parsed); err != nil {
 		return err
@@ -330,7 +329,6 @@ func cmdSync(args []string, out io.Writer) error {
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
 		SkipDeps:        parsed.Flags["--no-deps"],
-		Refresh:         parsed.Flags["--refresh"],
 		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
 }
@@ -441,15 +439,15 @@ func cmdStatus(args []string, out io.Writer) error {
 }
 
 func cmdUpdate(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--sync": boolFlag, "--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--archived": boolFlag, "--refresh": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--sync": boolFlag, "--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 || len(parsed.Positionals) == 1 && !parsed.Flags["--sync"] {
-		return errors.New("usage: jig update | jig update --sync [path] [--no-deps] [--with-optional-deps] [--archived] [--refresh]")
+		return errors.New("usage: jig update | jig update --sync [path] [--no-deps] [--with-optional-deps] [--archived]")
 	}
-	if !parsed.Flags["--sync"] && (parsed.Flags["--no-deps"] || parsed.Flags["--with-optional-deps"] || parsed.Flags["--archived"] || parsed.Flags["--refresh"]) {
-		return errors.New("--no-deps, --with-optional-deps, --archived, and --refresh require --sync")
+	if !parsed.Flags["--sync"] && (parsed.Flags["--no-deps"] || parsed.Flags["--with-optional-deps"] || parsed.Flags["--archived"]) {
+		return errors.New("--no-deps, --with-optional-deps, and --archived require --sync")
 	}
 	if err := checkDepsFlags(parsed); err != nil {
 		return err
@@ -460,7 +458,6 @@ func cmdUpdate(args []string, out io.Writer) error {
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
 		SkipDeps:        parsed.Flags["--no-deps"],
-		Refresh:         parsed.Flags["--refresh"],
 		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
 }

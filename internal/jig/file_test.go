@@ -64,7 +64,7 @@ func TestEnsureLinkFileCreatesRelativeSymlink(t *testing.T) {
 		"bin/dev":        testFileEntry("bin/dev", "dev-command", File{Link: "scripts/dev.sh"}),
 	}}
 
-	if err := ensureFile(ioDiscard{}, root, &model, &state, "bin/dev", true, false, newFileFetcher()); err != nil {
+	if err := ensureFile(ioDiscard{}, root, &model, &state, "bin/dev", true, newFileFetcher()); err != nil {
 		t.Fatal(err)
 	}
 	target, err := os.Readlink(filepath.Join(root, "bin", "dev"))
@@ -95,7 +95,7 @@ func TestEnsureFilePreservesLocalModification(t *testing.T) {
 		"scripts/dev.sh": testFileEntry("scripts/dev.sh", "dev-script", File{Src: "git:git@example.com:config.git#scripts/dev.sh"}),
 	}}
 
-	err := ensureFile(ioDiscard{}, root, &model, &state, "scripts/dev.sh", true, false, newFileFetcher())
+	err := ensureFile(ioDiscard{}, root, &model, &state, "scripts/dev.sh", true, newFileFetcher())
 	if err == nil || err.Error() != "locally modified" {
 		t.Fatalf("expected locally modified error, got %v", err)
 	}
@@ -114,7 +114,7 @@ func TestEnsureFilePicksUpSourceChanges(t *testing.T) {
 	}}
 	ensure := func() string {
 		var out bytes.Buffer
-		if err := ensureFile(&out, root, &model, &state, "docs/readme.md", true, false, newFileFetcher()); err != nil {
+		if err := ensureFile(&out, root, &model, &state, "docs/readme.md", true, newFileFetcher()); err != nil {
 			t.Fatalf("ensureFile: %v", err)
 		}
 		return out.String()
@@ -151,7 +151,7 @@ func TestEnsureFilePicksUpSourceChanges(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "docs", "readme.md"), []byte("edited\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err = ensureFile(ioDiscard{}, root, &model, &state, "docs/readme.md", true, false, newFileFetcher())
+	err = ensureFile(ioDiscard{}, root, &model, &state, "docs/readme.md", true, newFileFetcher())
 	if err == nil || err.Error() != "locally modified" {
 		t.Fatalf("expected locally modified error, got %v", err)
 	}

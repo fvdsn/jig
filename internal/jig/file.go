@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 )
 
-func ensureFile(out io.Writer, root string, model *Model, state *State, filePath string, allowMove bool, refresh bool, fetcher *fileFetcher) error {
+func ensureFile(out io.Writer, root string, model *Model, state *State, filePath string, allowMove bool, fetcher *fileFetcher) error {
 	entry, _ := model.entry(filePath, EntryFile)
 	file := entry.File
 	if file.Link != "" {
@@ -73,7 +73,7 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 		}
 		// The tracked content is unmodified; when the source blob has not
 		// moved either, there is nothing to transfer.
-		if !refresh && stateFile.Src == file.Src && stateFile.SrcBlob != "" {
+		if stateFile.Src == file.Src && stateFile.SrcBlob != "" {
 			blob, err := fetcher.srcBlob(file.Src)
 			if err != nil {
 				fmt.Fprintf(out, "present-file: %s (source not checked: %s)\n", filePath, shortError(err))

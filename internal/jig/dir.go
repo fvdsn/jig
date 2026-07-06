@@ -14,7 +14,7 @@ import (
 // repository. State keeps the source tree id plus a manifest of every file
 // written, so updates overwrite only untouched files, deletions remove only
 // untouched files, and user files inside the directory are never touched.
-func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath string, allowMove bool, refresh bool, fetcher *fileFetcher, activeRepos map[string]bool, installedRepos map[string]bool) error {
+func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath string, allowMove bool, fetcher *fileFetcher, activeRepos map[string]bool, installedRepos map[string]bool) error {
 	entry, _ := model.entry(dirPath, EntryDir)
 	dir := entry.Dir
 	if dir.Link != "" {
@@ -92,7 +92,7 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 	srcKey := strings.Join(activeSrcs, " ")
 	combinedTree := strings.Join(treeOIDs, "+")
 
-	if hasState && !refresh && stateDir.Src == srcKey && stateDir.Tree == combinedTree && manifestClean(expectedAbs, stateDir.Files) {
+	if hasState && stateDir.Src == srcKey && stateDir.Tree == combinedTree && manifestClean(expectedAbs, stateDir.Files) {
 		fmt.Fprintf(out, "present-dir: %s\n", dirPath)
 		return nil
 	}

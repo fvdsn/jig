@@ -1170,7 +1170,7 @@ Uncommitted local schema edits that do not conflict with upstream are preserved 
 
 The command should not change local repository checkouts, write files, or update `.jig/state.json`.
 
-`--with-optional-deps`, `--archived`, `--refresh`, and a node path are valid only when `--sync` is present.
+`--no-deps`, `--with-optional-deps`, `--archived`, and a node path are valid only when `--sync` is present.
 
 ### `jig update --sync [path]`
 

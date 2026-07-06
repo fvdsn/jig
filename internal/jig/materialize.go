@@ -11,7 +11,6 @@ type applyOptions struct {
 	IncludeArchived bool
 	SkipDeps        bool // materialize only the roots, without their dependencies
 	Sync            bool // keep installed optional deps and allow moving installed entries
-	RefreshFiles    bool // refetch file content even when the local copy is unmodified
 }
 
 // resolveAndApplyPlan expands roots into a full plan and materializes it.
@@ -164,7 +163,7 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, insta
 	})
 	fetcher := newFileFetcher()
 	for _, filePath := range plan.Files {
-		if err := ensureFile(out, ws.Root, &ws.Model, &ws.State, filePath, opts.Sync, opts.RefreshFiles, fetcher); err != nil {
+		if err := ensureFile(out, ws.Root, &ws.Model, &ws.State, filePath, opts.Sync, fetcher); err != nil {
 			fmt.Fprintf(out, "skipped:\n  %s: %s\n", filePath, err)
 		}
 	}
@@ -173,7 +172,7 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, insta
 		activeRepos[repoPath] = true
 	}
 	for _, dirPath := range plan.Dirs {
-		if err := ensureDir(out, ws.Root, &ws.Model, &ws.State, dirPath, opts.Sync, opts.RefreshFiles, fetcher, activeRepos, installedRepos); err != nil {
+		if err := ensureDir(out, ws.Root, &ws.Model, &ws.State, dirPath, opts.Sync, fetcher, activeRepos, installedRepos); err != nil {
 			fmt.Fprintf(out, "skipped:\n  %s: %s\n", dirPath, err)
 		}
 	}

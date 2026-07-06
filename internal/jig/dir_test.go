@@ -46,7 +46,7 @@ func TestEnsureDirLifecycle(t *testing.T) {
 	}}
 	ensure := func() string {
 		var out bytes.Buffer
-		if err := ensureDir(&out, root, &model, &state, "tools/scripts", true, false, newFileFetcher(), nil, nil); err != nil {
+		if err := ensureDir(&out, root, &model, &state, "tools/scripts", true, newFileFetcher(), nil, nil); err != nil {
 			t.Fatalf("ensureDir: %v", err)
 		}
 		return out.String()
@@ -153,7 +153,7 @@ func TestEnsureDirMergesMultipleSources(t *testing.T) {
 	}}
 	ensure := func() string {
 		var out bytes.Buffer
-		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, false, newFileFetcher(), nil, nil); err != nil {
+		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, newFileFetcher(), nil, nil); err != nil {
 			t.Fatalf("ensureDir: %v", err)
 		}
 		return out.String()
@@ -216,7 +216,7 @@ func TestEnsureDirKeepsForeignSymlinks(t *testing.T) {
 	}}
 	ensure := func() string {
 		var out bytes.Buffer
-		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, false, newFileFetcher(), nil, nil); err != nil {
+		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, newFileFetcher(), nil, nil); err != nil {
 			t.Fatalf("ensureDir: %v", err)
 		}
 		return out.String()
@@ -292,7 +292,7 @@ func TestDirSourcesGatedByOnlyWhen(t *testing.T) {
 	}}
 	ensure := func(activeRepos map[string]bool) string {
 		var out bytes.Buffer
-		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, false, newFileFetcher(), activeRepos, nil); err != nil {
+		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, newFileFetcher(), activeRepos, nil); err != nil {
 			t.Fatalf("ensureDir: %v", err)
 		}
 		return out.String()
@@ -348,11 +348,11 @@ func TestDirLinksCreateSymlinksToTargetDir(t *testing.T) {
 			Dir: &Dir{Link: ".agents/skills"}},
 	}}
 	fetcher := newFileFetcher()
-	if err := ensureDir(ioDiscard{}, root, &model, &state, ".agents/skills", true, false, fetcher, nil, nil); err != nil {
+	if err := ensureDir(ioDiscard{}, root, &model, &state, ".agents/skills", true, fetcher, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := ensureDir(&out, root, &model, &state, ".opencode/skills", true, false, fetcher, nil, nil); err != nil {
+	if err := ensureDir(&out, root, &model, &state, ".opencode/skills", true, fetcher, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "linked-dir: .opencode/skills") {
@@ -371,7 +371,7 @@ func TestDirLinksCreateSymlinksToTargetDir(t *testing.T) {
 	}
 	// Second run is a no-op.
 	out.Reset()
-	if err := ensureDir(&out, root, &model, &state, ".opencode/skills", true, false, fetcher, nil, nil); err != nil {
+	if err := ensureDir(&out, root, &model, &state, ".opencode/skills", true, fetcher, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "present-dir:") {
