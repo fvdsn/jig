@@ -14,7 +14,7 @@ type applyOptions struct {
 }
 
 // resolveAndApplyPlan expands roots into a full plan and materializes it.
-func resolveAndApplyPlan(out io.Writer, ws *Workspace, roots []string, explicitFiles []string, opts applyOptions) error {
+func resolveAndApplyPlan(out io.Writer, ws *Workspace, roots []string, explicitFiles []string, explicitDirs []string, opts applyOptions) error {
 	installed := ws.installedNodes()
 	plan, err := resolvePlan(&ws.Model, roots, planOptions{
 		IncludeOptional:          opts.IncludeOptional,
@@ -23,16 +23,43 @@ func resolveAndApplyPlan(out io.Writer, ws *Workspace, roots []string, explicitF
 		IncludeRoots:             true,
 		Installed:                installed.Repos,
 		InstalledFiles:           installed.Files,
+		InstalledDirs:            installed.Dirs,
 	})
 	if err != nil {
 		return err
 	}
 	plan = includeExplicitFiles(&ws.Model, plan, explicitFiles)
+	plan = includeExplicitDirs(plan, explicitDirs)
 	if !opts.IncludeArchived {
 		plan = excludeArchivedFiles(&ws.Model, plan, installed.Files)
+		plan = excludeArchivedDirs(&ws.Model, plan, installed.Dirs)
 	}
 	applyPlan(out, ws, plan, opts)
 	return nil
+}
+
+func includeExplicitDirs(base plan, dirs []string) plan {
+	active := map[string]bool{}
+	for _, dirPath := range base.Dirs {
+		active[dirPath] = true
+	}
+	for _, dirPath := range dirs {
+		active[dirPath] = true
+	}
+	base.Dirs = sortedKeys(active)
+	return base
+}
+
+func excludeArchivedDirs(model *Model, base plan, installed map[string]bool) plan {
+	var kept []string
+	for _, dirPath := range base.Dirs {
+		entry, ok := model.entry(dirPath, EntryDir)
+		if ok && !archivedExcluded(entry, installed, false) {
+			kept = append(kept, dirPath)
+		}
+	}
+	base.Dirs = kept
+	return base
 }
 
 func includeExplicitFiles(model *Model, base plan, files []string) plan {
@@ -114,6 +141,11 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions) {
 	for _, filePath := range plan.Files {
 		if err := ensureFile(out, ws.Root, &ws.Model, &ws.State, filePath, opts.Sync, opts.RefreshFiles, fetcher); err != nil {
 			fmt.Fprintf(out, "skipped:\n  %s: %s\n", filePath, err)
+		}
+	}
+	for _, dirPath := range plan.Dirs {
+		if err := ensureDir(out, ws.Root, &ws.Model, &ws.State, dirPath, opts.Sync, opts.RefreshFiles, fetcher); err != nil {
+			fmt.Fprintf(out, "skipped:\n  %s: %s\n", dirPath, err)
 		}
 	}
 }

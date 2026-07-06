@@ -16,6 +16,7 @@ type NodeQuery struct {
 type InstalledNodes struct {
 	Repos map[string]bool
 	Files map[string]bool
+	Dirs  map[string]bool
 }
 
 type NodeSelection struct {
@@ -87,6 +88,7 @@ func (ws *Workspace) installedNodes() InstalledNodes {
 	return InstalledNodes{
 		Repos: installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State),
 		Files: installedFileIdentitySet(ws.Root, &ws.Model, &ws.State),
+		Dirs:  installedDirIdentitySet(ws.Root, &ws.Model, &ws.State),
 	}
 }
 
@@ -96,6 +98,8 @@ func (entry Entry) archived() bool {
 		return entry.Repo.Archived
 	case EntryFile:
 		return entry.File.Archived
+	case EntryDir:
+		return entry.Dir.Archived
 	case EntryGroup:
 		return entry.Group.Archived
 	default:
@@ -109,6 +113,8 @@ func (entry Entry) description() string {
 		return entry.Repo.Description
 	case EntryFile:
 		return entry.File.Description
+	case EntryDir:
+		return entry.Dir.Description
 	case EntryGroup:
 		return entry.Group.Description
 	default:
@@ -133,6 +139,8 @@ func entryInstalled(model *Model, entry Entry, installed InstalledNodes) bool {
 		return installed.Repos[entry.Identity]
 	case EntryFile:
 		return installed.Files[entry.Identity]
+	case EntryDir:
+		return installed.Dirs[entry.Identity]
 	case EntryGroup:
 		return groupInstalled(model, entry.Path, installed)
 	default:
@@ -149,6 +157,10 @@ func groupInstalled(model *Model, groupPath string, installed InstalledNodes) bo
 			}
 		case EntryFile:
 			if installed.Files[entry.Identity] && pathMatches(groupPath, entry.Path) {
+				return true
+			}
+		case EntryDir:
+			if installed.Dirs[entry.Identity] && pathMatches(groupPath, entry.Path) {
 				return true
 			}
 		}

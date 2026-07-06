@@ -160,7 +160,7 @@ git -C .jig/source remote add origin git@github.com:acme/jig-schema.git
 git -C .jig/source push -u origin main
 ```
 
-## Files
+## Files and Directories
 
 Jig can also materialize files into the workspace:
 
@@ -173,6 +173,21 @@ Jig can also materialize files into the workspace:
         "src": "git:git@github.com:acme/workspace-config.git#scripts/dev.sh",
         "description": "Starts the local development stack",
         "executable": true
+      }
+    }
+  }
+}
+```
+
+Whole subtrees can be materialized with `$dir`. Executable bits come from the git tree, and jig keeps a manifest of every file it wrote: updates overwrite only untouched files, files removed upstream are deleted only when untouched, and files you add inside the directory are never touched. Omit the `#path` to materialize a whole repository's tree.
+
+```json
+{
+  "tree": {
+    "tools/ci-scripts": {
+      "$dir": {
+        "id": "ci-scripts",
+        "src": "git:git@github.com:acme/workspace-config.git#scripts/ci"
       }
     }
   }

@@ -49,6 +49,7 @@ func Status(options StatusOptions, out io.Writer) error {
 
 	installedNodes := ws.installedNodes()
 	activeFiles := activeFilesForRepoSet(&ws.Model, map[string]bool{}, installedNodes.Repos, installedNodes.Files, options.IncludeArchived)
+	activeDirs := activeDirsForRepoSet(&ws.Model, map[string]bool{}, installedNodes.Repos, installedNodes.Dirs, options.IncludeArchived)
 
 	type result struct {
 		line statusLine
@@ -62,6 +63,9 @@ func Status(options StatusOptions, out io.Writer) error {
 			results[i] = result{markArchived(repoStatusLine(ws, entry), entry), true}
 		case EntryFile:
 			line, ok := fileStatusLine(ws, entry, activeFiles)
+			results[i] = result{markArchived(line, entry), ok}
+		case EntryDir:
+			line, ok := dirStatusLine(ws, entry, activeDirs)
 			results[i] = result{markArchived(line, entry), ok}
 		}
 	})
@@ -203,6 +207,50 @@ func symlinkStatusLine(ws *Workspace, entry Entry, expectedAbs string) statusLin
 	return statusLine{glyphClean, filePath, "", ""}
 }
 
+// dirStatusLine summarizes a materialized subtree: per-file divergence from
+// the manifest is aggregated into the note.
+func dirStatusLine(ws *Workspace, entry Entry, activeDirs map[string]bool) (statusLine, bool) {
+	dirPath := entry.Path
+	if !activeDirs[dirPath] {
+		return statusLine{}, false
+	}
+	expectedAbs := filepath.Join(ws.Root, entry.Path)
+	stateDir, hasState := ws.State.Dirs[entry.Identity]
+
+	if hasState && stateDir.Path != entry.Path && pathExists(filepath.Join(ws.Root, stateDir.Path)) {
+		return statusLine{glyphMoved, dirPath, "", "moved from " + stateDir.Path}, true
+	}
+	if !pathExists(expectedAbs) {
+		return statusLine{glyphMissing, dirPath, "", "missing"}, true
+	}
+	if !hasState {
+		return statusLine{glyphConflict, dirPath, "", "untracked"}, true
+	}
+	modified := 0
+	missing := 0
+	for rel, recorded := range stateDir.Files {
+		hash, err := fileSHA256(filepath.Join(expectedAbs, filepath.FromSlash(rel)))
+		switch {
+		case err != nil:
+			missing++
+		case hash != recorded:
+			modified++
+		}
+	}
+	var notes []string
+	if modified > 0 {
+		notes = append(notes, fmt.Sprintf("%d modified", modified))
+	}
+	if missing > 0 {
+		notes = append(notes, fmt.Sprintf("%d missing", missing))
+	}
+	glyph := glyphClean
+	if len(notes) > 0 {
+		glyph = glyphDirty
+	}
+	return statusLine{glyph, dirPath, "", strings.Join(notes, ", ")}, true
+}
+
 func staleStatusLines(ws *Workspace) []statusLine {
 	var lines []statusLine
 	repoPaths := repoIdentityToPath(&ws.Model)
@@ -215,6 +263,12 @@ func staleStatusLines(ws *Workspace) []statusLine {
 	for identity, stateFile := range ws.State.Files {
 		if _, ok := filePaths[identity]; !ok {
 			lines = append(lines, statusLine{glyphConflict, stateFile.Path, "", "stale: no longer defined"})
+		}
+	}
+	dirPaths := identityToPath(&ws.Model, EntryDir)
+	for identity, stateDir := range ws.State.Dirs {
+		if _, ok := dirPaths[identity]; !ok {
+			lines = append(lines, statusLine{glyphConflict, stateDir.Path, "", "stale: no longer defined"})
 		}
 	}
 	return lines

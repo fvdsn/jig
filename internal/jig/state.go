@@ -13,6 +13,17 @@ type State struct {
 	Version int                  `json:"version"`
 	Repos   map[string]StateRepo `json:"repos"`
 	Files   map[string]StateFile `json:"files"`
+	Dirs    map[string]StateDir  `json:"dirs,omitempty"`
+}
+
+// StateDir tracks a materialized subtree: the source tree id and a manifest
+// of every file written (relative path to sha256), which is what makes
+// updates and deletions safe.
+type StateDir struct {
+	Path  string            `json:"path"`
+	Src   string            `json:"src"`
+	Tree  string            `json:"tree,omitempty"`
+	Files map[string]string `json:"files"`
 }
 
 type StateRepo struct {
@@ -29,7 +40,7 @@ type StateFile struct {
 }
 
 func emptyState() State {
-	return State{Version: 1, Repos: map[string]StateRepo{}, Files: map[string]StateFile{}}
+	return State{Version: 1, Repos: map[string]StateRepo{}, Files: map[string]StateFile{}, Dirs: map[string]StateDir{}}
 }
 
 func loadState(root string) (State, error) {
@@ -54,6 +65,9 @@ func loadState(root string) (State, error) {
 	if state.Files == nil {
 		state.Files = map[string]StateFile{}
 	}
+	if state.Dirs == nil {
+		state.Dirs = map[string]StateDir{}
+	}
 	return state, nil
 }
 
@@ -66,6 +80,9 @@ func saveState(root string, state State) error {
 	}
 	if state.Files == nil {
 		state.Files = map[string]StateFile{}
+	}
+	if state.Dirs == nil {
+		state.Dirs = map[string]StateDir{}
 	}
 	return writeJSON(filepath.Join(root, stateFile), &state)
 }
@@ -96,6 +113,18 @@ func reportStale(out io.Writer, root string, model *Model, state *State) {
 			stale = append(stale, fmt.Sprintf("%s at %s is no longer defined", identity, stateFile.Path))
 		} else {
 			delete(state.Files, identity)
+			pruned = append(pruned, fmt.Sprintf("%s (no longer defined, not installed)", identity))
+		}
+	}
+	dirIdentityToPath := identityToPath(model, EntryDir)
+	for identity, stateDir := range state.Dirs {
+		if _, ok := dirIdentityToPath[identity]; ok {
+			continue
+		}
+		if pathExists(filepath.Join(root, stateDir.Path)) {
+			stale = append(stale, fmt.Sprintf("%s at %s is no longer defined", identity, stateDir.Path))
+		} else {
+			delete(state.Dirs, identity)
 			pruned = append(pruned, fmt.Sprintf("%s (no longer defined, not installed)", identity))
 		}
 	}

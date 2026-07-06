@@ -74,6 +74,25 @@ func Info(options InfoOptions, out io.Writer) error {
 		return nil
 	}
 
+	if entry, ok := selection.exact(EntryDir); ok {
+		dir := entry.Dir
+		fmt.Fprintf(out, "path: %s\n", path)
+		fmt.Fprintln(out, "type: dir")
+		fmt.Fprintf(out, "identity: %s\n", entry.Identity)
+		fmt.Fprintf(out, "src: %s\n", dir.Src)
+		if dir.Description != "" {
+			fmt.Fprintf(out, "description: %s\n", dir.Description)
+		}
+		if dir.Archived {
+			fmt.Fprintln(out, "archived: true")
+		}
+		printTags(out, entry.Tags)
+		if len(entry.Conditions) > 0 {
+			printConditions(out, "onlyWhen", entry.Conditions)
+		}
+		return nil
+	}
+
 	group, hasGroup := selection.exactGroup()
 	if len(selection.Entries) == 0 {
 		return fmt.Errorf("no repository, file, or group matches %q", path)

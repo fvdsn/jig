@@ -9,6 +9,7 @@ import (
 func printDefinitionChanges(out io.Writer, oldModel *Model, newModel *Model) {
 	printEntryChanges(out, "repo", oldModel, newModel, EntryRepo)
 	printEntryChanges(out, "file", oldModel, newModel, EntryFile)
+	printEntryChanges(out, "dir", oldModel, newModel, EntryDir)
 	printEntryChanges(out, "group", oldModel, newModel, EntryGroup)
 }
 
@@ -48,6 +49,7 @@ func printEntryChanges(out io.Writer, label string, oldModel *Model, newModel *M
 func entryChanged(oldEntry, newEntry Entry) bool {
 	return !reflect.DeepEqual(oldEntry.Repo, newEntry.Repo) ||
 		!reflect.DeepEqual(oldEntry.File, newEntry.File) ||
+		!reflect.DeepEqual(oldEntry.Dir, newEntry.Dir) ||
 		!reflect.DeepEqual(oldEntry.Group, newEntry.Group) ||
 		!reflect.DeepEqual(oldEntry.Conditions, newEntry.Conditions) ||
 		!reflect.DeepEqual(oldEntry.Tags, newEntry.Tags)

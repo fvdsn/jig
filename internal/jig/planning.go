@@ -9,11 +9,13 @@ type planOptions struct {
 	IncludeRoots             bool
 	Installed                map[string]bool
 	InstalledFiles           map[string]bool
+	InstalledDirs            map[string]bool
 }
 
 type plan struct {
 	Repos []string
 	Files []string
+	Dirs  []string
 }
 
 func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
@@ -69,7 +71,29 @@ func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
 	}
 
 	activeFilesSet := activeFilesForRepoSet(model, active, opts.Installed, opts.InstalledFiles, opts.IncludeArchived)
-	return plan{Repos: sortedKeys(active), Files: orderFilesForApply(model, activeFilesSet)}, nil
+	activeDirsSet := activeDirsForRepoSet(model, active, opts.Installed, opts.InstalledDirs, opts.IncludeArchived)
+	return plan{
+		Repos: sortedKeys(active),
+		Files: orderFilesForApply(model, activeFilesSet),
+		Dirs:  sortedKeys(activeDirsSet),
+	}, nil
+}
+
+// activeDirsForRepoSet mirrors activeFilesForRepoSet for $dir entries, which
+// have no links and therefore no ordering constraints.
+func activeDirsForRepoSet(model *Model, activeRepos map[string]bool, installedRepos map[string]bool, installedDirs map[string]bool, includeArchived bool) map[string]bool {
+	dirs := map[string]bool{}
+	for _, dirPath := range sortedPathsOfKind(model, EntryDir) {
+		entry, _ := model.entry(dirPath, EntryDir)
+		if archivedExcluded(entry, installedDirs, includeArchived) {
+			continue
+		}
+		if len(entry.Conditions) > 0 && !conditionsMatch(entry.Conditions, activeRepos, installedRepos, model) {
+			continue
+		}
+		dirs[dirPath] = true
+	}
+	return dirs
 }
 
 // archivedExcluded reports whether an archived entry should be left out of a

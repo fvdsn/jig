@@ -84,6 +84,9 @@ func removable(ws *Workspace, entry Entry, installed InstalledNodes) bool {
 	case EntryFile:
 		_, tracked := ws.State.Files[entry.Identity]
 		return tracked || installed.Files[entry.Identity]
+	case EntryDir:
+		_, tracked := ws.State.Dirs[entry.Identity]
+		return tracked || installed.Dirs[entry.Identity]
 	default:
 		return false
 	}
@@ -95,6 +98,8 @@ func removeEntry(out io.Writer, ws *Workspace, entry Entry, force bool) error {
 		return removeRepo(out, ws, entry, force)
 	case EntryFile:
 		return removeFile(out, ws, entry, force)
+	case EntryDir:
+		return removeDir(out, ws, entry, force)
 	default:
 		return errors.New("cannot remove this entry")
 	}
@@ -148,6 +153,46 @@ func removeFile(out io.Writer, ws *Workspace, entry Entry, force bool) error {
 		pruneEmptyParents(ws.Root, filepath.Dir(rel))
 	}
 	delete(ws.State.Files, entry.Identity)
+	fmt.Fprintf(out, "removed: %s\n", entry.Path)
+	return nil
+}
+
+// removeDir deletes the manifest-tracked files of a materialized subtree,
+// refusing when any of them is locally modified unless forced. Files the
+// user added inside the directory are never touched.
+func removeDir(out io.Writer, ws *Workspace, entry Entry, force bool) error {
+	rel := entry.Path
+	stateDir, tracked := ws.State.Dirs[entry.Identity]
+	if tracked && pathExists(filepath.Join(ws.Root, stateDir.Path)) {
+		rel = stateDir.Path
+	}
+	abs := filepath.Join(ws.Root, rel)
+	if tracked && pathExists(abs) {
+		if !force {
+			modified := 0
+			for fileRel, recorded := range stateDir.Files {
+				hash, err := fileSHA256(filepath.Join(abs, filepath.FromSlash(fileRel)))
+				if err == nil && hash != recorded {
+					modified++
+				}
+			}
+			if modified > 0 {
+				return fmt.Errorf("%d locally modified files (use --force)", modified)
+			}
+		}
+		for fileRel := range stateDir.Files {
+			target := filepath.Join(abs, filepath.FromSlash(fileRel))
+			if pathEntryExists(target) {
+				if err := os.Remove(target); err != nil {
+					return err
+				}
+			}
+			pruneEmptyParents(ws.Root, filepath.Dir(filepath.Join(rel, filepath.FromSlash(fileRel))))
+		}
+		_ = os.Remove(abs)
+		pruneEmptyParents(ws.Root, filepath.Dir(rel))
+	}
+	delete(ws.State.Dirs, entry.Identity)
 	fmt.Fprintf(out, "removed: %s\n", entry.Path)
 	return nil
 }

@@ -31,6 +31,33 @@ func parseFileSrc(src string) (fileSrc, error) {
 	return parsed, nil
 }
 
+// parseDirSrc parses a $dir source: git:<repo-url>[#<subtree-path>]. Without
+// a path the whole repository tree is materialized.
+func parseDirSrc(src string) (fileSrc, error) {
+	if !strings.HasPrefix(src, "git:") {
+		return fileSrc{}, errors.New("src must start with git:")
+	}
+	value := strings.TrimPrefix(src, "git:")
+	idx := strings.LastIndex(value, "#")
+	if idx < 0 {
+		if value == "" {
+			return fileSrc{}, errors.New("src must be git:<repo-url>[#<subtree-path>]")
+		}
+		return fileSrc{GitURL: value}, nil
+	}
+	parsed := fileSrc{GitURL: value[:idx], Path: value[idx+1:]}
+	if parsed.GitURL == "" || parsed.Path == "" {
+		return fileSrc{}, errors.New("src must be git:<repo-url>[#<subtree-path>]")
+	}
+	if strings.Contains(parsed.Path, "#") {
+		return fileSrc{}, errors.New("source subtree path must not contain #")
+	}
+	if err := validateSafePath(parsed.Path); err != nil {
+		return fileSrc{}, err
+	}
+	return parsed, nil
+}
+
 // fileFetcher reads file content and blob ids from source repositories,
 // freshening each repository's cache mirror at most once per run.
 type fileFetcher struct {

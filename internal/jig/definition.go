@@ -40,6 +40,18 @@ type File struct {
 	OnlyWhen    *Condition `json:"onlyWhen,omitempty"`
 }
 
+// Dir materializes a whole subtree of a source repository into the
+// workspace. Executable bits come from the git tree, so there is no
+// executable field, and dirs cannot be link targets.
+type Dir struct {
+	ID          string     `json:"id,omitempty"`
+	Src         string     `json:"src"`
+	Description string     `json:"description,omitempty"`
+	Archived    bool       `json:"archived,omitempty"`
+	Tags        []string   `json:"tags,omitempty"`
+	OnlyWhen    *Condition `json:"onlyWhen,omitempty"`
+}
+
 type Group struct {
 	ID          string       `json:"id,omitempty"`
 	Description string       `json:"description,omitempty"`

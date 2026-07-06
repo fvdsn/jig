@@ -525,6 +525,34 @@ If inherited `onlyWhen` conditions are present, all inherited conditions and the
 
 See [Conditional Nodes](#conditional-nodes).
 
+## Directory Nodes
+
+Directory nodes are declared with `$dir` and materialize a whole subtree of a source repository at the entry path.
+
+```json
+{
+  "tree": {
+    "tools/ci-scripts": {
+      "$dir": {
+        "id": "ci-scripts",
+        "src": "git:git@github.com:org/workspace-config.git#scripts/ci"
+      }
+    }
+  }
+}
+```
+
+Fields: `id` (optional identity, defaults to the path), `src` (required, `git:<repo-url>[#<subtree-path>]`; without a path the whole repository tree is materialized), `description`, `archived`, `tags`, and `onlyWhen` behave as for `$file`. There is no `executable` field (modes come from the git tree) and directories cannot be link targets.
+
+State records the source tree id and a manifest mapping each written file to its content hash. Rules:
+
+- The subtree is extracted from the source repository's cache mirror without a checkout.
+- Updates overwrite only files whose local content matches the manifest; locally modified files are kept and reported.
+- Files that disappear upstream are deleted locally only when their content matches the manifest; modified ones are left behind as untracked.
+- Files the user adds inside the directory are never touched or deleted.
+- `jig rm` deletes only manifest-tracked files, refusing when any is locally modified unless forced.
+- Status reports one line per directory entry with aggregated modified/missing counts.
+
 ## Dependency Fields
 
 ### `path`

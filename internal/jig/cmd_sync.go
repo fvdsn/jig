@@ -24,6 +24,7 @@ func Sync(options SyncOptions, out io.Writer) error {
 func syncWorkspace(out io.Writer, ws *Workspace, options SyncOptions) error {
 	var roots []string
 	var explicitFiles []string
+	var explicitDirs []string
 	if options.Path != "" {
 		selection, err := ws.Select(NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
 		if err != nil {
@@ -31,7 +32,8 @@ func syncWorkspace(out io.Writer, ws *Workspace, options SyncOptions) error {
 		}
 		roots = selection.repoPaths()
 		explicitFiles = selection.filePaths()
-		if len(roots) == 0 && len(explicitFiles) == 0 {
+		explicitDirs = entryPaths(selection.ofKind(EntryDir))
+		if len(roots) == 0 && len(explicitFiles) == 0 && len(explicitDirs) == 0 {
 			return fmt.Errorf("no repositories or files match %s", describeQuery(selection.Path, options.Tags))
 		}
 	} else {
@@ -47,7 +49,7 @@ func syncWorkspace(out io.Writer, ws *Workspace, options SyncOptions) error {
 		}
 	}
 
-	if err := resolveAndApplyPlan(out, ws, roots, explicitFiles, applyOptions{
+	if err := resolveAndApplyPlan(out, ws, roots, explicitFiles, explicitDirs, applyOptions{
 		IncludeOptional: options.IncludeOptional,
 		IncludeArchived: options.IncludeArchived,
 		Sync:            true,

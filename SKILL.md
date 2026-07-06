@@ -292,6 +292,30 @@ Rules for links:
 - Link files are active only when their target file is active.
 - Jig skips existing non-symlink paths instead of overwriting them.
 
+## Directory Nodes
+
+Declare whole subtrees with `$dir`. The subtree of the source repository is materialized at the entry path; executable bits come from git. Omit `#path` to materialize the whole repository tree.
+
+```json
+{
+  "tree": {
+    "tools/ci-scripts": {
+      "$dir": {
+        "id": "ci-scripts",
+        "src": "git:git@github.com:acme/workspace-config.git#scripts/ci"
+      }
+    }
+  }
+}
+```
+
+Rules:
+
+- Jig tracks a manifest of every file it wrote. Updates overwrite only untouched files; locally modified files are kept and reported.
+- Files removed upstream are deleted locally only when untouched.
+- Files the user adds inside the directory are never touched.
+- `$dir` supports `description`, `archived`, `tags`, and `onlyWhen` like `$file`, but not `link` or `executable`.
+
 ## Conditional Nodes
 
 Use `onlyWhen` to make a repo or file active only when another repository path or group is active or installed.

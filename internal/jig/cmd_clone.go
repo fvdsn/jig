@@ -32,13 +32,14 @@ func clonePathIntoWorkspace(out io.Writer, ws *Workspace, options CloneOptions) 
 	}
 	roots := selection.repoPaths()
 	explicitFiles := selection.filePaths()
-	if len(roots) == 0 && len(explicitFiles) == 0 {
+	explicitDirs := entryPaths(selection.ofKind(EntryDir))
+	if len(roots) == 0 && len(explicitFiles) == 0 && len(explicitDirs) == 0 {
 		if selection.Path == "" && len(options.Tags) == 0 {
 			return errors.New("no repositories or files defined")
 		}
 		return fmt.Errorf("no repositories or files match %s", describeQuery(selection.Path, options.Tags))
 	}
-	return resolveAndApplyPlan(out, ws, roots, explicitFiles, applyOptions{
+	return resolveAndApplyPlan(out, ws, roots, explicitFiles, explicitDirs, applyOptions{
 		IncludeOptional: options.IncludeOptional,
 		IncludeArchived: options.IncludeArchived,
 		RefreshFiles:    options.Refresh,

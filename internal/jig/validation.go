@@ -76,6 +76,12 @@ func validateDefinition(def *Definition) validationResult {
 			}
 		case EntryFile:
 			validateFileEntry(&result, model, path, entry.File)
+		case EntryDir:
+			if entry.Dir.Src == "" {
+				result.Errors = append(result.Errors, fmt.Sprintf("dir %s missing src", path))
+			} else if _, err := parseDirSrc(entry.Dir.Src); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("dir %s invalid src: %s", path, err))
+			}
 		}
 	}
 

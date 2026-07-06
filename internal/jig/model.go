@@ -17,6 +17,7 @@ type EntryKind string
 const (
 	EntryRepo  EntryKind = "repo"
 	EntryFile  EntryKind = "file"
+	EntryDir   EntryKind = "dir"
 	EntryGroup EntryKind = "group"
 )
 
@@ -29,6 +30,7 @@ type Entry struct {
 
 	Repo  *Repo
 	File  *File
+	Dir   *Dir
 	Group *Group
 }
 
@@ -77,7 +79,7 @@ func insertTreeMap(node *treeNode, nodes map[string]json.RawMessage, prefix stri
 	for _, key := range keys {
 		if strings.HasPrefix(key, "$") {
 			switch key {
-			case "$repo", "$file", "$group":
+			case "$repo", "$file", "$dir", "$group":
 				if prefix == "" {
 					return fmt.Errorf("reserved tree key %q cannot be used as a path segment", key)
 				}
@@ -114,13 +116,20 @@ func insertTreeMap(node *treeNode, nodes map[string]json.RawMessage, prefix stri
 func flattenTreeNode(node *treeNode, path string, inherited inheritedGroup, model *Model) error {
 	_, hasRepo := node.markers["$repo"]
 	_, hasFile := node.markers["$file"]
+	_, hasDir := node.markers["$dir"]
 	groupRaw, hasGroup := node.markers["$group"]
-	if hasRepo && hasFile {
-		return fmt.Errorf("tree node %s cannot contain both $repo and $file", path)
+	leafMarkers := 0
+	for _, present := range []bool{hasRepo, hasFile, hasDir} {
+		if present {
+			leafMarkers++
+		}
 	}
-	if hasRepo || hasFile {
+	if leafMarkers > 1 {
+		return fmt.Errorf("tree node %s can contain only one of $repo, $file, and $dir", path)
+	}
+	if leafMarkers == 1 {
 		if len(node.children) > 0 || hasGroup {
-			return fmt.Errorf("tree node %s cannot contain child nodes with $repo or $file", path)
+			return fmt.Errorf("tree node %s cannot contain child nodes with $repo, $file, or $dir", path)
 		}
 		if err := validateSafePath(path); err != nil {
 			return fmt.Errorf("invalid tree path %q: %s", path, err)
@@ -141,18 +150,39 @@ func flattenTreeNode(node *treeNode, path string, inherited inheritedGroup, mode
 			}
 			return nil
 		}
-		var file File
-		if err := json.Unmarshal(node.markers["$file"], &file); err != nil {
-			return fmt.Errorf("invalid $file at %s: %s", path, err)
+		if hasFile {
+			var file File
+			if err := json.Unmarshal(node.markers["$file"], &file); err != nil {
+				return fmt.Errorf("invalid $file at %s: %s", path, err)
+			}
+			file = applyInheritedFile(file, inherited)
+			model.Entries[path] = Entry{
+				Path:       path,
+				Identity:   identityOr(file.ID, path),
+				Kind:       EntryFile,
+				Conditions: leafConditions(inherited, file.OnlyWhen),
+				Tags:       mergeTags(inherited.Tags, file.Tags),
+				File:       &file,
+			}
+			return nil
 		}
-		file = applyInheritedFile(file, inherited)
+		var dir Dir
+		if err := json.Unmarshal(node.markers["$dir"], &dir); err != nil {
+			return fmt.Errorf("invalid $dir at %s: %s", path, err)
+		}
+		if dir.Description == "" {
+			dir.Description = inherited.Description
+		}
+		if inherited.Archived {
+			dir.Archived = true
+		}
 		model.Entries[path] = Entry{
 			Path:       path,
-			Identity:   identityOr(file.ID, path),
-			Kind:       EntryFile,
-			Conditions: leafConditions(inherited, file.OnlyWhen),
-			Tags:       mergeTags(inherited.Tags, file.Tags),
-			File:       &file,
+			Identity:   identityOr(dir.ID, path),
+			Kind:       EntryDir,
+			Conditions: leafConditions(inherited, dir.OnlyWhen),
+			Tags:       mergeTags(inherited.Tags, dir.Tags),
+			Dir:        &dir,
 		}
 		return nil
 	}
