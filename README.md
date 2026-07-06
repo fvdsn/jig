@@ -1,197 +1,120 @@
-# Jig
+# jig
 
-Jig is a CLI tool for managing a local workspace made of many related Git repositories and generated support files.
+> A jig holds workpieces in place — jig holds your repos in place.
 
-A workspace is described by a schema file (usually `.jig.json` or `jig.json`) hosted in its own Git repository and shared by a team. Repositories are declared with `$repo`, files are declared with `$file`, and paths map directly to where things should appear on disk.
+Jig manages a local workspace made of many related Git repositories, driven by a single shared schema. Your organization describes its repositories once — layout, dependencies, tags, generated support files — in a schema hosted in its own Git repository. Everyone then materializes just the parts they need, and jig keeps the checkouts converged, restored, and up to date.
 
-Directory nodes may also declare `$group` metadata. Group metadata such as `description`, `web`, `tags`, `dependsOn`, and `onlyWhen` is inherited by child repositories or files where applicable.
+```sh
+jig clone services/checkout   # clones the service and everything it depends on
+```
 
-## Example
+## Why
+
+- **One shared map.** Hundreds of repos, one versioned schema: where everything lives, what depends on what, what is archived, how it is tagged.
+- **Partial by design.** Nobody needs the whole org. Clone one service, a group, or a tag — dependencies come along automatically. Ideal for spinning up task-scoped workspaces with all the context an AI agent needs.
+- **Safe by default.** Jig never deletes work: dirty checkouts, unpushed commits, and locally modified files are always detected and preserved.
+- **Fast.** Git operations run in parallel, and a machine-wide clone cache makes repeat clones nearly instant.
+
+## Install
+
+```sh
+go install github.com/fvdsn/jig@latest
+```
+
+## Quick start
+
+```sh
+jig init git@github.com:acme/jig-schema.git ~/Code/acme   # create a workspace
+cd ~/Code/acme
+jig list                        # browse the catalog
+jig clone services/checkout     # install a service + its dependencies
+jig status                      # branches, dirty state, ahead/behind
+jig fetch && jig status         # what changed across the workspace?
+jig pull                        # fast-forward everything installed
+jig rm services/checkout        # uninstall
+```
+
+## Commands
+
+| Command | Description |
+| --- | --- |
+| `init <git-url\|file> [dir]` | Create a workspace from a schema repository (or a local draft file) |
+| `list [path]` | List the catalog: groups, repos, files, dirs |
+| `info <path>` | Show one entry's metadata |
+| `deps <path>` | Show a repo's recursive dependencies |
+| `clone [path]` | Install repos/files matching a path, plus dependencies |
+| `sync [path]` | Converge the workspace: moves, origins, file updates, restores |
+| `pull [path]` | `git pull --ff-only` across installed repos, in parallel |
+| `fetch [path]` | `git fetch` across installed repos, in parallel |
+| `status [path]` | One line per installed entry, plus a summary |
+| `rm <path>...` | Uninstall: delete the checkout and stop tracking it |
+| `update [--sync]` | Fast-forward the schema from its remote (then sync) |
+| `validate [file]` | Validate the schema — also usable in the schema repo's CI |
+| `cache [clean]` | Inspect or prune the clone cache |
+
+Most commands accept `--tags a,b` (entries carrying all listed tags), `--archived`, and paths that address a single entry or a whole subtree.
+
+## The schema
+
+A JSON tree where paths are the directory layout. Repos, files, and dirs are leaves; any level can carry group metadata that children inherit.
 
 ```json
 {
   "version": 1,
   "tree": {
     "platform": {
-      "$group": {
-        "description": "Shared platform services"
-      },
-      "auth": {
-        "$repo": {
-          "id": "auth-service",
-          "git": "git@github.com:acme/platform-auth.git"
-        }
-      }
+      "$group": { "description": "Shared platform services", "tags": ["backend"] },
+      "auth":   { "$repo": { "id": "auth-service", "git": "git@github.com:acme/auth.git" } },
+      "dev.sh": { "$file": { "src": "git:git@github.com:acme/config.git#scripts/dev.sh", "executable": true } }
     },
     "services/checkout": {
       "$repo": {
         "id": "checkout-service",
         "git": "git@github.com:acme/checkout.git",
-        "dependsOn": [
-          {
-            "path": "platform",
-            "reason": "checkout uses platform services"
-          }
-        ]
+        "tags": ["go", "api"],
+        "dependsOn": [{ "path": "platform", "reason": "uses platform services" }]
       }
+    },
+    "tools/ci": {
+      "$dir": { "src": "git:git@github.com:acme/config.git#scripts/ci" }
     }
   }
 }
 ```
 
-Running:
+- **`$repo`** — a Git checkout. `id` is a stable identity that survives renames: move the entry in the schema and `jig sync` moves the checkout on disk.
+- **`$file`** — a single generated file fetched from a source repo (or a symlink to another file via `link`). Updated on sync when the source changes; never overwritten if locally modified.
+- **`$dir`** — a whole subtree materialized from a source repo. Jig tracks a manifest of what it wrote, so updates touch only unmodified files and user files inside are never touched.
+- **`$group`** — metadata on a directory: `description`, `tags`, `dependsOn`, `archived`, `onlyWhen` are inherited by everything beneath it.
+- **`dependsOn`** — cloning a repo brings its dependency closure along (`optional: true` deps only with `--with-optional-deps`).
+- **`onlyWhen`** — conditional entries, active only when some repository path is installed.
+- **`archived`** — hidden and skipped by default, kept synced if already installed.
 
-```sh
-jig clone services/checkout
-```
+Files and dirs follow the repositories around them: a support file placed inside a group is materialized whenever any repo of that group is installed; root-level files follow the workspace as a whole.
 
-clones `services/checkout` and its dependencies under the workspace root.
-
-## Install
-
-Install directly from GitHub:
-
-```sh
-go install github.com/fvdsn/jig@latest
-```
-
-Make sure `$(go env GOPATH)/bin` is in your `PATH`.
-
-Then run:
-
-```sh
-jig help
-```
-
-## Common Commands
-
-```sh
-jig init <git-url> [workspace-dir] [--path <schema-path>]
-jig init <local-schema-file> [workspace-dir]
-jig init <git-url> [workspace-dir] --clone [path]
-jig validate [schema-file]
-jig list [path] [--archived] [--tags a,b]
-jig info <path> [--archived] [--tags a,b]
-jig deps <path> [--with-optional-deps] [--archived] [--tags a,b]
-jig clone [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]
-jig sync [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]
-jig pull [path] [--archived] [--tags a,b]
-jig fetch [path] [--archived] [--tags a,b]
-jig rm <path>... [-r|--recursive] [-f|--force]
-jig status [path] [--archived] [--tags a,b]
-jig update
-jig update --sync [path] [--with-optional-deps] [--archived] [--refresh] [--tags a,b]
-```
-
-## Workspace Layout
+## How it works
 
 Everything jig manages lives under `.jig/` at the workspace root:
 
-- `.jig/source/` is a Git checkout of the schema repository. The workspace always reads the schema live from this checkout.
-- `.jig/config.json` records which file inside the checkout is the schema.
-- `.jig/state.json` is local state tracking installed repositories and generated files.
-
-The schema checkout works like any Git clone: the remote is its `origin`, and the tracked branch is whatever the checkout is on.
-
-## Clone Cache
-
-Jig keeps a bare mirror of each remote it clones under the user cache directory (`~/Library/Caches/jig/repos` on macOS, `~/.cache/jig/repos` on Linux). Clones freshen the mirror with a cheap fetch and then clone locally from it, so a repository's history only transfers over the network once per machine — repeat clones (new workspaces, restores) run at disk speed.
-
-Clones are fully independent of the cache (local clones hardlink immutable object files), so deleting the cache directory is always safe. Any cache failure falls back to a direct network clone. Set `JIG_CACHE_DIR` to relocate the cache, or set it to an empty string to disable it.
-
-`jig cache` shows the cache location and size; `jig cache clean --unused 30` removes mirrors not used in the last 30 days (omit `--unused` to remove everything).
-
-## Concepts
-
-- Paths use workspace-style `/` separators, such as `services/checkout` or `platform`.
-- `jig list` prints aligned one-line entries with truncated descriptions on a terminal, and full tab-separated output when piped.
-- A path may refer to one repository or a group of repositories.
-- `jig clone [path]` clones/materializes all entries, or matching repositories/files when a path is provided.
-- `jig sync [path]` converges the workspace to the schema: it moves renamed checkouts, fixes origins, refreshes files, and restores tracked repositories whose directory was deleted. It never uninstalls anything.
-- `jig rm <path>...` uninstalls: it deletes the checkout and stops tracking it, refusing to delete dirty or unpushed repositories unless `--force` is given. Removing a group requires `-r`.
-- `jig pull [path]` runs `git pull --ff-only` in installed repositories.
-- `jig fetch [path]` runs `git fetch` in installed repositories without touching working trees.
-- `jig status` shows the state of installed entries: glyph, path, branch, and notes including dirty state and ahead/behind counts against upstream (run `jig fetch` first for fresh counts). Repos that were never installed are only counted in the summary; pass `--all` to list them. A tracked repo whose directory was deleted still shows as missing.
-- `jig update` fast-forwards the schema checkout from its remote.
-- `jig update --sync` updates the schema, then syncs the workspace.
-- Archived entries are excluded by default unless they are already installed. Pass `--archived` to include uninstalled archived entries too.
-- `jig sync` updates generated files when their source repository changed, using a cheap blob comparison against the clone cache; locally modified files are never overwritten. `--refresh` forces a rewrite.
-- Files and dirs without an explicit `onlyWhen` follow the repositories around them: they are materialized when any repository in their scope (the nearest ancestor path containing repositories, or the whole workspace for root-level entries) is active or installed. Once installed, they stay maintained until `jig rm`.
-- Entries may declare `tags: ["a", "b"]`; `--tags a,b` filters commands to entries carrying all the listed tags. Tags on groups are inherited by their children. Dependencies of a selected repository are always included, tagged or not.
-
-## Editing the Schema
-
-The schema in `.jig/source/` is a normal Git working copy, so testing and publishing changes is a plain Git workflow:
-
-```sh
-$EDITOR .jig/source/.jig.json   # edit the schema
-jig sync                        # jig reads the live file, so test immediately
-git -C .jig/source diff         # review
-git -C .jig/source commit -am "add checkout service"
-git -C .jig/source push         # publish to the team
+```text
+.jig/source/       Git checkout of the schema repository — jig reads the schema live from it
+.jig/config.json   which file inside the checkout is the schema
+.jig/state.json    what is installed, and where
 ```
 
-Teammates pick the change up with `jig update --sync`. If your local schema edits conflict with upstream, `jig update` refuses to fast-forward and you resolve it with Git in `.jig/source` like any other repository.
+- **State records intent.** Deleting a checkout by hand doesn't uninstall it — `jig sync` restores it. `jig rm` is the uninstall verb, with `rm`-like ergonomics (`-r` for groups, `-f` to override the dirty/unpushed safety checks).
+- **The schema is a working copy.** Edit `.jig/source/<schema>`, test immediately with `jig sync`, then commit and push it like any repo. Teammates pick it up with `jig update --sync`. Conflicts are plain Git conflicts.
+- **Clone cache.** Jig keeps a bare mirror per remote in the user cache directory; clones hardlink from it, so history transfers over the network once per machine. Checkouts stay fully independent — deleting the cache is always safe. `JIG_CACHE_DIR` relocates it (empty disables), `jig cache clean --unused 30` prunes it.
+- **Terminal-aware output.** `list` and `status` align and truncate on a terminal; piped output stays full and tab-separated for scripts.
 
-## Initializing a Workspace
+## Validating the schema in CI
 
-Create a local workspace from a schema repository:
+In the schema repository:
 
-```sh
-jig init git@github.com:acme/jig-schema.git ~/Code/acme
-```
-
-This clones the schema repository into `.jig/source/`, finds the schema file (`.jig.json`, `jig.json`, or `schema.json` at the repository root, or the file given with `--path`), and creates local Jig state.
-
-You can also initialize and clone a path in one command:
-
-```sh
-jig init git@github.com:acme/jig-schema.git ~/Code/acme --clone services/checkout
-```
-
-To experiment locally, initialize from a plain schema file:
-
-```sh
-jig init ./draft.json ~/Code/acme-test
-```
-
-This creates `.jig/source/` as a fresh Git repository containing your schema as `jig.json`. To promote the experiment to a shared schema later, add a remote and push:
-
-```sh
-git -C .jig/source remote add origin git@github.com:acme/jig-schema.git
-git -C .jig/source push -u origin main
-```
-
-## Files and Directories
-
-Jig can also materialize files into the workspace:
-
-```json
-{
-  "tree": {
-    "scripts/dev.sh": {
-      "$file": {
-        "id": "dev-script",
-        "src": "git:git@github.com:acme/workspace-config.git#scripts/dev.sh",
-        "description": "Starts the local development stack",
-        "executable": true
-      }
-    }
-  }
-}
-```
-
-Whole subtrees can be materialized with `$dir`. Executable bits come from the git tree, and jig keeps a manifest of every file it wrote: updates overwrite only untouched files, files removed upstream are deleted only when untouched, and files you add inside the directory are never touched. Omit the `#path` to materialize a whole repository's tree.
-
-```json
-{
-  "tree": {
-    "tools/ci-scripts": {
-      "$dir": {
-        "id": "ci-scripts",
-        "src": "git:git@github.com:acme/workspace-config.git#scripts/ci"
-      }
-    }
-  }
-}
+```yaml
+validate:
+  image: golang:1.26
+  script:
+    - go install github.com/fvdsn/jig@latest
+    - jig validate jig.json
 ```
