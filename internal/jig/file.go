@@ -46,6 +46,11 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 		}
 	}
 
+	// A symlink at the path is not a file jig wrote (link files are handled
+	// above), and pathExists would miss a dangling or looping one.
+	if isSymlink(expectedAbs) {
+		return fmt.Errorf("existing path is a symlink: %s", expectedRel)
+	}
 	exists := pathExists(expectedAbs)
 	currentHash := ""
 	if exists {

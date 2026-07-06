@@ -118,6 +118,10 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 		if !pathEntryExists(target) {
 			continue
 		}
+		if isSymlink(target) {
+			counts.abandoned++
+			continue
+		}
 		localHash, err := fileSHA256(target)
 		if err == nil && localHash == oldHash {
 			if err := os.Remove(target); err != nil {
@@ -246,7 +250,11 @@ func dirMessage(dirPath string, hadState bool, counts dirCounts) string {
 // recorded content.
 func manifestClean(dirAbs string, manifest map[string]string) bool {
 	for rel, recorded := range manifest {
-		hash, err := fileSHA256(filepath.Join(dirAbs, filepath.FromSlash(rel)))
+		path := filepath.Join(dirAbs, filepath.FromSlash(rel))
+		if isSymlink(path) {
+			return false
+		}
+		hash, err := fileSHA256(path)
 		if err != nil || hash != recorded {
 			return false
 		}
@@ -300,6 +308,13 @@ func materializeTree(mirror string, treeOID string, dirAbs string, oldManifest m
 		target := filepath.Join(dirAbs, filepath.FromSlash(rel))
 		mode := header.FileInfo().Mode().Perm()
 		if pathEntryExists(target) {
+			// A symlink here cannot be a file this $dir wrote (manifests
+			// track regular files only, and hashing through the link may
+			// fail on loops); keep it like a locally modified file.
+			if isSymlink(target) {
+				counts.kept++
+				continue
+			}
 			localHash, err := fileSHA256(target)
 			if err != nil {
 				return err

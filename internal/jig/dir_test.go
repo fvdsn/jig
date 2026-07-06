@@ -189,6 +189,77 @@ func TestEnsureDirMergesMultipleSources(t *testing.T) {
 	}
 }
 
+func TestEnsureDirKeepsForeignSymlinks(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+
+	source := filepath.Join(root, "skills-src")
+	skillFile := filepath.Join(source, "skills", "jig", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillFile, []byte("the skill\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A second file keeps the skills tree alive when SKILL.md is dropped.
+	if err := os.WriteFile(filepath.Join(source, "skills", "README.md"), []byte("readme\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, source, "init", "-q")
+	gitIn(t, source, "add", ".")
+	gitIn(t, source, "commit", "-qm", "init")
+
+	state := emptyState()
+	model := Model{Entries: map[string]Entry{
+		".agents/skills": {Path: ".agents/skills", Identity: "skills", Kind: EntryDir,
+			Dir: &Dir{Src: SrcList{{Src: source + "#skills"}}}},
+	}}
+	ensure := func() string {
+		var out bytes.Buffer
+		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, false, newFileFetcher(), nil, nil); err != nil {
+			t.Fatalf("ensureDir: %v", err)
+		}
+		return out.String()
+	}
+
+	if got := ensure(); !strings.Contains(got, "2 added") {
+		t.Fatalf("first run = %q, want 2 added", got)
+	}
+
+	// Replace the materialized file with a self-looping symlink, like a
+	// leftover from an older schema where the link direction was reversed.
+	target := filepath.Join(root, ".agents", "skills", "jig", "SKILL.md")
+	if err := os.Remove(target); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("SKILL.md", target); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := ensure(); !strings.Contains(got, "1 modified kept") {
+		t.Fatalf("symlink run = %q, want 1 modified kept", got)
+	}
+	if !isSymlink(target) {
+		t.Fatal("expected the foreign symlink to be left in place")
+	}
+
+	// When the file also vanishes upstream, the symlink is abandoned, not
+	// deleted, and later runs report a clean directory.
+	if err := os.Remove(skillFile); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, source, "commit", "-qam", "drop skill")
+	if got := ensure(); !strings.Contains(got, "1 left untracked") {
+		t.Fatalf("vanish run = %q, want 1 left untracked", got)
+	}
+	if !isSymlink(target) {
+		t.Fatal("expected the abandoned symlink to be left in place")
+	}
+	if got := ensure(); !strings.Contains(got, "present-dir:") {
+		t.Fatalf("final run = %q, want present-dir", got)
+	}
+}
+
 func TestDirSourcesGatedByOnlyWhen(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))

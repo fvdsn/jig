@@ -91,3 +91,9 @@ func pathEntryExists(path string) bool {
 	_, err := os.Lstat(path)
 	return err == nil
 }
+
+// isSymlink reports whether path itself is a symbolic link.
+func isSymlink(path string) bool {
+	info, err := os.Lstat(path)
+	return err == nil && info.Mode()&os.ModeSymlink != 0
+}
