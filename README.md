@@ -115,6 +115,7 @@ Clones are fully independent of the cache (local clones hardlink immutable objec
 - `jig update --sync` updates the schema, then syncs the workspace.
 - Archived entries are excluded by default unless they are already installed. Pass `--archived` to include uninstalled archived entries too.
 - `jig sync` updates generated files when their source repository changed, using a cheap blob comparison against the clone cache; locally modified files are never overwritten. `--refresh` forces a rewrite.
+- Files and dirs without an explicit `onlyWhen` follow the repositories around them: they are materialized when any repository in their scope (the nearest ancestor path containing repositories, or the whole workspace for root-level entries) is active or installed. Once installed, they stay maintained until `jig rm`.
 - Entries may declare `tags: ["a", "b"]`; `--tags a,b` filters commands to entries carrying all the listed tags. Tags on groups are inherited by their children. Dependencies of a selected repository are always included, tagged or not.
 
 ## Editing the Schema

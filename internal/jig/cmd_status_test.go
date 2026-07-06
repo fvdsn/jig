@@ -53,8 +53,12 @@ func TestStatusSkipsArchivedMissingEntriesUnlessIncluded(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "services/current") || !strings.Contains(got, "scripts/current.sh") {
-		t.Fatalf("expected current entries in status, got:\n%s", got)
+	if !strings.Contains(got, "services/current") {
+		t.Fatalf("expected current repo in status, got:\n%s", got)
+	}
+	// With no repository installed, scope-activated files are inactive.
+	if strings.Contains(got, "scripts/current.sh") {
+		t.Fatalf("did not expect inactive file in status, got:\n%s", got)
 	}
 	if strings.Contains(got, "services/old") || strings.Contains(got, "scripts/old.sh") {
 		t.Fatalf("did not expect archived entries in status, got:\n%s", got)

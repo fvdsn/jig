@@ -255,7 +255,7 @@ The `src` format is:
 git:<repo-url>#<path-inside-source-repo>
 ```
 
-Files are written during `clone` and `sync` when active.
+Files are written during `clone` and `sync` when active. A file without an explicit `onlyWhen` is active when any repository in its scope is active or installed; the scope is the nearest ancestor path containing repositories (the whole workspace for root-level files). A support file placed next to a group of repos therefore follows those repos automatically. Installed files stay active until removed with `jig rm`.
 
 Files can set `archived: true` to exclude them by default. Files already installed by Jig remain included; pass `--archived` to include uninstalled archived files too.
 

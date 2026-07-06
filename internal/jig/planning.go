@@ -1,6 +1,9 @@
 package jig
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type planOptions struct {
 	IncludeOptional          bool
@@ -88,12 +91,68 @@ func activeDirsForRepoSet(model *Model, activeRepos map[string]bool, installedRe
 		if archivedExcluded(entry, installedDirs, includeArchived) {
 			continue
 		}
-		if len(entry.Conditions) > 0 && !conditionsMatch(entry.Conditions, activeRepos, installedRepos, model) {
+		if !entryActive(model, entry, activeRepos, installedRepos, installedDirs) {
 			continue
 		}
 		dirs[dirPath] = true
 	}
 	return dirs
+}
+
+// entryActive decides whether a file or dir participates in plans: it is
+// already installed (state records intent, like repos), its explicit
+// conditions match, or - with no explicit conditions - a repository in its
+// scope is active or installed.
+func entryActive(model *Model, entry Entry, activeRepos map[string]bool, installedRepos map[string]bool, installedSelf map[string]bool) bool {
+	if installedSelf[entry.Identity] {
+		return true
+	}
+	if len(entry.Conditions) > 0 {
+		return conditionsMatch(entry.Conditions, activeRepos, installedRepos, model)
+	}
+	return scopeActive(model, entry.Path, activeRepos, installedRepos)
+}
+
+// scopeActive reports whether any repository in the entry's scope is active
+// or installed. The scope is the nearest ancestor path that contains
+// repositories, so a support file placed next to a group of repos follows
+// those repos; the workspace root is the last resort.
+func scopeActive(model *Model, entryPath string, activeRepos map[string]bool, installedRepos map[string]bool) bool {
+	scope := entryScope(model, entryPath)
+	if scope == "" {
+		if len(activeRepos) > 0 {
+			return true
+		}
+		identityToPath := repoIdentityToPath(model)
+		for identity := range installedRepos {
+			if _, ok := identityToPath[identity]; ok {
+				return true
+			}
+		}
+		return false
+	}
+	return conditionMatches(Condition{Path: scope}, activeRepos, installedRepos, model)
+}
+
+// entryScope returns the nearest ancestor path of entryPath containing at
+// least one repository, or "" for the workspace root.
+func entryScope(model *Model, entryPath string) string {
+	for scope := parentPath(entryPath); scope != ""; scope = parentPath(scope) {
+		for _, repoPath := range sortedRepoPaths(model) {
+			if pathMatches(scope, repoPath) {
+				return scope
+			}
+		}
+	}
+	return ""
+}
+
+func parentPath(path string) string {
+	idx := strings.LastIndex(path, "/")
+	if idx < 0 {
+		return ""
+	}
+	return path[:idx]
 }
 
 // archivedExcluded reports whether an archived entry should be left out of a
@@ -176,7 +235,7 @@ func activeFilesForRepoSet(model *Model, activeRepos map[string]bool, installedR
 			if archivedExcluded(entry, installedFiles, includeArchived) {
 				continue
 			}
-			if len(entry.Conditions) > 0 && !conditionsMatch(entry.Conditions, activeRepos, installedRepos, model) {
+			if !entryActive(model, entry, activeRepos, installedRepos, installedFiles) {
 				continue
 			}
 			if entry.File.Link != "" && !files[entry.File.Link] {

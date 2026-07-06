@@ -659,6 +659,18 @@ Conditional activation is resolved to a fixed point:
 
 Files are not dependency graph nodes. Dependencies and `onlyWhen.path` match repositories only.
 
+## File And Dir Activation
+
+Files and dirs are support artifacts: they are materialized as a side effect of the repositories they support, or by explicit selection.
+
+A file or dir is active when the first of these rules applies:
+
+- It is already installed (state records intent, mirroring repositories): it stays maintained until removed with `jig rm`.
+- It has explicit `onlyWhen` conditions (own or inherited): it is active when all conditions match.
+- Otherwise, it is active when any repository in its scope is active or installed. The scope is the nearest ancestor path that contains at least one repository; entries with no such ancestor use the workspace root as scope, meaning any repository in the workspace.
+
+Explicitly selecting a file or dir path with `clone` or `sync` always materializes it. Link files additionally require their target file to be active.
+
 ## Dependency Resolution
 
 When resolving dependencies for a repository, Jig expands every dependency path to matching repository paths.

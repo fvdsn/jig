@@ -291,13 +291,15 @@ func TestArchivedFilesAreSkippedUnlessIncluded(t *testing.T) {
 		t.Fatalf("with installed archived files = %#v", resolved.Files)
 	}
 
+	// With no repositories in the schema and nothing selected, only the
+	// installed file stays active: state records intent.
 	resolved, err = resolvePlan(&model, nil, planOptions{
 		InstalledFiles: map[string]bool{"scripts/old.sh": true},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(resolved.Files, []string{"scripts/old.sh", "bin/old", "scripts/current.sh"}) {
+	if !reflect.DeepEqual(resolved.Files, []string{"scripts/old.sh"}) {
 		t.Fatalf("planned installed archived files = %#v", resolved.Files)
 	}
 }
