@@ -92,6 +92,30 @@ A JSON tree where paths are the directory layout. Repos, files, and dirs are lea
 
 Files and dirs follow the repositories around them: a support file placed inside a group is materialized whenever any repo of that group is installed; root-level files follow the workspace as a whole.
 
+## Agent skills
+
+`$dir` is a natural fit for assembling one agent-skills directory for the whole workspace from several skill repositories. Jig itself ships a skill at `.agents/skills/jig/SKILL.md` that teaches agents how to drive it — use it as a source:
+
+```json
+{
+  "tree": {
+    ".agents/skills": {
+      "$dir": {
+        "id": "agent-skills",
+        "src": [
+          "git@github.com:fvdsn/jig.git#.agents/skills",
+          { "src": "git@github.com:acme/billing-skills.git#skills",
+            "onlyWhen": { "path": "billing" } }
+        ]
+      }
+    },
+    ".claude/skills": { "$dir": { "id": "claude-skills", "link": ".agents/skills" } }
+  }
+}
+```
+
+`jig sync` merges the sources into `.agents/skills` (first wins on conflicts, `onlyWhen` gates per source) and symlinks it into harness-specific paths — every agent working in the workspace then knows how to use jig.
+
 ## How it works
 
 Everything jig manages lives under `.jig/` at the workspace root:

@@ -1,3 +1,8 @@
+---
+name: jig
+description: Manage a multi-repository workspace with the jig CLI — initialize a workspace from a shared schema, clone repositories with their dependencies, sync, pull, and generate support files. Use when working inside a jig workspace or editing a jig schema (.jig.json / jig.json).
+---
+
 # Jig Usage Guide
 
 Jig manages a local workspace made of many Git repositories and generated support files.
