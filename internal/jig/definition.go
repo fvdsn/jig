@@ -2,8 +2,26 @@ package jig
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 )
+
+// SrcList accepts either a single source string or a list of sources.
+type SrcList []string
+
+func (s *SrcList) UnmarshalJSON(data []byte) error {
+	var single string
+	if err := json.Unmarshal(data, &single); err == nil {
+		*s = SrcList{single}
+		return nil
+	}
+	var list []string
+	if err := json.Unmarshal(data, &list); err != nil {
+		return errors.New("src must be a string or a list of strings")
+	}
+	*s = SrcList(list)
+	return nil
+}
 
 type Definition struct {
 	Version int                        `json:"version"`
@@ -45,7 +63,7 @@ type File struct {
 // executable field, and dirs cannot be link targets.
 type Dir struct {
 	ID          string     `json:"id,omitempty"`
-	Src         string     `json:"src"`
+	Src         SrcList    `json:"src"` // one or more sources, merged in order; first wins on conflicts
 	Description string     `json:"description,omitempty"`
 	Archived    bool       `json:"archived,omitempty"`
 	Tags        []string   `json:"tags,omitempty"`

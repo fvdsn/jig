@@ -42,7 +42,7 @@ func TestEnsureDirLifecycle(t *testing.T) {
 	state := emptyState()
 	model := Model{Entries: map[string]Entry{
 		"tools/scripts": {Path: "tools/scripts", Identity: "scripts", Kind: EntryDir,
-			Dir: &Dir{Src: "git:" + remote + "#scripts"}},
+			Dir: &Dir{Src: SrcList{remote + "#scripts"}}},
 	}}
 	ensure := func() string {
 		var out bytes.Buffer
@@ -113,5 +113,78 @@ func TestDirValidationAndWholeRepoSrc(t *testing.T) {
 	result := validateDefinition(def)
 	if len(result.Errors) != 1 || !strings.Contains(result.Errors[0], "tools/bad") {
 		t.Fatalf("errors = %#v, want one about tools/bad", result.Errors)
+	}
+}
+
+func TestEnsureDirMergesMultipleSources(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+
+	makeSource := func(name string, files map[string]string) string {
+		dir := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Join(dir, "skills"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for rel, content := range files {
+			path := filepath.Join(dir, "skills", rel)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		gitIn(t, dir, "init", "-q")
+		gitIn(t, dir, "add", ".")
+		gitIn(t, dir, "commit", "-qm", "init")
+		return dir
+	}
+	ez := makeSource("ez-skills", map[string]string{
+		"A/SKILL.md": "skill A\n", "B/SKILL.md": "skill B\n", "README.md": "ez readme\n",
+	})
+	awesome := makeSource("awesome-skills", map[string]string{
+		"C/SKILL.md": "skill C\n", "D/SKILL.md": "skill D\n", "README.md": "awesome readme\n",
+	})
+
+	state := emptyState()
+	model := Model{Entries: map[string]Entry{
+		".agents/skills": {Path: ".agents/skills", Identity: "skills", Kind: EntryDir,
+			Dir: &Dir{Src: SrcList{ez + "#skills", awesome + "#skills"}}},
+	}}
+	ensure := func() string {
+		var out bytes.Buffer
+		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, false, newFileFetcher()); err != nil {
+			t.Fatalf("ensureDir: %v", err)
+		}
+		return out.String()
+	}
+
+	got := ensure()
+	if !strings.Contains(got, "5 added") || !strings.Contains(got, "1 shadowed") {
+		t.Fatalf("first run = %q, want 5 added and 1 shadowed", got)
+	}
+	for _, skill := range []string{"A", "B", "C", "D"} {
+		if !pathExists(filepath.Join(root, ".agents", "skills", skill, "SKILL.md")) {
+			t.Fatalf("expected skill %s materialized", skill)
+		}
+	}
+	// The first source wins the README conflict.
+	if data, _ := os.ReadFile(filepath.Join(root, ".agents", "skills", "README.md")); string(data) != "ez readme\n" {
+		t.Fatalf("README = %q, want ez readme", data)
+	}
+	if got := ensure(); !strings.Contains(got, "present-dir:") {
+		t.Fatalf("second run = %q, want present-dir", got)
+	}
+
+	// An update in the second source flows through the merge.
+	if err := os.WriteFile(filepath.Join(awesome, "skills", "C", "SKILL.md"), []byte("skill C v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, awesome, "commit", "-qam", "v2")
+	if got := ensure(); !strings.Contains(got, "1 updated") {
+		t.Fatalf("update run = %q, want 1 updated", got)
+	}
+	if data, _ := os.ReadFile(filepath.Join(root, ".agents", "skills", "C", "SKILL.md")); string(data) != "skill C v2\n" {
+		t.Fatalf("C = %q, want v2", data)
 	}
 }

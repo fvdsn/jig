@@ -40,32 +40,46 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 		}
 	}
 
-	parsed, err := parseDirSrc(dir.Src)
-	if err != nil {
-		return err
+	// Resolve every source before touching the workspace, so a partial
+	// materialization cannot happen when a later source is broken.
+	type resolvedSource struct {
+		mirror string
+		tree   string
 	}
-	mirror, err := fetcher.mirror(parsed.GitURL)
-	if err != nil {
-		if hasState && pathExists(expectedAbs) {
-			fmt.Fprintf(out, "present-dir: %s (source not checked: %s)\n", dirPath, shortError(err))
-			return nil
+	var sources []resolvedSource
+	var treeOIDs []string
+	for _, src := range dir.Src {
+		parsed, err := parseDirSrc(src)
+		if err != nil {
+			return err
 		}
-		return err
+		mirror, err := fetcher.mirror(parsed.GitURL)
+		if err != nil {
+			if hasState && pathExists(expectedAbs) {
+				fmt.Fprintf(out, "present-dir: %s (source not checked: %s)\n", dirPath, shortError(err))
+				return nil
+			}
+			return err
+		}
+		treeRef := "HEAD^{tree}"
+		if parsed.Path != "" {
+			treeRef = "HEAD:" + parsed.Path
+		}
+		treeOut, err := git(mirror, "rev-parse", treeRef)
+		if err != nil {
+			return fmt.Errorf("source subtree not found: %s", shortError(err))
+		}
+		treeOID := strings.TrimSpace(treeOut)
+		if objType, err := git(mirror, "cat-file", "-t", treeOID); err != nil || strings.TrimSpace(objType) != "tree" {
+			return fmt.Errorf("source path %s is not a directory in the source repository", parsed.Path)
+		}
+		sources = append(sources, resolvedSource{mirror, treeOID})
+		treeOIDs = append(treeOIDs, treeOID)
 	}
-	treeRef := "HEAD^{tree}"
-	if parsed.Path != "" {
-		treeRef = "HEAD:" + parsed.Path
-	}
-	treeOut, err := git(mirror, "rev-parse", treeRef)
-	if err != nil {
-		return fmt.Errorf("source subtree not found: %s", shortError(err))
-	}
-	treeOID := strings.TrimSpace(treeOut)
-	if objType, err := git(mirror, "cat-file", "-t", treeOID); err != nil || strings.TrimSpace(objType) != "tree" {
-		return fmt.Errorf("source path %s is not a directory in the source repository", parsed.Path)
-	}
+	srcKey := strings.Join(dir.Src, " ")
+	combinedTree := strings.Join(treeOIDs, "+")
 
-	if hasState && !refresh && stateDir.Src == dir.Src && stateDir.Tree == treeOID && manifestClean(expectedAbs, stateDir.Files) {
+	if hasState && !refresh && stateDir.Src == srcKey && stateDir.Tree == combinedTree && manifestClean(expectedAbs, stateDir.Files) {
 		fmt.Fprintf(out, "present-dir: %s\n", dirPath)
 		return nil
 	}
@@ -74,9 +88,12 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 	if hasState {
 		oldManifest = stateDir.Files
 	}
-	newManifest, counts, err := materializeTree(mirror, treeOID, expectedAbs, oldManifest)
-	if err != nil {
-		return err
+	newManifest := map[string]string{}
+	var counts dirCounts
+	for _, source := range sources {
+		if err := materializeTree(source.mirror, source.tree, expectedAbs, oldManifest, newManifest, &counts); err != nil {
+			return err
+		}
 	}
 
 	// Files that disappeared upstream: delete only untouched ones.
@@ -100,7 +117,7 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 		}
 	}
 
-	state.Dirs[entry.Identity] = StateDir{Path: expectedRel, Src: dir.Src, Tree: treeOID, Files: newManifest}
+	state.Dirs[entry.Identity] = StateDir{Path: expectedRel, Src: srcKey, Tree: combinedTree, Files: newManifest}
 	fmt.Fprintln(out, dirMessage(dirPath, hasState, counts))
 	return nil
 }
@@ -112,10 +129,11 @@ type dirCounts struct {
 	kept      int // locally modified files that were not overwritten
 	deleted   int // removed because they vanished upstream and were untouched
 	abandoned int // vanished upstream but locally modified; left as untracked
+	shadowed  int // provided by more than one source; the first source won
 }
 
 func dirMessage(dirPath string, hadState bool, counts dirCounts) string {
-	if counts.added+counts.updated+counts.kept+counts.deleted+counts.abandoned == 0 {
+	if counts.added+counts.updated+counts.kept+counts.deleted+counts.abandoned+counts.shadowed == 0 {
 		return "present-dir: " + dirPath
 	}
 	verb := "wrote-dir"
@@ -133,6 +151,7 @@ func dirMessage(dirPath string, hadState bool, counts dirCounts) string {
 	add(counts.deleted, "deleted")
 	add(counts.kept, "modified kept")
 	add(counts.abandoned, "left untracked")
+	add(counts.shadowed, "shadowed")
 	return fmt.Sprintf("%s: %s (%s)", verb, dirPath, strings.Join(parts, ", "))
 }
 
@@ -149,20 +168,18 @@ func manifestClean(dirAbs string, manifest map[string]string) bool {
 }
 
 // materializeTree streams `git archive` of the tree from the mirror into
-// dirAbs. Files matching the old manifest (untouched) are overwritten;
+// dirAbs, merging into manifest. Files already claimed by an earlier source
+// are shadowed; files matching the old manifest (untouched) are overwritten;
 // locally modified files are kept and counted.
-func materializeTree(mirror string, treeOID string, dirAbs string, oldManifest map[string]string) (map[string]string, dirCounts, error) {
-	manifest := map[string]string{}
-	var counts dirCounts
-
+func materializeTree(mirror string, treeOID string, dirAbs string, oldManifest map[string]string, manifest map[string]string, counts *dirCounts) error {
 	cmd := exec.Command("git", "archive", treeOID)
 	cmd.Dir = mirror
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, counts, err
+		return err
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, counts, err
+		return err
 	}
 	defer cmd.Wait()
 
@@ -173,18 +190,22 @@ func materializeTree(mirror string, treeOID string, dirAbs string, oldManifest m
 			break
 		}
 		if err != nil {
-			return nil, counts, err
+			return err
 		}
 		if header.Typeflag != tar.TypeReg {
 			continue
 		}
 		rel := filepath.ToSlash(filepath.Clean(header.Name))
 		if err := validateSafePath(rel); err != nil {
-			return nil, counts, fmt.Errorf("unsafe path in source tree: %q", header.Name)
+			return fmt.Errorf("unsafe path in source tree: %q", header.Name)
+		}
+		if _, claimed := manifest[rel]; claimed {
+			counts.shadowed++
+			continue
 		}
 		content, err := io.ReadAll(reader)
 		if err != nil {
-			return nil, counts, err
+			return err
 		}
 		newHash := sha256Hex(content)
 		manifest[rel] = newHash
@@ -194,7 +215,7 @@ func materializeTree(mirror string, treeOID string, dirAbs string, oldManifest m
 		if pathEntryExists(target) {
 			localHash, err := fileSHA256(target)
 			if err != nil {
-				return nil, counts, err
+				return err
 			}
 			if localHash == newHash {
 				counts.unchanged++
@@ -206,24 +227,24 @@ func materializeTree(mirror string, treeOID string, dirAbs string, oldManifest m
 				continue
 			}
 			if err := os.WriteFile(target, content, mode); err != nil {
-				return nil, counts, err
+				return err
 			}
 			_ = os.Chmod(target, mode)
 			counts.updated++
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return nil, counts, err
+			return err
 		}
 		if err := os.WriteFile(target, content, mode); err != nil {
-			return nil, counts, err
+			return err
 		}
 		counts.added++
 	}
 	if err := cmd.Wait(); err != nil {
-		return nil, counts, fmt.Errorf("git archive: %s", err)
+		return fmt.Errorf("git archive: %s", err)
 	}
-	return manifest, counts, nil
+	return nil
 }
 
 func installedDirIdentitySet(root string, model *Model, state *State) map[string]bool {

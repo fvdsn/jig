@@ -542,11 +542,12 @@ Directory nodes are declared with `$dir` and materialize a whole subtree of a so
 }
 ```
 
-Fields: `id` (optional identity, defaults to the path), `src` (required, `<repo-url>[#<subtree-path>]`; without a path the whole repository tree is materialized), `description`, `archived`, `tags`, and `onlyWhen` behave as for `$file`. There is no `executable` field (modes come from the git tree) and directories cannot be link targets.
+Fields: `id` (optional identity, defaults to the path), `src` (required, `<repo-url>[#<subtree-path>]` or a list of such sources; without a path the whole repository tree is materialized), `description`, `archived`, `tags`, and `onlyWhen` behave as for `$file`. There is no `executable` field (modes come from the git tree) and directories cannot be link targets.
 
 State records the source tree id and a manifest mapping each written file to its content hash. Rules:
 
 - The subtree is extracted from the source repository's cache mirror without a checkout.
+- With multiple sources, trees are merged in order into the same directory; when two sources provide the same file path, the first source wins and the shadowed file is reported. All sources are resolved before any file is written.
 - Updates overwrite only files whose local content matches the manifest; locally modified files are kept and reported.
 - Files that disappear upstream are deleted locally only when their content matches the manifest; modified ones are left behind as untracked.
 - Files the user adds inside the directory are never touched or deleted.

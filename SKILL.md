@@ -309,6 +309,20 @@ Declare whole subtrees with `$dir`. The subtree of the source repository is mate
 }
 ```
 
+`src` may also be a list of sources; their trees are merged in order into the same directory, and when two sources provide the same file the first one wins (reported as shadowed). This assembles e.g. one `.agents/skills` directory from several skill repositories:
+
+```json
+{
+  "$dir": {
+    "id": "agent-skills",
+    "src": [
+      "git@github.com:acme/ez-skills.git#skills",
+      "git@github.com:acme/awesome-skills.git#skills"
+    ]
+  }
+}
+```
+
 Rules:
 
 - Jig tracks a manifest of every file it wrote. Updates overwrite only untouched files; locally modified files are kept and reported.
