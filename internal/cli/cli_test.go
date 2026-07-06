@@ -36,7 +36,7 @@ func TestParseInitArgsCloneWithPath(t *testing.T) {
 
 func TestInitSelectionFlagsRequireClone(t *testing.T) {
 	err := cmdInit([]string{"git@example.com:config.git", "--archived"}, io.Discard)
-	if err == nil || err.Error() != "--no-deps, --with-optional-deps, and --archived require --clone" {
+	if err == nil || err.Error() != "--no-deps, --with-optional-deps, --archived, and --tags require --clone" {
 		t.Fatalf("expected --clone requirement, got %v", err)
 	}
 }

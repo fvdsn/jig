@@ -141,6 +141,7 @@ var initFlags = map[string]flagKind{
 	"--no-deps":            boolFlag,
 	"--with-optional-deps": boolFlag,
 	"--archived":           boolFlag,
+	"--tags":               valueFlag,
 }
 
 // checkDepsFlags rejects the contradictory dependency selectors.
@@ -215,13 +216,13 @@ func cmdInit(args []string, out io.Writer) error {
 		return err
 	}
 	if len(parsed.Positionals) > 2 {
-		return errors.New("usage: jig init [git-url-or-file [workspace-dir]] [--path <path>] [--clone [path]] [--with-optional-deps] [--archived]")
+		return errors.New("usage: jig init [git-url-or-file [workspace-dir]] [--path <path>] [--clone [path]] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]")
 	}
 	// A bare init starts a fresh workspace in the current directory and
 	// clones immediately, so the starter schema materializes right away.
 	bare := len(parsed.Positionals) == 0
-	if !bare && !parsed.Flags["--clone"] && (parsed.Flags["--no-deps"] || parsed.Flags["--with-optional-deps"] || parsed.Flags["--archived"]) {
-		return errors.New("--no-deps, --with-optional-deps, and --archived require --clone")
+	if !bare && !parsed.Flags["--clone"] && (parsed.Flags["--no-deps"] || parsed.Flags["--with-optional-deps"] || parsed.Flags["--archived"] || parsed.Values["--tags"] != "") {
+		return errors.New("--no-deps, --with-optional-deps, --archived, and --tags require --clone")
 	}
 	if err := checkDepsFlags(parsed); err != nil {
 		return err
@@ -235,6 +236,7 @@ func cmdInit(args []string, out io.Writer) error {
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
 		SkipDeps:        parsed.Flags["--no-deps"],
+		Tags:            parseTags(parsed.Values["--tags"]),
 	}
 	if !bare {
 		options.SourceArg = parsed.Positionals[0]
