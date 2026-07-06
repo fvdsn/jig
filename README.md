@@ -1,5 +1,10 @@
 # jig
 
+[![ci](https://github.com/fvdsn/jig/actions/workflows/ci.yml/badge.svg)](https://github.com/fvdsn/jig/actions/workflows/ci.yml)
+[![version](https://img.shields.io/github/v/tag/fvdsn/jig?label=version&sort=semver)](https://github.com/fvdsn/jig/tags)
+[![go report](https://goreportcard.com/badge/github.com/fvdsn/jig)](https://goreportcard.com/report/github.com/fvdsn/jig)
+[![go reference](https://pkg.go.dev/badge/github.com/fvdsn/jig.svg)](https://pkg.go.dev/github.com/fvdsn/jig)
+
 > A jig holds workpieces in place — jig holds your repos in place.
 
 Jig manages a local workspace made of many related Git repositories, driven by a single shared schema. Your organization describes its repositories once — layout, dependencies, tags, generated support files — in a schema hosted in its own Git repository. Everyone then materializes just the parts they need, and jig keeps the checkouts converged, restored, and up to date.
