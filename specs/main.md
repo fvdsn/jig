@@ -856,6 +856,7 @@ jig deps <path> --archived
 jig clone [path]
 jig pull [path]
 jig pull [path] --archived
+jig checkout [-b] <branch> [path]
 jig status [path]
 jig status [path] --archived
 jig update
@@ -1077,6 +1078,16 @@ Installed archived repositories are included by default. `--archived` applies th
 ### `jig fetch [path]`
 
 Runs `git fetch` in installed repositories matching `path`, or in all installed repositories when `path` is omitted. Selection semantics match `jig pull`. Fetch never touches working trees or local branches.
+
+### `jig checkout [-b] <branch> [path]`
+
+Switches installed repositories matching `path` (all installed repositories when `path` is omitted) to `<branch>`, in parallel. Selection semantics match `jig pull`.
+
+- Repositories already on the branch report `present`.
+- With `-b`, the branch is created at the repository's current HEAD when it does not exist; when it already exists, the repository just switches to it, so re-running is idempotent.
+- Without `-b`, git's usual rules apply, including creating a local branch from a matching remote-tracking branch.
+- Checkouts are never forced: a repository where git refuses the switch (for example uncommitted changes that would be overwritten) is reported under `skipped` and left untouched.
+- The branch name is validated up front; an invalid name fails before touching any repository.
 
 ### `jig rm <path>...`
 

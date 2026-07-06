@@ -36,6 +36,8 @@ func Run(args []string, out io.Writer, _ io.Writer) error {
 		return cmdPull(args[1:], out)
 	case "fetch":
 		return cmdFetch(args[1:], out)
+	case "checkout":
+		return cmdCheckout(args[1:], out)
 	case "rm":
 		return cmdRemove(args[1:], out)
 	case "status":
@@ -166,6 +168,8 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Run git pull --ff-only in installed repositories matching a path or group.")
 	fmt.Fprintln(out, "  fetch [path] [--archived] [--tags a,b]")
 	fmt.Fprintln(out, "      Run git fetch in installed repositories matching a path or group.")
+	fmt.Fprintln(out, "  checkout [-b] <branch> [path] [--archived] [--tags a,b]")
+	fmt.Fprintln(out, "      Switch installed repositories to a branch; -b creates it. Repos where the switch would lose local changes are skipped.")
 	fmt.Fprintln(out, "  rm <path>... [-r|--recursive] [-f|--force]")
 	fmt.Fprintln(out, "      Uninstall repositories or files: delete the checkout and stop tracking it. -r removes groups, -f overrides dirty/unpushed checks.")
 	fmt.Fprintln(out, "  status [path] [--all] [--archived] [--tags a,b]")
@@ -359,6 +363,23 @@ func cmdFetch(args []string, out io.Writer) error {
 	}
 	return jig.Fetch(jig.FetchOptions{
 		Path:            optionalPath(parsed.Positionals),
+		IncludeArchived: parsed.Flags["--archived"],
+		Tags:            parseTags(parsed.Values["--tags"]),
+	}, out)
+}
+
+func cmdCheckout(args []string, out io.Writer) error {
+	parsed, err := parseArgs(args, map[string]flagKind{"-b": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
+	if err != nil {
+		return err
+	}
+	if len(parsed.Positionals) < 1 || len(parsed.Positionals) > 2 {
+		return errors.New("usage: jig checkout [-b] <branch> [path] [--archived] [--tags a,b]")
+	}
+	return jig.Checkout(jig.CheckoutOptions{
+		Branch:          parsed.Positionals[0],
+		Path:            optionalPath(parsed.Positionals[1:]),
+		Create:          parsed.Flags["-b"],
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)

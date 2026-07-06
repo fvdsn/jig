@@ -439,7 +439,7 @@ jig list services
 jig list --archived
 ```
 
-Filter by tags. `--tags a,b` keeps only entries carrying all the listed tags and works on `list`, `info`, `deps`, `clone`, `sync`, `pull`, `status`, and `update --sync`. Dependencies of a selected repository are always included, tagged or not:
+Filter by tags. `--tags a,b` keeps only entries carrying all the listed tags and works on `list`, `info`, `deps`, `clone`, `sync`, `pull`, `fetch`, `checkout`, `status`, and `update --sync`. Dependencies of a selected repository are always included, tagged or not:
 
 ```sh
 jig list --tags backend
@@ -525,6 +525,16 @@ Fetch installed repositories without touching working trees:
 jig fetch
 jig fetch platform
 ```
+
+Switch installed repositories to a branch, mirroring `git checkout`:
+
+```sh
+jig checkout main
+jig checkout -b feature-x services
+jig checkout -b feature-x --tags backend
+```
+
+`-b` creates the branch at each repository's current HEAD, or just switches when it already exists. Repositories already on the branch report `present`. Checkouts are never forced: a repository where git refuses the switch (uncommitted changes that would be overwritten) is reported under `skipped` and left untouched.
 
 Uninstall repositories or files (deletes the checkout and stops tracking it; `-r` for groups, `-f` to override the dirty/unpushed safety checks):
 

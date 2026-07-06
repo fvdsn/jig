@@ -46,6 +46,7 @@ jig rm services/checkout        # uninstall
 | `sync [path]` | Converge the workspace: moves, origins, file updates, restores |
 | `pull [path]` | `git pull --ff-only` across installed repos, in parallel |
 | `fetch [path]` | `git fetch` across installed repos, in parallel |
+| `checkout [-b] <branch> [path]` | Switch installed repos to a branch (`-b` creates it); never discards local changes |
 | `status [path]` | One line per installed entry, plus a summary |
 | `rm <path>...` | Uninstall: delete the checkout and stop tracking it |
 | `update [--sync]` | Fast-forward the schema from its remote (then sync) |
