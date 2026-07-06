@@ -93,6 +93,12 @@ Everything jig manages lives under `.jig/` at the workspace root:
 
 The schema checkout works like any Git clone: the remote is its `origin`, and the tracked branch is whatever the checkout is on.
 
+## Clone Cache
+
+Jig keeps a bare mirror of each remote it clones under the user cache directory (`~/Library/Caches/jig/repos` on macOS, `~/.cache/jig/repos` on Linux). Clones freshen the mirror with a cheap fetch and then clone locally from it, so a repository's history only transfers over the network once per machine — repeat clones (new workspaces, restores) run at disk speed.
+
+Clones are fully independent of the cache (local clones hardlink immutable object files), so deleting the cache directory is always safe. Any cache failure falls back to a direct network clone. Set `JIG_CACHE_DIR` to relocate the cache, or set it to an empty string to disable it.
+
 ## Concepts
 
 - Paths use workspace-style `/` separators, such as `services/checkout` or `platform`.

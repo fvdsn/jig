@@ -759,6 +759,23 @@ jig sync [path]   applies the current schema to the local checkout shape
 
 When reporting changes between the previous and updated definitions, Jig should use repository and file identities.
 
+## Clone Cache
+
+Jig maintains a bare mirror per remote URL in the user cache directory
+(override with `JIG_CACHE_DIR`; empty value disables the cache). Cloning a
+repository freshens its mirror with a fetch, clones locally from the mirror
+(hardlinking immutable object files), and points `origin` at the real
+remote. File source fetches read directly from the mirror.
+
+Rules:
+
+- Workspace clones must remain fully independent of the cache: deleting the
+  cache directory never affects an existing checkout.
+- Any cache failure falls back to a direct network clone; the cache can
+  never cause an operation to fail.
+- Mirror creation and updates are serialized with a lock file per mirror;
+  locks older than ten minutes are treated as abandoned.
+
 ## Operation Rules
 
 Repository operations should use repository identity to avoid duplicate work.

@@ -58,7 +58,7 @@ func ensureRepo(root string, entry Entry, stateRepo StateRepo, hasState bool, al
 			result.Err = err
 			return result
 		}
-		if _, err := git("", "clone", repo.Git, expectedAbs); err != nil {
+		if err := cloneRepo(repo.Git, expectedAbs); err != nil {
 			result.Err = err
 			return result
 		}

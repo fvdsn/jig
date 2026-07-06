@@ -18,6 +18,8 @@ The schema file (usually `.jig.json` or `jig.json`) lives in its own Git reposit
 
 The `.jig/state.json` file is local and machine-owned. It tracks installed repositories and generated files so Jig can safely handle moves, remote changes, and local edits.
 
+Jig also keeps a machine-wide clone cache (bare mirrors in the user cache directory), so cloning a repository into a second workspace is nearly instant. The cache is transparent and safe to delete; set `JIG_CACHE_DIR=` (empty) to disable it.
+
 ## Install
 
 ```sh

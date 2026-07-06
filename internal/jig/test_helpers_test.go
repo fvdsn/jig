@@ -7,6 +7,19 @@ import (
 	"testing"
 )
 
+// TestMain points the repo cache at a throwaway directory so tests never
+// touch the developer's real cache.
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "jig-test-cache-*")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("JIG_CACHE_DIR", dir)
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
+}
+
 // writeTestWorkspace lays out a workspace at root with the given schema in
 // its source directory and empty state.
 func writeTestWorkspace(t *testing.T, root string, schema string) {

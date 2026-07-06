@@ -35,6 +35,9 @@ func fetchGitFile(gitURL, ref, sourcePath string) ([]byte, error) {
 	if err := validateSafePath(sourcePath); err != nil {
 		return nil, err
 	}
+	if data, err := cacheShowFile(gitURL, ref, sourcePath); err == nil {
+		return data, nil
+	}
 	tmp, err := os.MkdirTemp("", "jig-source-*")
 	if err != nil {
 		return nil, err

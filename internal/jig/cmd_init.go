@@ -108,7 +108,7 @@ func setUpSource(sourceArg string, schemaPath string, sourceAbs string) (string,
 		return "", err
 	}
 
-	if _, err := git("", "clone", sourceArg, sourceAbs); err != nil {
+	if err := cloneRepo(sourceArg, sourceAbs); err != nil {
 		return "", err
 	}
 	if schemaPath != "" {
