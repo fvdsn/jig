@@ -43,7 +43,7 @@ jig rm services/checkout        # uninstall
 | `info <path>` | Show one entry's metadata |
 | `deps <path>` | Show a repo's recursive dependencies |
 | `clone [path]` | Install repos/files matching a path, plus dependencies (`--no-deps` to skip them) |
-| `sync [path]` | Converge the workspace: moves, origins, file updates, restores |
+| `sync [path]` | Converge the workspace: moves, origins, file updates, restores (`--prune` deletes what left the schema) |
 | `pull [path]` | `git pull --ff-only` across installed repos, in parallel |
 | `fetch [path]` | `git fetch` across installed repos, in parallel |
 | `checkout [-b] <branch> [path]` | Switch installed repos to a branch (`-b` creates it); never discards local changes |
@@ -127,7 +127,7 @@ Everything jig manages lives under `.jig/` at the workspace root:
 .jig/state.json    what is installed, and where
 ```
 
-- **State records intent.** Deleting a checkout by hand doesn't uninstall it — `jig sync` restores it. `jig rm` is the uninstall verb, with `rm`-like ergonomics (`-r` for groups, `-f` to override the dirty/unpushed safety checks).
+- **State records intent.** Deleting a checkout by hand doesn't uninstall it — `jig sync` restores it. `jig rm` is the uninstall verb, with `rm`-like ergonomics (`-r` for groups, `-f` to override the dirty/unpushed safety checks). `jig sync --prune` batch-deletes entries that were removed from the schema, with the same safety checks — anything dirty, unpushed, or locally modified is kept and reported.
 - **The schema is a working copy.** Edit `.jig/source/<schema>`, test immediately with `jig sync`, then commit and push it like any repo. Teammates pick it up with `jig update --sync`. Conflicts are plain Git conflicts.
 - **Clone cache.** Jig keeps a bare mirror per remote in the user cache directory; clones hardlink from it, so history transfers over the network once per machine. Checkouts stay fully independent — deleting the cache is always safe. `JIG_CACHE_DIR` relocates it (empty disables), `jig cache clean --unused 30` prunes it.
 - **Terminal-aware output.** `list` and `status` align and truncate on a terminal; piped output stays full and tab-separated for scripts.

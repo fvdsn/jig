@@ -151,6 +151,16 @@ func checkDepsFlags(parsed parsedArgs) error {
 	return nil
 }
 
+// checkPruneScope rejects --prune combined with a selection: stale entries
+// are not in the schema, so they have no tags and no defined paths to
+// select on. Pruning is a whole-workspace operation.
+func checkPruneScope(parsed parsedArgs) error {
+	if parsed.Flags["--prune"] && (len(parsed.Positionals) > 0 || parsed.Values["--tags"] != "") {
+		return errors.New("--prune applies to the whole workspace; it cannot be combined with a path or --tags")
+	}
+	return nil
+}
+
 func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "Jig is a workspace CLI for managing many related Git repositories and generated files from a shared schema.")
 	fmt.Fprintln(out)
@@ -171,8 +181,9 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Show expanded recursive dependencies for repositories matching a path.")
 	fmt.Fprintln(out, "  clone [path] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]")
 	fmt.Fprintln(out, "      Clone/materialize all entries, or repositories/files matching a path. --no-deps skips dependencies.")
-	fmt.Fprintln(out, "  sync [path] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]")
+	fmt.Fprintln(out, "  sync [path] [--no-deps] [--with-optional-deps] [--archived] [--prune] [--tags a,b]")
 	fmt.Fprintln(out, "      Clone missing repos, move renamed repos/files, update origins/files, and refresh local state.")
+	fmt.Fprintln(out, "      --prune deletes entries removed from the schema; dirty/unpushed repos and modified files are kept.")
 	fmt.Fprintln(out, "  pull [path] [--archived] [--tags a,b]")
 	fmt.Fprintln(out, "      Run git pull --ff-only in installed repositories matching a path or group.")
 	fmt.Fprintln(out, "  fetch [path] [--archived] [--tags a,b]")
@@ -185,7 +196,7 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "      Show the state of installed entries; repos never installed are only counted unless --all is given.")
 	fmt.Fprintln(out, "  update")
 	fmt.Fprintln(out, "      Fast-forward the schema checkout (.jig/source) from its remote without changing local checkouts.")
-	fmt.Fprintln(out, "  update --sync [path] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]")
+	fmt.Fprintln(out, "  update --sync [path] [--no-deps] [--with-optional-deps] [--archived] [--prune] [--tags a,b]")
 	fmt.Fprintln(out, "      Update the schema, then sync the workspace.")
 	fmt.Fprintln(out, "  cache")
 	fmt.Fprintln(out, "      Show the clone cache location, mirror count, and size.")
@@ -314,14 +325,17 @@ func cmdClone(args []string, out io.Writer) error {
 }
 
 func cmdSync(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--prune": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig sync [path] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]")
+		return errors.New("usage: jig sync [path] [--no-deps] [--with-optional-deps] [--archived] [--prune] [--tags a,b]")
 	}
 	if err := checkDepsFlags(parsed); err != nil {
+		return err
+	}
+	if err := checkPruneScope(parsed); err != nil {
 		return err
 	}
 	return jig.Sync(jig.SyncOptions{
@@ -329,6 +343,7 @@ func cmdSync(args []string, out io.Writer) error {
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
 		SkipDeps:        parsed.Flags["--no-deps"],
+		Prune:           parsed.Flags["--prune"],
 		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
 }
@@ -439,17 +454,20 @@ func cmdStatus(args []string, out io.Writer) error {
 }
 
 func cmdUpdate(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--sync": boolFlag, "--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--sync": boolFlag, "--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--prune": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 || len(parsed.Positionals) == 1 && !parsed.Flags["--sync"] {
-		return errors.New("usage: jig update | jig update --sync [path] [--no-deps] [--with-optional-deps] [--archived]")
+		return errors.New("usage: jig update | jig update --sync [path] [--no-deps] [--with-optional-deps] [--archived] [--prune]")
 	}
-	if !parsed.Flags["--sync"] && (parsed.Flags["--no-deps"] || parsed.Flags["--with-optional-deps"] || parsed.Flags["--archived"]) {
-		return errors.New("--no-deps, --with-optional-deps, and --archived require --sync")
+	if !parsed.Flags["--sync"] && (parsed.Flags["--no-deps"] || parsed.Flags["--with-optional-deps"] || parsed.Flags["--archived"] || parsed.Flags["--prune"]) {
+		return errors.New("--no-deps, --with-optional-deps, --archived, and --prune require --sync")
 	}
 	if err := checkDepsFlags(parsed); err != nil {
+		return err
+	}
+	if err := checkPruneScope(parsed); err != nil {
 		return err
 	}
 	return jig.Update(jig.UpdateOptions{
@@ -458,6 +476,7 @@ func cmdUpdate(args []string, out io.Writer) error {
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
 		SkipDeps:        parsed.Flags["--no-deps"],
+		Prune:           parsed.Flags["--prune"],
 		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
 }

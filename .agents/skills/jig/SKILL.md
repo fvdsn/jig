@@ -517,6 +517,16 @@ Sync without pulling in dependencies (`--no-deps` also works on `clone`, `init -
 jig sync platform --no-deps
 ```
 
+Sync and delete entries that were removed from the schema (also on `update --sync`; whole workspace only, cannot be combined with a path or `--tags`):
+
+```sh
+jig sync --prune
+```
+
+Pruning applies the same safety rules as `jig rm`: dirty or unpushed repositories, repositories whose origin changed, and locally modified files are kept and reported under `kept`; escalate per path with `jig rm -f` when you really mean it.
+
+Renaming an entry's `id` in the schema is safe: sync readopts the existing checkout under the new identity (reported as `readopted`) instead of treating it as stale.
+
 Sync uninstalled archived repositories and files too:
 
 ```sh
@@ -616,7 +626,7 @@ jig pull          -> update Git repository contents
 
 ## Safety Rules
 
-- Jig does not delete local repositories during `sync`.
+- Jig does not delete local repositories during `sync`, unless `--prune` is passed — and even then dirty or unpushed repositories and locally modified files are kept.
 - Jig does not overwrite local file modifications.
 - Jig skips existing directories that are not expected Git repositories.
 - Jig skips existing files that it does not track in `.jig/state.json`.

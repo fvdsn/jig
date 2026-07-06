@@ -10,6 +10,7 @@ type SyncOptions struct {
 	IncludeOptional bool
 	IncludeArchived bool
 	SkipDeps        bool // sync only the selected repos, without their dependencies
+	Prune           bool // delete entries removed from the schema (jig rm safety rules apply)
 	Tags            []string
 }
 
@@ -22,6 +23,11 @@ func Sync(options SyncOptions, out io.Writer) error {
 }
 
 func syncWorkspace(out io.Writer, ws *Workspace, options SyncOptions) error {
+	// A schema id rename leaves the old identity in state while the new one
+	// claims the same path; move the records first so the plan below sees
+	// the checkout as already tracked instead of stale.
+	readoptRenamedIdentities(out, &ws.Model, &ws.State)
+
 	var roots []string
 	var explicitFiles []string
 	var explicitDirs []string
@@ -57,6 +63,10 @@ func syncWorkspace(out io.Writer, ws *Workspace, options SyncOptions) error {
 	}); err != nil {
 		return err
 	}
-	reportStale(out, ws.Root, &ws.Model, &ws.State)
+	if options.Prune {
+		pruneStale(out, ws.Root, &ws.Model, &ws.State)
+	} else {
+		reportStale(out, ws.Root, &ws.Model, &ws.State)
+	}
 	return saveState(ws.Root, ws.State)
 }

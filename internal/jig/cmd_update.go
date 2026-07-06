@@ -14,6 +14,7 @@ type UpdateOptions struct {
 	IncludeOptional bool
 	IncludeArchived bool
 	SkipDeps        bool // sync only the selected repos, without their dependencies
+	Prune           bool // delete entries removed from the schema during the sync step
 	Tags            []string
 }
 
@@ -73,6 +74,7 @@ func Update(options UpdateOptions, out io.Writer) error {
 			IncludeOptional: options.IncludeOptional,
 			IncludeArchived: options.IncludeArchived,
 			SkipDeps:        options.SkipDeps,
+			Prune:           options.Prune,
 			Tags:            options.Tags,
 		})
 	}

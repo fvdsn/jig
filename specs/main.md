@@ -867,6 +867,7 @@ jig clone [path] --no-deps
 jig clone [path] --with-optional-deps
 jig sync [path] --no-deps
 jig sync [path] --with-optional-deps
+jig sync --prune
 jig clone [path] --archived
 jig sync [path] --archived
 ```
@@ -1061,7 +1062,23 @@ Sync may perform these actions:
 - Report repositories and files that exist locally but are no longer defined.
 - Prune state entries that are no longer defined and whose checkout or file is gone from disk.
 
-Sync must not delete local repositories or locally modified files.
+Sync must not delete local repositories or locally modified files, except under `--prune` as specified below.
+
+Renamed identities are readopted: when a state entry's identity is no longer defined but a defined entry of the same kind expects the same path, the state record is transferred to the new identity (reported as `readopted`) before the plan is applied. The record's origin URL, file hash, or dir manifest follows the checkout, so an id rename in the schema is a no-op locally instead of producing a stale report.
+
+### `jig sync --prune`
+
+Deletes state-tracked entries that are no longer defined in the schema, after the normal sync. Pruning is a whole-workspace operation: `--prune` cannot be combined with a path or `--tags`, since stale entries have no schema entry to select on.
+
+Safety rules match `jig rm` without `--force`:
+
+- Repositories with uncommitted changes, unpushed commits, or a branch with no upstream are kept and reported under `kept`.
+- Repositories whose `origin` no longer matches the recorded URL are kept.
+- Files whose content differs from the recorded hash are kept.
+- Inside pruned dirs, only untouched manifest files are deleted; user-added and modified files are kept.
+- A path owned by a defined entry is never deleted; only the obsolete state record is dropped.
+
+Successful deletions drop the state entry and are reported under `pruned`. There is no `--force`; escalate per path with `jig rm -f`.
 
 Sync must skip and report any operation that is ambiguous or unsafe.
 
@@ -1183,6 +1200,8 @@ The sync step should run only after the schema has been fetched, validated, and 
 `jig update --sync --with-optional-deps` includes optional dependencies during the sync step.
 
 `jig update --sync --no-deps` restricts the sync step to the selected entries, as in `jig sync --no-deps`.
+
+`jig update --sync --prune` prunes entries removed from the schema during the sync step, as in `jig sync --prune`.
 
 `jig update --sync --archived` includes uninstalled archived repositories and files during the sync step.
 
