@@ -42,11 +42,11 @@ func TestEnsureDirLifecycle(t *testing.T) {
 	state := emptyState()
 	model := Model{Entries: map[string]Entry{
 		"tools/scripts": {Path: "tools/scripts", Identity: "scripts", Kind: EntryDir,
-			Dir: &Dir{Src: SrcList{remote + "#scripts"}}},
+			Dir: &Dir{Src: SrcList{{Src: remote + "#scripts"}}}},
 	}}
 	ensure := func() string {
 		var out bytes.Buffer
-		if err := ensureDir(&out, root, &model, &state, "tools/scripts", true, false, newFileFetcher()); err != nil {
+		if err := ensureDir(&out, root, &model, &state, "tools/scripts", true, false, newFileFetcher(), nil, nil); err != nil {
 			t.Fatalf("ensureDir: %v", err)
 		}
 		return out.String()
@@ -149,11 +149,11 @@ func TestEnsureDirMergesMultipleSources(t *testing.T) {
 	state := emptyState()
 	model := Model{Entries: map[string]Entry{
 		".agents/skills": {Path: ".agents/skills", Identity: "skills", Kind: EntryDir,
-			Dir: &Dir{Src: SrcList{ez + "#skills", awesome + "#skills"}}},
+			Dir: &Dir{Src: SrcList{{Src: ez + "#skills"}, {Src: awesome + "#skills"}}}},
 	}}
 	ensure := func() string {
 		var out bytes.Buffer
-		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, false, newFileFetcher()); err != nil {
+		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, false, newFileFetcher(), nil, nil); err != nil {
 			t.Fatalf("ensureDir: %v", err)
 		}
 		return out.String()
@@ -186,5 +186,71 @@ func TestEnsureDirMergesMultipleSources(t *testing.T) {
 	}
 	if data, _ := os.ReadFile(filepath.Join(root, ".agents", "skills", "C", "SKILL.md")); string(data) != "skill C v2\n" {
 		t.Fatalf("C = %q, want v2", data)
+	}
+}
+
+func TestDirSourcesGatedByOnlyWhen(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+
+	makeSource := func(name, file, content string) string {
+		dir := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Join(dir, "skills"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "skills", file), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		gitIn(t, dir, "init", "-q")
+		gitIn(t, dir, "add", ".")
+		gitIn(t, dir, "commit", "-qm", "init")
+		return dir
+	}
+	base := makeSource("base-skills", "base.md", "base\n")
+	billing := makeSource("billing-skills", "billing.md", "billing\n")
+
+	state := emptyState()
+	model := Model{Entries: map[string]Entry{
+		"billing/api": {Path: "billing/api", Identity: "billing-api", Kind: EntryRepo,
+			Repo: &Repo{Git: "git@example.com:billing.git"}},
+		".agents/skills": {Path: ".agents/skills", Identity: "skills", Kind: EntryDir,
+			Dir: &Dir{Src: SrcList{
+				{Src: base + "#skills"},
+				{Src: billing + "#skills", OnlyWhen: &Condition{Path: "billing"}},
+			}}},
+	}}
+	ensure := func(activeRepos map[string]bool) string {
+		var out bytes.Buffer
+		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, false, newFileFetcher(), activeRepos, nil); err != nil {
+			t.Fatalf("ensureDir: %v", err)
+		}
+		return out.String()
+	}
+
+	// Without billing active, only the base source materializes.
+	ensure(nil)
+	if !pathExists(filepath.Join(root, ".agents", "skills", "base.md")) {
+		t.Fatal("expected base.md")
+	}
+	if pathExists(filepath.Join(root, ".agents", "skills", "billing.md")) {
+		t.Fatal("did not expect billing.md without billing active")
+	}
+
+	// Activating billing brings the gated source in.
+	ensure(map[string]bool{"billing/api": true})
+	if !pathExists(filepath.Join(root, ".agents", "skills", "billing.md")) {
+		t.Fatal("expected billing.md with billing active")
+	}
+
+	// Deactivating removes the gated source's untouched files.
+	got := ensure(nil)
+	if pathExists(filepath.Join(root, ".agents", "skills", "billing.md")) {
+		t.Fatalf("expected billing.md removed after deactivation, output: %q", got)
+	}
+	if !strings.Contains(got, "1 deleted") {
+		t.Fatalf("output = %q, want 1 deleted", got)
+	}
+	if !pathExists(filepath.Join(root, ".agents", "skills", "base.md")) {
+		t.Fatal("expected base.md untouched")
 	}
 }

@@ -80,9 +80,12 @@ func validateDefinition(def *Definition) validationResult {
 			if len(entry.Dir.Src) == 0 {
 				result.Errors = append(result.Errors, fmt.Sprintf("dir %s missing src", path))
 			}
-			for _, src := range entry.Dir.Src {
-				if _, err := parseDirSrc(src); err != nil {
+			for _, source := range entry.Dir.Src {
+				if _, err := parseDirSrc(source.Src); err != nil {
 					result.Errors = append(result.Errors, fmt.Sprintf("dir %s invalid src: %s", path, err))
+				}
+				if source.OnlyWhen != nil {
+					validateCondition(&result, model, path, *source.OnlyWhen)
 				}
 			}
 		}

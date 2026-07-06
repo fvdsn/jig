@@ -6,20 +6,41 @@ import (
 	"os"
 )
 
-// SrcList accepts either a single source string or a list of sources.
-type SrcList []string
+// DirSource is one source of a $dir entry. An optional onlyWhen gates just
+// this source's tree within the merge.
+type DirSource struct {
+	Src      string     `json:"src"`
+	OnlyWhen *Condition `json:"onlyWhen,omitempty"`
+}
+
+// SrcList accepts a single source string, or a list whose elements are
+// strings or {src, onlyWhen} objects.
+type SrcList []DirSource
 
 func (s *SrcList) UnmarshalJSON(data []byte) error {
 	var single string
 	if err := json.Unmarshal(data, &single); err == nil {
-		*s = SrcList{single}
+		*s = SrcList{{Src: single}}
 		return nil
 	}
-	var list []string
-	if err := json.Unmarshal(data, &list); err != nil {
-		return errors.New("src must be a string or a list of strings")
+	var raws []json.RawMessage
+	if err := json.Unmarshal(data, &raws); err != nil {
+		return errors.New("src must be a string or a list of sources")
 	}
-	*s = SrcList(list)
+	list := make(SrcList, 0, len(raws))
+	for _, raw := range raws {
+		var str string
+		if err := json.Unmarshal(raw, &str); err == nil {
+			list = append(list, DirSource{Src: str})
+			continue
+		}
+		var source DirSource
+		if err := json.Unmarshal(raw, &source); err != nil {
+			return errors.New("src entries must be strings or {src, onlyWhen} objects")
+		}
+		list = append(list, source)
+	}
+	*s = list
 	return nil
 }
 

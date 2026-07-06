@@ -34,7 +34,7 @@ func resolveAndApplyPlan(out io.Writer, ws *Workspace, roots []string, explicitF
 		plan = excludeArchivedFiles(&ws.Model, plan, installed.Files)
 		plan = excludeArchivedDirs(&ws.Model, plan, installed.Dirs)
 	}
-	applyPlan(out, ws, plan, opts)
+	applyPlan(out, ws, plan, opts, installed.Repos)
 	return nil
 }
 
@@ -108,7 +108,7 @@ func excludeArchivedFiles(model *Model, base plan, installed map[string]bool) pl
 	return base
 }
 
-func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions) {
+func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, installedRepos map[string]bool) {
 	// Repositories are independent of each other, so the git work runs in
 	// parallel; each result is applied to state and printed as it completes,
 	// so long runs show progress instead of a report at the end.
@@ -143,8 +143,12 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions) {
 			fmt.Fprintf(out, "skipped:\n  %s: %s\n", filePath, err)
 		}
 	}
+	activeRepos := map[string]bool{}
+	for _, repoPath := range plan.Repos {
+		activeRepos[repoPath] = true
+	}
 	for _, dirPath := range plan.Dirs {
-		if err := ensureDir(out, ws.Root, &ws.Model, &ws.State, dirPath, opts.Sync, opts.RefreshFiles, fetcher); err != nil {
+		if err := ensureDir(out, ws.Root, &ws.Model, &ws.State, dirPath, opts.Sync, opts.RefreshFiles, fetcher, activeRepos, installedRepos); err != nil {
 			fmt.Fprintf(out, "skipped:\n  %s: %s\n", dirPath, err)
 		}
 	}

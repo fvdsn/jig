@@ -79,12 +79,16 @@ func Info(options InfoOptions, out io.Writer) error {
 		fmt.Fprintf(out, "path: %s\n", path)
 		fmt.Fprintln(out, "type: dir")
 		fmt.Fprintf(out, "identity: %s\n", entry.Identity)
-		if len(dir.Src) == 1 {
-			fmt.Fprintf(out, "src: %s\n", dir.Src[0])
+		if len(dir.Src) == 1 && dir.Src[0].OnlyWhen == nil {
+			fmt.Fprintf(out, "src: %s\n", dir.Src[0].Src)
 		} else {
 			fmt.Fprintln(out, "src:")
-			for _, src := range dir.Src {
-				fmt.Fprintf(out, "  %s\n", src)
+			for _, source := range dir.Src {
+				line := "  " + source.Src
+				if source.OnlyWhen != nil {
+					line += " (onlyWhen: " + source.OnlyWhen.Path + ")"
+				}
+				fmt.Fprintln(out, line)
 			}
 		}
 		if dir.Description != "" {
