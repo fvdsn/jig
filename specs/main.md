@@ -840,6 +840,7 @@ Commands should exit with a non-zero status when they fail. Validation failures 
 Target MVP commands:
 
 ```text
+jig init
 jig init <git-url-or-file> [workspace-dir]
 jig init <git-url> [workspace-dir] --path <path>
 jig init <git-url-or-file> [workspace-dir] --clone [path]
@@ -874,6 +875,8 @@ Initializes a Jig workspace from a Git-hosted or local schema.
 If the first argument is an existing local file, Jig creates `.jig/source/` as a fresh Git repository containing that file as `jig.json`, with no remote configured. This is useful for testing a schema before pushing it to a Git repository.
 
 If the first argument is not an existing local file, Jig treats it as a Git URL.
+
+If no argument is given, Jig starts a fresh workspace in the current directory: `.jig/source/` is created as a fresh Git repository containing a starter `jig.json` whose only entry pulls the official jig skill into `.agents/skills`. The workspace is then cloned immediately so the starter content materializes. A fetch failure during this initial clone does not fail the init (`jig sync` retries later), and the command prints next steps for describing repositories and sharing the schema.
 
 If `workspace-dir` is omitted, the current working directory is used.
 

@@ -147,8 +147,9 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "  jig <command> [args]")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Commands:")
-	fmt.Fprintln(out, "  init <git-url-or-file> [workspace-dir] [--path <path>] [--clone [path]] [--with-optional-deps] [--archived]")
+	fmt.Fprintln(out, "  init [git-url-or-file [workspace-dir]] [--path <path>] [--clone [path]] [--with-optional-deps] [--archived]")
 	fmt.Fprintln(out, "      Initialize a workspace: clone the schema repository into .jig/source, optionally cloning a path.")
+	fmt.Fprintln(out, "      With no arguments, start a fresh workspace here with a starter schema in .jig/source.")
 	fmt.Fprintln(out, "  validate [schema-file]")
 	fmt.Fprintln(out, "      Validate the current workspace schema, or a schema file given by path.")
 	fmt.Fprintln(out, "  list [path] [--archived] [--tags a,b]")
@@ -189,21 +190,26 @@ func cmdInit(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if len(parsed.Positionals) == 0 || len(parsed.Positionals) > 2 {
-		return errors.New("usage: jig init <git-url-or-file> [workspace-dir] [--path <path>] [--clone [path]] [--with-optional-deps] [--archived]")
+	if len(parsed.Positionals) > 2 {
+		return errors.New("usage: jig init [git-url-or-file [workspace-dir]] [--path <path>] [--clone [path]] [--with-optional-deps] [--archived]")
 	}
-	if !parsed.Flags["--clone"] && (parsed.Flags["--with-optional-deps"] || parsed.Flags["--archived"]) {
+	// A bare init starts a fresh workspace in the current directory and
+	// clones immediately, so the starter schema materializes right away.
+	bare := len(parsed.Positionals) == 0
+	if !bare && !parsed.Flags["--clone"] && (parsed.Flags["--with-optional-deps"] || parsed.Flags["--archived"]) {
 		return errors.New("--with-optional-deps and --archived require --clone")
 	}
 
 	options := jig.InitOptions{
-		SourceArg:       parsed.Positionals[0],
 		WorkspaceDir:    ".",
 		SchemaPath:      parsed.Values["--path"],
-		Clone:           parsed.Flags["--clone"],
+		Clone:           parsed.Flags["--clone"] || bare,
 		ClonePath:       parsed.Values["--clone"],
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
+	}
+	if !bare {
+		options.SourceArg = parsed.Positionals[0]
 	}
 	if len(parsed.Positionals) == 2 {
 		options.WorkspaceDir = parsed.Positionals[1]

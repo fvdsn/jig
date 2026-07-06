@@ -9,7 +9,7 @@ import (
 )
 
 type InitOptions struct {
-	SourceArg       string
+	SourceArg       string // git URL or local schema file; empty starts a fresh workspace
 	WorkspaceDir    string
 	SchemaPath      string // schema path inside the source repo; probed when empty
 	Clone           bool
@@ -17,6 +17,23 @@ type InitOptions struct {
 	IncludeOptional bool
 	IncludeArchived bool
 }
+
+// sampleSchema seeds a bare "jig init": a starter schema whose only entry
+// pulls the official jig skill, so coding agents in the fresh workspace
+// already know how to drive and evolve it.
+const sampleSchema = `{
+  "version": 1,
+  "tree": {
+    ".agents/skills": {
+      "$dir": {
+        "id": "agent-skills",
+        "description": "Skills for AI agents working in this workspace",
+        "src": ["https://github.com/fvdsn/jig/tree/master/.agents/skills"]
+      }
+    }
+  }
+}
+`
 
 func Init(options InitOptions, out io.Writer) error {
 	workspaceDir, err := filepath.Abs(options.WorkspaceDir)
@@ -72,20 +89,42 @@ func Init(options InitOptions, out io.Writer) error {
 			IncludeOptional: options.IncludeOptional,
 			IncludeArchived: options.IncludeArchived,
 		}
-		if err := clonePathIntoWorkspace(out, &ws, cloneOptions); err != nil {
-			return err
-		}
+		cloneErr := clonePathIntoWorkspace(out, &ws, cloneOptions)
+		// State accumulated before a clone error is valid and must be kept.
 		if err := saveState(workspaceDir, ws.State); err != nil {
 			return err
 		}
+		if cloneErr != nil {
+			// A fresh workspace is usable even when fetching the starter
+			// skill fails (offline); jig sync retries later.
+			if options.SourceArg != "" {
+				return cloneErr
+			}
+			fmt.Fprintf(out, "could not fetch everything (%s); run jig sync to retry\n", shortError(cloneErr))
+		}
+	}
+	if options.SourceArg == "" {
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, "next steps:")
+		fmt.Fprintln(out, "  $EDITOR .jig/source/jig.json   describe your repositories")
+		fmt.Fprintln(out, "  jig validate                   check the schema")
+		fmt.Fprintln(out, "  jig sync                       apply it to the workspace")
+		fmt.Fprintln(out, "to share the workspace, push .jig/source to a Git remote; teammates run: jig init <url>")
 	}
 	return nil
 }
 
 // setUpSource creates the schema source checkout: a git clone when sourceArg
-// is a repository, or a fresh git-initialized directory seeded with the given
-// local schema file. It returns the schema path inside the checkout.
+// is a repository, or a fresh git-initialized directory seeded with a local
+// schema file (the starter schema when sourceArg is empty). It returns the
+// schema path inside the checkout.
 func setUpSource(sourceArg string, schemaPath string, sourceAbs string) (string, error) {
+	if sourceArg == "" {
+		if schemaPath != "" {
+			return "", errors.New("--path can only be used with Git sources")
+		}
+		return seedSource(sourceAbs, []byte(sampleSchema))
+	}
 	info, err := os.Stat(sourceArg)
 	if err == nil && !info.IsDir() {
 		if schemaPath != "" {
@@ -95,14 +134,7 @@ func setUpSource(sourceArg string, schemaPath string, sourceAbs string) (string,
 		if err != nil {
 			return "", err
 		}
-		if _, err := git("", "init", "--quiet", sourceAbs); err != nil {
-			return "", err
-		}
-		schemaPath = "jig.json"
-		if err := os.WriteFile(filepath.Join(sourceAbs, schemaPath), data, 0o644); err != nil {
-			return "", err
-		}
-		return schemaPath, nil
+		return seedSource(sourceAbs, data)
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", err
@@ -123,6 +155,18 @@ func setUpSource(sourceArg string, schemaPath string, sourceAbs string) (string,
 		}
 	}
 	return "", fmt.Errorf("no schema file (%s) found at the root of the source repository; use --path", schemaCandidateList())
+}
+
+// seedSource creates the source checkout as a fresh git repository seeded
+// with the given schema content as jig.json.
+func seedSource(sourceAbs string, schema []byte) (string, error) {
+	if _, err := git("", "init", "--quiet", sourceAbs); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(sourceAbs, "jig.json"), schema, 0o644); err != nil {
+		return "", err
+	}
+	return "jig.json", nil
 }
 
 func schemaCandidateList() string {

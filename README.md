@@ -24,8 +24,8 @@ go install github.com/fvdsn/jig@latest
 ## Quick start
 
 ```sh
-jig init git@github.com:acme/jig-schema.git ~/Code/acme   # create a workspace
-cd ~/Code/acme
+jig init git@github.com:acme/jig-schema.git ~/Code/acme   # create a workspace from a shared schema
+cd ~/Code/acme                  # (or start from scratch in an empty directory: jig init)
 jig list                        # browse the catalog
 jig clone services/checkout     # install a service + its dependencies
 jig status                      # branches, dirty state, ahead/behind
@@ -38,7 +38,7 @@ jig rm services/checkout        # uninstall
 
 | Command | Description |
 | --- | --- |
-| `init <git-url\|file> [dir]` | Create a workspace from a schema repository (or a local draft file) |
+| `init [<git-url\|file> [dir]]` | Create a workspace from a schema repository or a local draft file; no args starts a fresh starter schema |
 | `list [path]` | List the catalog: groups, repos, files, dirs |
 | `info <path>` | Show one entry's metadata |
 | `deps <path>` | Show a repo's recursive dependencies |

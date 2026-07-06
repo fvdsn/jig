@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -53,6 +54,52 @@ func TestInitFromLocalFileCreatesSourceCheckout(t *testing.T) {
 	}
 	if len(state.Repos) != 0 || len(state.Files) != 0 {
 		t.Fatalf("expected empty state, got %#v", state)
+	}
+}
+
+func TestInitBareCreatesStarterWorkspace(t *testing.T) {
+	workspacePath := filepath.Join(t.TempDir(), "workspace")
+
+	// Clone is off so the test does not fetch the starter skill over the
+	// network; the CLI turns it on for a bare init.
+	var out bytes.Buffer
+	if err := Init(InitOptions{WorkspaceDir: workspacePath}, &out); err != nil {
+		t.Fatal(err)
+	}
+
+	config, err := loadConfig(workspacePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Schema != "jig.json" {
+		t.Fatalf("expected schema jig.json, got %q", config.Schema)
+	}
+	if !isGitRepo(filepath.Join(workspacePath, sourceDir)) {
+		t.Fatal("expected source checkout to be a git repository")
+	}
+	def, err := loadDefinition(filepath.Join(workspacePath, sourceDir, "jig.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	model, err := flattenDefinition(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := model.entry(".agents/skills", EntryDir); !ok {
+		t.Fatal("expected the starter schema to define .agents/skills")
+	}
+	if !strings.Contains(out.String(), "next steps:") {
+		t.Fatalf("expected next-steps guidance, got:\n%s", out.String())
+	}
+}
+
+func TestInitBareRejectsPathFlag(t *testing.T) {
+	err := Init(InitOptions{
+		WorkspaceDir: filepath.Join(t.TempDir(), "workspace"),
+		SchemaPath:   "nested/jig.json",
+	}, ioDiscard{})
+	if err == nil || err.Error() != "--path can only be used with Git sources" {
+		t.Fatalf("expected --path error, got %v", err)
 	}
 }
 

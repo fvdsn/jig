@@ -35,6 +35,14 @@ Make sure `$(go env GOPATH)/bin` is in `PATH`.
 
 ## Initialize A Workspace
 
+Start a brand-new workspace from scratch (no schema yet):
+
+```sh
+jig init
+```
+
+This creates `.jig/source/` as a fresh local Git repository containing a starter `jig.json` and materializes it immediately. The starter schema pulls the official jig skill into `.agents/skills`, so coding agents in the workspace know how to use jig. Edit `.jig/source/jig.json` to describe your repositories, then push `.jig/source` to a shared remote so teammates can `jig init <url>`.
+
 From a remote Git-hosted Jig definition:
 
 ```sh

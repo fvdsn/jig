@@ -86,7 +86,7 @@ func findWorkspace(start string) (string, error) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", errors.New("could not find a .jig workspace in current directory or parents")
+			return "", errors.New("could not find a .jig workspace in current directory or parents; run jig init to create one")
 		}
 		dir = parent
 	}
