@@ -90,15 +90,9 @@ func touchLastUsed(dir string) {
 	}
 }
 
-// mirrorLastUsed reports when the mirror was last used, falling back to
-// fetch and directory timestamps for mirrors predating the marker.
+// mirrorLastUsed reports when the mirror was last used; zero when unknown.
 func mirrorLastUsed(dir string) time.Time {
-	for _, name := range []string{lastUsedMarker, "FETCH_HEAD"} {
-		if info, err := os.Stat(filepath.Join(dir, name)); err == nil {
-			return info.ModTime()
-		}
-	}
-	if info, err := os.Stat(dir); err == nil {
+	if info, err := os.Stat(filepath.Join(dir, lastUsedMarker)); err == nil {
 		return info.ModTime()
 	}
 	return time.Time{}
