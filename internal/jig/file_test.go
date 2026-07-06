@@ -1,9 +1,12 @@
 package jig
 
 import (
+	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -61,7 +64,7 @@ func TestEnsureLinkFileCreatesRelativeSymlink(t *testing.T) {
 		"bin/dev":        testFileEntry("bin/dev", "dev-command", File{Link: "scripts/dev.sh"}),
 	}}
 
-	if err := ensureFile(ioDiscard{}, root, &model, &state, "bin/dev", true, false); err != nil {
+	if err := ensureFile(ioDiscard{}, root, &model, &state, "bin/dev", true, false, newFileFetcher()); err != nil {
 		t.Fatal(err)
 	}
 	target, err := os.Readlink(filepath.Join(root, "bin", "dev"))
@@ -92,7 +95,63 @@ func TestEnsureFilePreservesLocalModification(t *testing.T) {
 		"scripts/dev.sh": testFileEntry("scripts/dev.sh", "dev-script", File{Src: "git:git@example.com:config.git#scripts/dev.sh"}),
 	}}
 
-	err := ensureFile(ioDiscard{}, root, &model, &state, "scripts/dev.sh", true, false)
+	err := ensureFile(ioDiscard{}, root, &model, &state, "scripts/dev.sh", true, false, newFileFetcher())
+	if err == nil || err.Error() != "locally modified" {
+		t.Fatalf("expected locally modified error, got %v", err)
+	}
+}
+
+func TestEnsureFilePicksUpSourceChanges(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	remote := filepath.Join(root, "remote")
+	testRemoteRepo(t, remote)
+	src := "git:" + remote + "#README.md"
+
+	state := emptyState()
+	model := Model{Entries: map[string]Entry{
+		"docs/readme.md": testFileEntry("docs/readme.md", "readme", File{Src: src}),
+	}}
+	ensure := func() string {
+		var out bytes.Buffer
+		if err := ensureFile(&out, root, &model, &state, "docs/readme.md", true, false, newFileFetcher()); err != nil {
+			t.Fatalf("ensureFile: %v", err)
+		}
+		return out.String()
+	}
+
+	if got := ensure(); !strings.Contains(got, "wrote-file:") {
+		t.Fatalf("first run = %q, want wrote-file", got)
+	}
+	if state.Files["readme"].SrcBlob == "" {
+		t.Fatal("expected srcBlob recorded")
+	}
+	if got := ensure(); !strings.Contains(got, "present-file:") {
+		t.Fatalf("second run = %q, want present-file", got)
+	}
+
+	// Change the file upstream: sync must pick it up.
+	if err := os.WriteFile(filepath.Join(remote, "README.md"), []byte("v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	commit := exec.Command("git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qam", "v2")
+	commit.Dir = remote
+	if out, err := commit.CombinedOutput(); err != nil {
+		t.Fatalf("commit: %v\n%s", err, out)
+	}
+	if got := ensure(); !strings.Contains(got, "updated-file:") {
+		t.Fatalf("after upstream change = %q, want updated-file", got)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "docs", "readme.md"))
+	if err != nil || string(data) != "v2\n" {
+		t.Fatalf("content = %q, %v; want v2", data, err)
+	}
+
+	// A locally modified file is never overwritten, even when upstream moved.
+	if err := os.WriteFile(filepath.Join(root, "docs", "readme.md"), []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = ensureFile(ioDiscard{}, root, &model, &state, "docs/readme.md", true, false, newFileFetcher())
 	if err == nil || err.Error() != "locally modified" {
 		t.Fatalf("expected locally modified error, got %v", err)
 	}

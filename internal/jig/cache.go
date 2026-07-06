@@ -145,16 +145,7 @@ func cloneRepo(gitURL string, targetAbs string) error {
 }
 
 func cloneViaCache(gitURL string, targetAbs string) error {
-	root, enabled := cacheRoot()
-	if !enabled {
-		return errors.New("cache disabled")
-	}
-	unlock, err := lockMirror(mirrorDir(root, gitURL))
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	dir, err := ensureMirror(root, gitURL)
+	dir, err := freshMirror(gitURL)
 	if err != nil {
 		return err
 	}
@@ -169,28 +160,17 @@ func cloneViaCache(gitURL string, targetAbs string) error {
 	return nil
 }
 
-// cacheShowFile reads ref:path from the freshened mirror of gitURL without
-// materializing a checkout. ref defaults to the mirror's HEAD.
-func cacheShowFile(gitURL string, ref string, sourcePath string) ([]byte, error) {
+// freshMirror ensures the mirror for gitURL exists and is freshened, and
+// returns its directory.
+func freshMirror(gitURL string) (string, error) {
 	root, enabled := cacheRoot()
 	if !enabled {
-		return nil, errors.New("cache disabled")
+		return "", errors.New("cache disabled")
 	}
 	unlock, err := lockMirror(mirrorDir(root, gitURL))
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	defer unlock()
-	dir, err := ensureMirror(root, gitURL)
-	if err != nil {
-		return nil, err
-	}
-	if ref == "" {
-		ref = "HEAD"
-	}
-	out, err := git(dir, "show", ref+":"+sourcePath)
-	if err != nil {
-		return nil, err
-	}
-	return []byte(out), nil
+	return ensureMirror(root, gitURL)
 }

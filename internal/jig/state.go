@@ -21,10 +21,11 @@ type StateRepo struct {
 }
 
 type StateFile struct {
-	Path   string `json:"path"`
-	Src    string `json:"src,omitempty"`
-	Link   string `json:"link,omitempty"`
-	SHA256 string `json:"sha256,omitempty"`
+	Path    string `json:"path"`
+	Src     string `json:"src,omitempty"`
+	Link    string `json:"link,omitempty"`
+	SHA256  string `json:"sha256,omitempty"`
+	SrcBlob string `json:"srcBlob,omitempty"` // git blob id of the source file when written
 }
 
 func emptyState() State {

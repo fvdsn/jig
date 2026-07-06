@@ -139,17 +139,25 @@ func TestCacheCleanRespectsLastUsed(t *testing.T) {
 	}
 }
 
-func TestCacheShowFile(t *testing.T) {
+func TestFetcherReadsContentAndBlobViaCache(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
 	remote := filepath.Join(root, "remote")
 	testRemoteRepo(t, remote)
 
-	data, err := cacheShowFile(remote, "", "README.md")
+	fetcher := newFileFetcher()
+	data, blob, err := fetcher.content("git:" + remote + "#README.md")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(data) != "hello\n" {
 		t.Fatalf("content = %q", data)
+	}
+	if blob == "" {
+		t.Fatal("expected a blob id via the cache")
+	}
+	again, err := fetcher.srcBlob("git:" + remote + "#README.md")
+	if err != nil || again != blob {
+		t.Fatalf("srcBlob = %q, %v; want %q", again, err, blob)
 	}
 }

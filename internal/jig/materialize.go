@@ -110,8 +110,9 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions) {
 			fmt.Fprintf(out, "skipped:\n  %s: %s\n", plan.Repos[i], result.Err)
 		}
 	})
+	fetcher := newFileFetcher()
 	for _, filePath := range plan.Files {
-		if err := ensureFile(out, ws.Root, &ws.Model, &ws.State, filePath, opts.Sync, opts.RefreshFiles); err != nil {
+		if err := ensureFile(out, ws.Root, &ws.Model, &ws.State, filePath, opts.Sync, opts.RefreshFiles, fetcher); err != nil {
 			fmt.Fprintf(out, "skipped:\n  %s: %s\n", filePath, err)
 		}
 	}

@@ -1001,7 +1001,7 @@ Sync may perform these actions:
 - Move a local repository when `.jig/state.json` records a path different from the current expected path.
 - Update a repository's `origin` remote URL when the current definition Git URL differs from the local repository's `origin` remote URL.
 - Write missing active files.
-- Update active files that Jig previously wrote and that have not been locally modified.
+- Update active files that Jig previously wrote and that have not been locally modified. State records the source blob id of each written file; sync freshens each source repository's cache mirror once per run, compares blob ids, and rewrites only files whose source changed. When the source cannot be reached the file is reported as present but unchecked.
 - Move tracked files when the same file identity has a new path and the file has not been locally modified.
 - Update `.jig/state.json` after successful clone, move, origin update, or file write operations.
 - Report repositories and files that exist locally but are no longer defined.

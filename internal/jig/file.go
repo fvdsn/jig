@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 )
 
-func ensureFile(out io.Writer, root string, model *Model, state *State, filePath string, allowMove bool, refresh bool) error {
+func ensureFile(out io.Writer, root string, model *Model, state *State, filePath string, allowMove bool, refresh bool, fetcher *fileFetcher) error {
 	entry, _ := model.entry(filePath, EntryFile)
 	file := entry.File
 	if file.Link != "" {
@@ -46,7 +46,9 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 		}
 	}
 
-	if pathExists(expectedAbs) {
+	exists := pathExists(expectedAbs)
+	currentHash := ""
+	if exists {
 		info, err := os.Stat(expectedAbs)
 		if err != nil {
 			return err
@@ -57,34 +59,52 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 		if !hasState {
 			return fmt.Errorf("existing file is not tracked")
 		}
-		currentHash, err := fileSHA256(expectedAbs)
+		currentHash, err = fileSHA256(expectedAbs)
 		if err != nil {
 			return err
 		}
 		if currentHash != stateFile.SHA256 {
 			return fmt.Errorf("locally modified")
 		}
-		// The tracked content is unmodified and comes from the same source;
-		// skip the network fetch unless a refresh was requested.
-		if !refresh && stateFile.Src == file.Src {
-			if file.Executable && info.Mode().Perm() != 0o755 {
-				if err := os.Chmod(expectedAbs, 0o755); err != nil {
+		// The tracked content is unmodified; when the source blob has not
+		// moved either, there is nothing to transfer.
+		if !refresh && stateFile.Src == file.Src && stateFile.SrcBlob != "" {
+			blob, err := fetcher.srcBlob(file.Src)
+			if err != nil {
+				fmt.Fprintf(out, "present-file: %s (source not checked: %s)\n", filePath, shortError(err))
+				return nil
+			}
+			if blob == stateFile.SrcBlob {
+				if err := ensureFileMode(expectedAbs, info, file.Executable); err != nil {
 					return err
 				}
+				fmt.Fprintf(out, "present-file: %s\n", filePath)
+				return nil
 			}
-			fmt.Fprintf(out, "present-file: %s\n", filePath)
-			return nil
 		}
 	} else if hasState {
 		delete(state.Files, entry.Identity)
 	}
 
-	content, err := fetchFileContent(file.Src)
+	content, blob, err := fetcher.content(file.Src)
 	if err != nil {
 		return err
 	}
 	newHash := sha256Hex(content)
+	state.Files[entry.Identity] = StateFile{Path: expectedRel, Src: file.Src, SHA256: newHash, SrcBlob: blob}
 
+	if exists && newHash == currentHash {
+		// The content is already current; only the recorded blob moved.
+		info, err := os.Stat(expectedAbs)
+		if err != nil {
+			return err
+		}
+		if err := ensureFileMode(expectedAbs, info, file.Executable); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "present-file: %s\n", filePath)
+		return nil
+	}
 	if err := os.MkdirAll(filepath.Dir(expectedAbs), 0o755); err != nil {
 		return err
 	}
@@ -98,8 +118,19 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 	if file.Executable {
 		_ = os.Chmod(expectedAbs, 0o755)
 	}
-	state.Files[entry.Identity] = StateFile{Path: expectedRel, Src: file.Src, SHA256: newHash}
-	fmt.Fprintf(out, "wrote-file: %s\n", filePath)
+	if exists {
+		fmt.Fprintf(out, "updated-file: %s\n", filePath)
+	} else {
+		fmt.Fprintf(out, "wrote-file: %s\n", filePath)
+	}
+	return nil
+}
+
+// ensureFileMode fixes the executable bit on an otherwise up-to-date file.
+func ensureFileMode(path string, info os.FileInfo, executable bool) error {
+	if executable && info.Mode().Perm() != 0o755 {
+		return os.Chmod(path, 0o755)
+	}
 	return nil
 }
 
@@ -174,14 +205,6 @@ func ensureLinkFile(out io.Writer, root string, model *Model, state *State, file
 	state.Files[entry.Identity] = StateFile{Path: expectedRel, Link: file.Link}
 	fmt.Fprintf(out, "linked-file: %s\n", filePath)
 	return nil
-}
-
-func fetchFileContent(src string) ([]byte, error) {
-	parsed, err := parseFileSrc(src)
-	if err != nil {
-		return nil, err
-	}
-	return fetchGitFile(parsed.GitURL, "", parsed.Path)
 }
 
 func installedFileIdentitySet(root string, model *Model, state *State) map[string]bool {
