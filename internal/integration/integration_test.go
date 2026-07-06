@@ -273,3 +273,158 @@ func TestTagsSelectAndGateSources(t *testing.T) {
 	w.assertContains(w.mustJig(ws, "list", "--tags", "backend"), "services/api")
 	w.assertNotContains(w.mustJig(ws, "list", "--tags", "backend"), "services/web")
 }
+
+// TestSafetyRefusals covers the "never lose work" promises end to end: rm
+// refuses dirty and unpushed checkouts unless forced, sync refuses to move a
+// dirty checkout, update refuses diverged schema history, and an invalid
+// upstream schema is rejected before touching the checkout.
+func TestSafetyRefusals(t *testing.T) {
+	w := newWorld(t)
+	app := w.newRemote("app", map[string]string{"README.md": "app\n"})
+	schemaV1 := fmt.Sprintf(`{
+  "version": 1,
+  "tree": { "svc/app": { "$repo": { "id": "app", "git": "%s" } } }
+}`, app)
+	schemaRemote := w.newRemote("schema", map[string]string{"jig.json": schemaV1})
+	w.mustJig(w.root, "init", schemaRemote, "ws", "--clone")
+	ws := w.path("ws")
+	appDir := w.path("ws", "svc", "app")
+
+	// rm refuses a dirty checkout.
+	w.writeFiles(appDir, map[string]string{"WIP.txt": "wip\n"})
+	out, err := w.jig(ws, "rm", "svc/app")
+	if err == nil {
+		t.Fatalf("expected rm to refuse a dirty checkout:\n%s", out)
+	}
+	w.assertContains(out, "uncommitted changes")
+
+	// rm refuses unpushed commits once the tree is clean but ahead.
+	w.git(appDir, "add", "-A")
+	w.git(appDir, "commit", "-qm", "wip")
+	out, err = w.jig(ws, "rm", "svc/app")
+	if err == nil {
+		t.Fatalf("expected rm to refuse unpushed commits:\n%s", out)
+	}
+	w.assertContains(out, "unpushed")
+
+	// sync refuses to move a checkout with uncommitted changes.
+	w.writeFiles(appDir, map[string]string{"WIP2.txt": "wip\n"})
+	schemaMoved := fmt.Sprintf(`{
+  "version": 1,
+  "tree": { "svc/renamed": { "$repo": { "id": "app", "git": "%s" } } }
+}`, app)
+	w.commitRemote(schemaRemote, map[string]string{"jig.json": schemaMoved}, "rename")
+	out = w.mustJig(ws, "update", "--sync")
+	w.assertContains(out, "uncommitted changes")
+	if !w.exists("ws", "svc", "app", "WIP2.txt") || w.exists("ws", "svc", "renamed") {
+		t.Fatal("expected dirty checkout left in place")
+	}
+	// Once clean, the same sync performs the move.
+	w.git(appDir, "add", "-A")
+	w.git(appDir, "commit", "-qm", "wip2")
+	w.assertContains(w.mustJig(ws, "sync"), "moved: svc/renamed")
+	if !w.exists("ws", "svc", "renamed", "WIP2.txt") {
+		t.Fatal("expected checkout moved with local commits intact")
+	}
+
+	// An invalid upstream schema is rejected before touching the checkout.
+	w.commitRemote(schemaRemote, map[string]string{"jig.json": `{"version": 1}`}, "broken")
+	out, err = w.jig(ws, "update")
+	if err == nil {
+		t.Fatalf("expected update to reject an invalid upstream schema:\n%s", out)
+	}
+	// The live schema is untouched: the workspace still resolves.
+	w.assertContains(w.mustJig(ws, "status"), "svc/renamed")
+
+	// Diverged schema history is refused with a pointer to git.
+	w.commitRemote(schemaRemote, map[string]string{"jig.json": schemaMoved}, "fixed")
+	w.writeFiles(w.path("ws", ".jig", "source"), map[string]string{"local.txt": "local\n"})
+	w.git(w.path("ws", ".jig", "source"), "add", "-A")
+	w.git(w.path("ws", ".jig", "source"), "commit", "-qm", "local schema commit")
+	out, err = w.jig(ws, "update")
+	if err == nil {
+		t.Fatalf("expected update to refuse diverged schema history:\n%s", out)
+	}
+	w.assertContains(out+err.Error(), "diverged")
+
+	// --force overrides the rm safety checks.
+	w.mustJig(ws, "rm", "-f", "svc/renamed")
+	if w.exists("ws", "svc") {
+		t.Fatal("expected forced rm to remove the checkout")
+	}
+}
+
+// TestConditionsScopeAndArchived covers the planning solver's activation
+// rules through the CLI: entry-level onlyWhen pulling repos and files in and
+// out, scope-based file activation, updated-origin, and the archived
+// lifecycle.
+func TestConditionsScopeAndArchived(t *testing.T) {
+	w := newWorld(t)
+	api := w.newRemote("api", map[string]string{"README.md": "api\n"})
+	debug := w.newRemote("debug", map[string]string{"README.md": "debug\n"})
+	old := w.newRemote("old", map[string]string{"README.md": "old\n"})
+	config := w.newRemote("config", map[string]string{"api.md": "api-notes\n"})
+	schema := func(apiURL string) string {
+		return fmt.Sprintf(`{
+  "version": 1,
+  "tree": {
+    "services/api": { "$repo": { "id": "api", "git": "%s" } },
+    "tools/debug": {
+      "$repo": { "id": "debug", "git": "%s",
+        "onlyWhen": { "path": "services" } }
+    },
+    "services/NOTES.md": { "$file": { "id": "notes", "src": "%s#api.md" } },
+    "legacy/old": { "$repo": { "id": "old", "git": "%s", "archived": true } }
+  }
+}`, apiURL, debug, config, old)
+	}
+	schemaRemote := w.newRemote("schema", map[string]string{"jig.json": schema(api)})
+
+	// Cloning the conditional repo alone is inert: its condition does not
+	// hold, and neither scope files nor archived entries materialize.
+	w.mustJig(w.root, "init", schemaRemote, "ws")
+	ws := w.path("ws")
+	w.mustJig(ws, "clone", "tools/debug", "--no-deps")
+	if w.exists("ws", "services") || w.exists("ws", "legacy") {
+		t.Fatal("expected nothing outside the selection")
+	}
+
+	// Installing services/api activates the conditional repo and the
+	// scope-local file on the next sync.
+	// Cloning services/api activates the conditional repo and the
+	// scope-local file as part of the same plan.
+	w.mustJig(ws, "clone", "services/api")
+	w.mustJig(ws, "sync")
+	if w.read("ws", "services", "NOTES.md") != "api-notes\n" {
+		t.Fatal("expected scope-local file materialized")
+	}
+	if !w.exists("ws", "tools", "debug", ".git") {
+		t.Fatal("expected conditional repo activated by installed services")
+	}
+	if w.exists("ws", "legacy") {
+		t.Fatal("archived entry must stay uninstalled by default")
+	}
+
+	// Archived entries install only with --archived, then show the note and
+	// keep syncing.
+	w.assertContains(w.mustJig(ws, "clone", "legacy/old", "--archived"), "cloned: legacy/old")
+	w.assertContains(w.mustJig(ws, "status"), "archived")
+	w.assertContains(w.mustJig(ws, "sync"), "present: legacy/old")
+
+	// A changed git URL in the schema updates origin on sync.
+	apiMoved := w.newRemote("api-moved", map[string]string{"README.md": "api\n"})
+	w.commitRemote(schemaRemote, map[string]string{"jig.json": schema(apiMoved)}, "move api hosting")
+	w.assertContains(w.mustJig(ws, "update", "--sync"), "updated-origin: services/api")
+	origin := strings.TrimSpace(w.git(w.path("ws", "services", "api"), "remote", "get-url", "origin"))
+	if origin != apiMoved {
+		t.Fatalf("origin = %q, want %q", origin, apiMoved)
+	}
+
+	// Removing the activating repo deactivates the conditional repo for
+	// future plans (it stays installed but is no longer restored).
+	w.mustJig(ws, "rm", "services/api", "tools/debug")
+	w.assertNotContains(w.mustJig(ws, "sync"), "restored: tools/debug")
+	if w.exists("ws", "tools") {
+		t.Fatal("expected conditional repo to stay uninstalled")
+	}
+}
