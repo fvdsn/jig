@@ -487,6 +487,12 @@ Clone with optional dependencies:
 jig clone services/checkout --with-optional-deps
 ```
 
+Clone without any dependencies (just the selected repos):
+
+```sh
+jig clone services/checkout --no-deps
+```
+
 Clone uninstalled archived repositories and files too:
 
 ```sh
@@ -503,6 +509,12 @@ Sync a specific path:
 
 ```sh
 jig sync platform
+```
+
+Sync without pulling in dependencies (`--no-deps` also works on `clone`, `init --clone`, and `update --sync`):
+
+```sh
+jig sync platform --no-deps
 ```
 
 Sync uninstalled archived repositories and files too:

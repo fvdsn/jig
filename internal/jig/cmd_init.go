@@ -16,6 +16,7 @@ type InitOptions struct {
 	ClonePath       string
 	IncludeOptional bool
 	IncludeArchived bool
+	SkipDeps        bool // clone only the selected repos, without their dependencies
 }
 
 // sampleSchema seeds a bare "jig init": a starter schema whose only entry
@@ -88,6 +89,7 @@ func Init(options InitOptions, out io.Writer) error {
 			Path:            options.ClonePath,
 			IncludeOptional: options.IncludeOptional,
 			IncludeArchived: options.IncludeArchived,
+			SkipDeps:        options.SkipDeps,
 		}
 		cloneErr := clonePathIntoWorkspace(out, &ws, cloneOptions)
 		// State accumulated before a clone error is valid and must be kept.

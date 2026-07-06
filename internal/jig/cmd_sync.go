@@ -9,6 +9,7 @@ type SyncOptions struct {
 	Path            string
 	IncludeOptional bool
 	IncludeArchived bool
+	SkipDeps        bool // sync only the selected repos, without their dependencies
 	Refresh         bool
 	Tags            []string
 }
@@ -52,6 +53,7 @@ func syncWorkspace(out io.Writer, ws *Workspace, options SyncOptions) error {
 	if err := resolveAndApplyPlan(out, ws, roots, explicitFiles, explicitDirs, applyOptions{
 		IncludeOptional: options.IncludeOptional,
 		IncludeArchived: options.IncludeArchived,
+		SkipDeps:        options.SkipDeps,
 		Sync:            true,
 		RefreshFiles:    options.Refresh,
 	}); err != nil {

@@ -13,6 +13,7 @@ type UpdateOptions struct {
 	Path            string
 	IncludeOptional bool
 	IncludeArchived bool
+	SkipDeps        bool // sync only the selected repos, without their dependencies
 	Refresh         bool
 	Tags            []string
 }
@@ -72,6 +73,7 @@ func Update(options UpdateOptions, out io.Writer) error {
 			Path:            options.Path,
 			IncludeOptional: options.IncludeOptional,
 			IncludeArchived: options.IncludeArchived,
+			SkipDeps:        options.SkipDeps,
 			Refresh:         options.Refresh,
 			Tags:            options.Tags,
 		})

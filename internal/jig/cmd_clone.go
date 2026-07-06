@@ -10,6 +10,7 @@ type CloneOptions struct {
 	Path            string
 	IncludeOptional bool
 	IncludeArchived bool
+	SkipDeps        bool // clone only the selected repos, without their dependencies
 	Refresh         bool
 	Tags            []string
 }
@@ -42,6 +43,7 @@ func clonePathIntoWorkspace(out io.Writer, ws *Workspace, options CloneOptions) 
 	return resolveAndApplyPlan(out, ws, roots, explicitFiles, explicitDirs, applyOptions{
 		IncludeOptional: options.IncludeOptional,
 		IncludeArchived: options.IncludeArchived,
+		SkipDeps:        options.SkipDeps,
 		RefreshFiles:    options.Refresh,
 	})
 }

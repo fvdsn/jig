@@ -10,6 +10,7 @@ type planOptions struct {
 	IncludeInstalledOptional bool
 	IncludeArchived          bool
 	IncludeRoots             bool
+	SkipDeps                 bool // keep the plan to the roots: no dependency or condition expansion
 	Installed                map[string]bool
 	InstalledFiles           map[string]bool
 	InstalledDirs            map[string]bool
@@ -41,7 +42,7 @@ func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
 		}
 	}
 
-	changed := true
+	changed := !opts.SkipDeps
 	for changed {
 		changed = false
 		for _, root := range roots {

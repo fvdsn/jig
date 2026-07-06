@@ -59,6 +59,51 @@ func TestResolveDependenciesRecursiveAndOptional(t *testing.T) {
 	}
 }
 
+func TestResolvePlanSkipDepsKeepsOnlyRoots(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 1,
+  "tree": {
+    "services/checkout": {
+      "$repo": {
+        "git": "git@example.com:checkout.git",
+        "dependsOn": [{ "path": "platform" }]
+      }
+    },
+    "platform/auth": {
+      "$repo": { "git": "git@example.com:auth.git" }
+    },
+    "tools/checkout-helper": {
+      "$repo": {
+        "git": "git@example.com:helper.git",
+        "onlyWhen": { "path": "services/checkout" }
+      }
+    }
+  }
+}`)
+	model, err := flattenDefinition(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plan, err := resolvePlan(&model, []string{"services/checkout"}, planOptions{IncludeRoots: true, SkipDeps: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"services/checkout"}; !reflect.DeepEqual(plan.Repos, want) {
+		t.Fatalf("skip-deps plan = %#v, want %#v", plan.Repos, want)
+	}
+
+	// Without SkipDeps the same root pulls in its dependencies and the
+	// conditional repos they activate.
+	plan, err = resolvePlan(&model, []string{"services/checkout"}, planOptions{IncludeRoots: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"platform/auth", "services/checkout", "tools/checkout-helper"}; !reflect.DeepEqual(plan.Repos, want) {
+		t.Fatalf("full plan = %#v, want %#v", plan.Repos, want)
+	}
+}
+
 func TestResolveDependenciesDoesNotIncludeRootInCycle(t *testing.T) {
 	def := testDefinition(t, `{
   "version": 1,

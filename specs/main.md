@@ -863,7 +863,9 @@ jig update
 jig update --sync
 jig update --sync [path]
 jig sync [path]
+jig clone [path] --no-deps
 jig clone [path] --with-optional-deps
+jig sync [path] --no-deps
 jig sync [path] --with-optional-deps
 jig clone [path] --archived
 jig sync [path] --archived
@@ -1017,6 +1019,10 @@ Archived repositories and files are skipped unless they are already installed or
 
 After cloning each repository or writing each file, Jig should record it in `.jig/state.json` using its identity.
 
+### `jig clone [path] --no-deps`
+
+Clones only the repositories and files matching the selection, without expanding dependencies or activating conditional entries: the plan is exactly the selected roots. Files and dirs scoped to the selected repositories still materialize. `--no-deps` and `--with-optional-deps` are mutually exclusive.
+
 ### `jig clone [path] --with-optional-deps`
 
 Clones all repositories, or repositories matching a path, including non-optional dependencies and optional dependencies.
@@ -1040,6 +1046,8 @@ If `path` is omitted, Jig syncs the desired repositories: those installed locall
 State records intent: a tracked repository whose directory was deleted locally is restored by sync and reported as restored. `jig rm` is the way to uninstall.
 
 Archived repositories and files are skipped unless they are already installed or `--archived` is provided.
+
+`--no-deps` restricts the sync set to exactly the selected repositories and files, without dependency or condition expansion, as in `jig clone --no-deps`. It is mutually exclusive with `--with-optional-deps`.
 
 Sync may perform these actions:
 
@@ -1173,6 +1181,8 @@ If `path` is provided, only matching nodes are included in the sync step. The sc
 The sync step should run only after the schema has been fetched, validated, and fast-forwarded successfully.
 
 `jig update --sync --with-optional-deps` includes optional dependencies during the sync step.
+
+`jig update --sync --no-deps` restricts the sync step to the selected entries, as in `jig sync --no-deps`.
 
 `jig update --sync --archived` includes uninstalled archived repositories and files during the sync step.
 

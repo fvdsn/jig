@@ -9,6 +9,7 @@ import (
 type applyOptions struct {
 	IncludeOptional bool
 	IncludeArchived bool
+	SkipDeps        bool // materialize only the roots, without their dependencies
 	Sync            bool // keep installed optional deps and allow moving installed entries
 	RefreshFiles    bool // refetch file content even when the local copy is unmodified
 }
@@ -21,6 +22,7 @@ func resolveAndApplyPlan(out io.Writer, ws *Workspace, roots []string, explicitF
 		IncludeInstalledOptional: opts.Sync,
 		IncludeArchived:          opts.IncludeArchived,
 		IncludeRoots:             true,
+		SkipDeps:                 opts.SkipDeps,
 		Installed:                installed.Repos,
 		InstalledFiles:           installed.Files,
 		InstalledDirs:            installed.Dirs,
