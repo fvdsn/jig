@@ -21,9 +21,10 @@ type State struct {
 // updates and deletions safe.
 type StateDir struct {
 	Path  string            `json:"path"`
-	Src   string            `json:"src"`
+	Src   string            `json:"src,omitempty"`
+	Link  string            `json:"link,omitempty"`
 	Tree  string            `json:"tree,omitempty"`
-	Files map[string]string `json:"files"`
+	Files map[string]string `json:"files,omitempty"`
 }
 
 type StateRepo struct {

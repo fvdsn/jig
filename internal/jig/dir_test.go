@@ -254,3 +254,86 @@ func TestDirSourcesGatedByOnlyWhen(t *testing.T) {
 		t.Fatal("expected base.md untouched")
 	}
 }
+
+func TestDirLinksCreateSymlinksToTargetDir(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	remote := filepath.Join(root, "remote")
+	if err := os.MkdirAll(filepath.Join(remote, "skills", "A"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(remote, "skills", "A", "SKILL.md"), []byte("A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, remote, "init", "-q")
+	gitIn(t, remote, "add", ".")
+	gitIn(t, remote, "commit", "-qm", "init")
+
+	state := emptyState()
+	model := Model{Entries: map[string]Entry{
+		".agents/skills": {Path: ".agents/skills", Identity: "skills", Kind: EntryDir,
+			Dir: &Dir{Src: SrcList{{Src: remote + "#skills"}}}},
+		".opencode/skills": {Path: ".opencode/skills", Identity: "opencode-skills", Kind: EntryDir,
+			Dir: &Dir{Link: ".agents/skills"}},
+	}}
+	fetcher := newFileFetcher()
+	if err := ensureDir(ioDiscard{}, root, &model, &state, ".agents/skills", true, false, fetcher, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := ensureDir(&out, root, &model, &state, ".opencode/skills", true, false, fetcher, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "linked-dir: .opencode/skills") {
+		t.Fatalf("output = %q", out.String())
+	}
+	target, err := os.Readlink(filepath.Join(root, ".opencode", "skills"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != "../.agents/skills" {
+		t.Fatalf("symlink target = %q", target)
+	}
+	// The skill is reachable through the link.
+	if data, err := os.ReadFile(filepath.Join(root, ".opencode", "skills", "A", "SKILL.md")); err != nil || string(data) != "A\n" {
+		t.Fatalf("through link: %q, %v", data, err)
+	}
+	// Second run is a no-op.
+	out.Reset()
+	if err := ensureDir(&out, root, &model, &state, ".opencode/skills", true, false, fetcher, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "present-dir:") {
+		t.Fatalf("second run = %q", out.String())
+	}
+
+	// Link dirs are active only when their target is active.
+	active := activeDirsForRepoSet(&model, map[string]bool{"x": true}, nil, nil, false)
+	if !active[".opencode/skills"] || !active[".agents/skills"] {
+		t.Fatalf("active = %#v", active)
+	}
+	// Ordering puts the target before the link.
+	ordered := orderDirsForApply(&model, active)
+	if len(ordered) != 2 || ordered[0] != ".agents/skills" {
+		t.Fatalf("ordered = %#v", ordered)
+	}
+}
+
+func TestDirLinkValidation(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 1,
+  "tree": {
+    "a": { "$dir": { "id": "a", "link": "b" } },
+    "b": { "$dir": { "id": "b", "link": "a" } },
+    "c": { "$dir": { "id": "c", "src": "git@example.com:x.git#s", "link": "a" } },
+    "d": { "$dir": { "id": "d", "link": "missing" } }
+  }
+}`)
+	result := validateDefinition(def)
+	joined := strings.Join(result.Errors, "\n")
+	for _, want := range []string{"dir link cycle detected", "must define exactly one of src or link", "does not resolve to any dir"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("errors = %#v, missing %q", result.Errors, want)
+		}
+	}
+}

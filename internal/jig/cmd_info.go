@@ -79,7 +79,9 @@ func Info(options InfoOptions, out io.Writer) error {
 		fmt.Fprintf(out, "path: %s\n", path)
 		fmt.Fprintln(out, "type: dir")
 		fmt.Fprintf(out, "identity: %s\n", entry.Identity)
-		if len(dir.Src) == 1 && dir.Src[0].OnlyWhen == nil {
+		if dir.Link != "" {
+			fmt.Fprintf(out, "link: %s\n", dir.Link)
+		} else if len(dir.Src) == 1 && dir.Src[0].OnlyWhen == nil {
 			fmt.Fprintf(out, "src: %s\n", dir.Src[0].Src)
 		} else {
 			fmt.Fprintln(out, "src:")

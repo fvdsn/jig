@@ -167,6 +167,17 @@ func removeDir(out io.Writer, ws *Workspace, entry Entry, force bool) error {
 		rel = stateDir.Path
 	}
 	abs := filepath.Join(ws.Root, rel)
+	if tracked && stateDir.Link != "" {
+		if info, err := os.Lstat(abs); err == nil && info.Mode()&os.ModeSymlink != 0 {
+			if err := os.Remove(abs); err != nil {
+				return err
+			}
+			pruneEmptyParents(ws.Root, filepath.Dir(rel))
+		}
+		delete(ws.State.Dirs, entry.Identity)
+		fmt.Fprintf(out, "removed: %s\n", entry.Path)
+		return nil
+	}
 	if tracked && pathExists(abs) {
 		if !force {
 			modified := 0

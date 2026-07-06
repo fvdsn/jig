@@ -80,11 +80,12 @@ type File struct {
 }
 
 // Dir materializes a whole subtree of a source repository into the
-// workspace. Executable bits come from the git tree, so there is no
-// executable field, and dirs cannot be link targets.
+// workspace, or symlinks to another $dir entry. Executable bits come from
+// the git tree, so there is no executable field.
 type Dir struct {
 	ID          string     `json:"id,omitempty"`
-	Src         SrcList    `json:"src"` // one or more sources, merged in order; first wins on conflicts
+	Src         SrcList    `json:"src,omitempty"`  // one or more sources, merged in order; first wins on conflicts
+	Link        string     `json:"link,omitempty"` // symlink to another $dir entry instead of materializing
 	Description string     `json:"description,omitempty"`
 	Archived    bool       `json:"archived,omitempty"`
 	Tags        []string   `json:"tags,omitempty"`

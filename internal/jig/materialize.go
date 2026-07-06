@@ -29,7 +29,7 @@ func resolveAndApplyPlan(out io.Writer, ws *Workspace, roots []string, explicitF
 		return err
 	}
 	plan = includeExplicitFiles(&ws.Model, plan, explicitFiles)
-	plan = includeExplicitDirs(plan, explicitDirs)
+	plan = includeExplicitDirs(&ws.Model, plan, explicitDirs)
 	if !opts.IncludeArchived {
 		plan = excludeArchivedFiles(&ws.Model, plan, installed.Files)
 		plan = excludeArchivedDirs(&ws.Model, plan, installed.Dirs)
@@ -38,27 +38,50 @@ func resolveAndApplyPlan(out io.Writer, ws *Workspace, roots []string, explicitF
 	return nil
 }
 
-func includeExplicitDirs(base plan, dirs []string) plan {
+func includeExplicitDirs(model *Model, base plan, dirs []string) plan {
 	active := map[string]bool{}
 	for _, dirPath := range base.Dirs {
 		active[dirPath] = true
 	}
-	for _, dirPath := range dirs {
+	var add func(string)
+	add = func(dirPath string) {
+		entry, ok := model.entry(dirPath, EntryDir)
+		if !ok || active[dirPath] {
+			return
+		}
 		active[dirPath] = true
+		if entry.Dir.Link != "" {
+			add(entry.Dir.Link)
+		}
 	}
-	base.Dirs = sortedKeys(active)
+	for _, dirPath := range dirs {
+		add(dirPath)
+	}
+	base.Dirs = orderDirsForApply(model, active)
 	return base
 }
 
 func excludeArchivedDirs(model *Model, base plan, installed map[string]bool) plan {
-	var kept []string
+	active := map[string]bool{}
 	for _, dirPath := range base.Dirs {
 		entry, ok := model.entry(dirPath, EntryDir)
 		if ok && !archivedExcluded(entry, installed, false) {
-			kept = append(kept, dirPath)
+			active[dirPath] = true
 		}
 	}
-	base.Dirs = kept
+	// Drop links whose target dropped out.
+	changed := true
+	for changed {
+		changed = false
+		for dirPath := range active {
+			entry, _ := model.entry(dirPath, EntryDir)
+			if entry.Dir.Link != "" && !active[entry.Dir.Link] {
+				delete(active, dirPath)
+				changed = true
+			}
+		}
+	}
+	base.Dirs = orderDirsForApply(model, active)
 	return base
 }
 

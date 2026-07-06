@@ -193,7 +193,8 @@ func fileStatusLine(ws *Workspace, entry Entry, activeFiles map[string]bool) (st
 		return statusLine{glyphConflict, filePath, "", "untracked"}, true
 	}
 	if entry.File.Link != "" {
-		return symlinkStatusLine(ws, entry, expectedAbs), true
+		targetEntry, _ := ws.Model.entry(entry.File.Link, EntryFile)
+		return symlinkStatusLine(entry.Path, targetEntry.Path, expectedAbs), true
 	}
 	currentHash, err := fileSHA256(expectedAbs)
 	if err != nil {
@@ -205,28 +206,26 @@ func fileStatusLine(ws *Workspace, entry Entry, activeFiles map[string]bool) (st
 	return statusLine{glyphClean, filePath, "", ""}, true
 }
 
-func symlinkStatusLine(ws *Workspace, entry Entry, expectedAbs string) statusLine {
-	filePath := entry.Path
+func symlinkStatusLine(entryPath string, targetEntryPath string, expectedAbs string) statusLine {
 	info, err := os.Lstat(expectedAbs)
 	if err != nil {
-		return statusLine{glyphConflict, filePath, "", err.Error()}
+		return statusLine{glyphConflict, entryPath, "", err.Error()}
 	}
 	if info.Mode()&os.ModeSymlink == 0 {
-		return statusLine{glyphConflict, filePath, "", "not a symlink"}
+		return statusLine{glyphConflict, entryPath, "", "not a symlink"}
 	}
-	targetEntry, _ := ws.Model.entry(entry.File.Link, EntryFile)
-	expectedTarget, err := relativeSymlinkTarget(entry.Path, targetEntry.Path)
+	expectedTarget, err := relativeSymlinkTarget(entryPath, targetEntryPath)
 	if err != nil {
-		return statusLine{glyphConflict, filePath, "", err.Error()}
+		return statusLine{glyphConflict, entryPath, "", err.Error()}
 	}
 	currentTarget, err := os.Readlink(expectedAbs)
 	if err != nil {
-		return statusLine{glyphConflict, filePath, "", err.Error()}
+		return statusLine{glyphConflict, entryPath, "", err.Error()}
 	}
 	if currentTarget != expectedTarget {
-		return statusLine{glyphDirty, filePath, "", "modified"}
+		return statusLine{glyphDirty, entryPath, "", "modified"}
 	}
-	return statusLine{glyphClean, filePath, "", ""}
+	return statusLine{glyphClean, entryPath, "", ""}
 }
 
 // dirStatusLine summarizes a materialized subtree: per-file divergence from
@@ -247,6 +246,10 @@ func dirStatusLine(ws *Workspace, entry Entry, activeDirs map[string]bool) (stat
 	}
 	if !hasState {
 		return statusLine{glyphConflict, dirPath, "", "untracked"}, true
+	}
+	if entry.Dir.Link != "" {
+		targetEntry, _ := ws.Model.entry(entry.Dir.Link, EntryDir)
+		return symlinkStatusLine(entry.Path, targetEntry.Path, expectedAbs), true
 	}
 	modified := 0
 	missing := 0

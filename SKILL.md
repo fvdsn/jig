@@ -324,12 +324,25 @@ Declare whole subtrees with `$dir`. The subtree of the source repository is mate
 }
 ```
 
+A `$dir` can instead declare `link` to become a relative symlink to another `$dir` entry — for example one real `.agents/skills` symlinked into every harness path:
+
+```json
+{
+  "tree": {
+    ".agents/skills":   { "$dir": { "id": "agent-skills", "src": ["git@github.com:acme/skills.git#skills"] } },
+    ".opencode/skills": { "$dir": { "id": "opencode-skills", "link": ".agents/skills" } },
+    ".claude/skills":   { "$dir": { "id": "claude-skills", "link": ".agents/skills" } }
+  }
+}
+```
+
 Rules:
 
 - Jig tracks a manifest of every file it wrote. Updates overwrite only untouched files; locally modified files are kept and reported.
 - Files removed upstream are deleted locally only when untouched.
 - Files the user adds inside the directory are never touched.
-- `$dir` supports `description`, `archived`, `tags`, and `onlyWhen` like `$file`, but not `link` or `executable`.
+- A `$dir` defines exactly one of `src` or `link`. Link dirs are active only when their target dir is active, and removing a link dir removes only the symlink.
+- `$dir` supports `description`, `archived`, `tags`, and `onlyWhen` like `$file`, but not `executable`.
 
 ## Conditional Nodes
 

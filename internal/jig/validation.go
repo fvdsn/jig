@@ -77,8 +77,8 @@ func validateDefinition(def *Definition) validationResult {
 		case EntryFile:
 			validateFileEntry(&result, model, path, entry.File)
 		case EntryDir:
-			if len(entry.Dir.Src) == 0 {
-				result.Errors = append(result.Errors, fmt.Sprintf("dir %s missing src", path))
+			if (len(entry.Dir.Src) == 0) == (entry.Dir.Link == "") {
+				result.Errors = append(result.Errors, fmt.Sprintf("dir %s must define exactly one of src or link", path))
 			}
 			for _, source := range entry.Dir.Src {
 				if _, err := parseDirSrc(source.Src); err != nil {
@@ -86,6 +86,15 @@ func validateDefinition(def *Definition) validationResult {
 				}
 				if source.OnlyWhen != nil {
 					validateCondition(&result, model, path, *source.OnlyWhen)
+				}
+			}
+			if link := entry.Dir.Link; link != "" {
+				if err := validateSafePath(link); err != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("dir %s invalid link: %s", path, err))
+				} else if _, ok := model.entry(link, EntryDir); !ok {
+					result.Errors = append(result.Errors, fmt.Sprintf("dir %s link %s does not resolve to any dir", path, link))
+				} else if link == path {
+					result.Errors = append(result.Errors, fmt.Sprintf("dir %s cannot link to itself", path))
 				}
 			}
 		}
@@ -96,6 +105,9 @@ func validateDefinition(def *Definition) validationResult {
 	}
 	for _, cycle := range detectCycles(sortedFilePaths(&model), fileLinkPaths(&model)) {
 		result.Errors = append(result.Errors, "file link cycle detected: "+strings.Join(cycle, " -> "))
+	}
+	for _, cycle := range detectCycles(sortedPathsOfKind(&model, EntryDir), dirLinkPaths(&model)) {
+		result.Errors = append(result.Errors, "dir link cycle detected: "+strings.Join(cycle, " -> "))
 	}
 	return result
 }
@@ -201,6 +213,15 @@ func repoDependencyPaths(model *Model) func(string) []string {
 			paths = append(paths, entryPaths(selection.ofKind(EntryRepo))...)
 		}
 		return paths
+	}
+}
+
+func dirLinkPaths(model *Model) func(string) []string {
+	return func(dirPath string) []string {
+		if entry, ok := model.entry(dirPath, EntryDir); ok && entry.Dir.Link != "" {
+			return []string{entry.Dir.Link}
+		}
+		return nil
 	}
 }
 

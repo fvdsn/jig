@@ -542,7 +542,7 @@ Directory nodes are declared with `$dir` and materialize a whole subtree of a so
 }
 ```
 
-Fields: `id` (optional identity, defaults to the path), `src` (required, `<repo-url>[#<subtree-path>]` or a list of such sources; without a path the whole repository tree is materialized), `description`, `archived`, `tags`, and `onlyWhen` behave as for `$file`. There is no `executable` field (modes come from the git tree) and directories cannot be link targets.
+Fields: `id` (optional identity, defaults to the path), `src` (required, `<repo-url>[#<subtree-path>]` or a list of such sources; without a path the whole repository tree is materialized), `description`, `archived`, `tags`, and `onlyWhen` behave as for `$file`. There is no `executable` field (modes come from the git tree). A directory node may declare `link` instead of `src`: it becomes a relative symlink to another `$dir` entry. Exactly one of `src` and `link` is required; link dirs are active only when their target dir is active, targets are materialized before links, link cycles are validation errors, and removing a link dir removes only the symlink.
 
 State records the source tree id and a manifest mapping each written file to its content hash. Rules:
 

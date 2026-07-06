@@ -17,6 +17,9 @@ import (
 func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath string, allowMove bool, refresh bool, fetcher *fileFetcher, activeRepos map[string]bool, installedRepos map[string]bool) error {
 	entry, _ := model.entry(dirPath, EntryDir)
 	dir := entry.Dir
+	if dir.Link != "" {
+		return ensureLinkDir(out, root, model, state, dirPath, allowMove)
+	}
 	stateDir, hasState := state.Dirs[entry.Identity]
 	expectedRel := entry.Path
 	expectedAbs := filepath.Join(root, expectedRel)
@@ -125,6 +128,80 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 
 	state.Dirs[entry.Identity] = StateDir{Path: expectedRel, Src: srcKey, Tree: combinedTree, Files: newManifest}
 	fmt.Fprintln(out, dirMessage(dirPath, hasState, counts))
+	return nil
+}
+
+// ensureLinkDir creates a relative symlink to another $dir entry, mirroring
+// link files.
+func ensureLinkDir(out io.Writer, root string, model *Model, state *State, dirPath string, allowMove bool) error {
+	entry, _ := model.entry(dirPath, EntryDir)
+	dir := entry.Dir
+	targetEntry, ok := model.entry(dir.Link, EntryDir)
+	if !ok {
+		return fmt.Errorf("link target is not defined: %s", dir.Link)
+	}
+	if !pathExists(filepath.Join(root, targetEntry.Path)) {
+		return fmt.Errorf("link target is missing: %s", targetEntry.Path)
+	}
+
+	stateDir, hasState := state.Dirs[entry.Identity]
+	expectedRel := entry.Path
+	expectedAbs := filepath.Join(root, expectedRel)
+	expectedTarget, err := relativeSymlinkTarget(expectedRel, targetEntry.Path)
+	if err != nil {
+		return err
+	}
+
+	if hasState && stateDir.Path != expectedRel {
+		oldAbs := filepath.Join(root, stateDir.Path)
+		if pathEntryExists(oldAbs) {
+			if !allowMove {
+				return fmt.Errorf("already written at %s; run jig sync to move it", stateDir.Path)
+			}
+			message, err := moveInstalledPath(root, dirPath, stateDir.Path, expectedRel, "moved-dir")
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(out, message)
+		} else {
+			delete(state.Dirs, entry.Identity)
+			hasState = false
+		}
+	}
+
+	if pathEntryExists(expectedAbs) {
+		info, err := os.Lstat(expectedAbs)
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			return fmt.Errorf("expected symlink path exists and is not a symlink: %s", expectedRel)
+		}
+		currentTarget, err := os.Readlink(expectedAbs)
+		if err != nil {
+			return err
+		}
+		if currentTarget == expectedTarget {
+			state.Dirs[entry.Identity] = StateDir{Path: expectedRel, Link: dir.Link}
+			fmt.Fprintf(out, "present-dir: %s\n", dirPath)
+			return nil
+		}
+		if !hasState || stateDir.Link == "" {
+			return fmt.Errorf("existing symlink has different target")
+		}
+		if err := os.Remove(expectedAbs); err != nil {
+			return err
+		}
+	}
+
+	if err := os.MkdirAll(filepath.Dir(expectedAbs), 0o755); err != nil {
+		return err
+	}
+	if err := os.Symlink(expectedTarget, expectedAbs); err != nil {
+		return err
+	}
+	state.Dirs[entry.Identity] = StateDir{Path: expectedRel, Link: dir.Link}
+	fmt.Fprintf(out, "linked-dir: %s\n", dirPath)
 	return nil
 }
 

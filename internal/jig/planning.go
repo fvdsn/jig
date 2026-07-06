@@ -78,23 +78,35 @@ func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
 	return plan{
 		Repos: sortedKeys(active),
 		Files: orderFilesForApply(model, activeFilesSet),
-		Dirs:  sortedKeys(activeDirsSet),
+		Dirs:  orderDirsForApply(model, activeDirsSet),
 	}, nil
 }
 
-// activeDirsForRepoSet mirrors activeFilesForRepoSet for $dir entries, which
-// have no links and therefore no ordering constraints.
+// activeDirsForRepoSet mirrors activeFilesForRepoSet for $dir entries. Link
+// dirs are active only when their target dir is active, hence the fixed
+// point.
 func activeDirsForRepoSet(model *Model, activeRepos map[string]bool, installedRepos map[string]bool, installedDirs map[string]bool, includeArchived bool) map[string]bool {
 	dirs := map[string]bool{}
-	for _, dirPath := range sortedPathsOfKind(model, EntryDir) {
-		entry, _ := model.entry(dirPath, EntryDir)
-		if archivedExcluded(entry, installedDirs, includeArchived) {
-			continue
+	changed := true
+	for changed {
+		changed = false
+		for _, dirPath := range sortedPathsOfKind(model, EntryDir) {
+			if dirs[dirPath] {
+				continue
+			}
+			entry, _ := model.entry(dirPath, EntryDir)
+			if archivedExcluded(entry, installedDirs, includeArchived) {
+				continue
+			}
+			if !entryActive(model, entry, activeRepos, installedRepos, installedDirs) {
+				continue
+			}
+			if entry.Dir.Link != "" && !dirs[entry.Dir.Link] {
+				continue
+			}
+			dirs[dirPath] = true
+			changed = true
 		}
-		if !entryActive(model, entry, activeRepos, installedRepos, installedDirs) {
-			continue
-		}
-		dirs[dirPath] = true
 	}
 	return dirs
 }
@@ -162,6 +174,26 @@ func archivedExcluded(entry Entry, installed map[string]bool, includeArchived bo
 }
 
 func orderFilesForApply(model *Model, active map[string]bool) []string {
+	return orderLinkedForApply(active, func(path string) string {
+		if entry, ok := model.entry(path, EntryFile); ok {
+			return entry.File.Link
+		}
+		return ""
+	})
+}
+
+func orderDirsForApply(model *Model, active map[string]bool) []string {
+	return orderLinkedForApply(active, func(path string) string {
+		if entry, ok := model.entry(path, EntryDir); ok {
+			return entry.Dir.Link
+		}
+		return ""
+	})
+}
+
+// orderLinkedForApply orders active entries so link targets are applied
+// before the links pointing at them.
+func orderLinkedForApply(active map[string]bool, linkOf func(string) string) []string {
 	visited := map[string]bool{}
 	visiting := map[string]bool{}
 	var result []string
@@ -174,8 +206,8 @@ func orderFilesForApply(model *Model, active map[string]bool) []string {
 			return
 		}
 		visiting[path] = true
-		if entry, ok := model.entry(path, EntryFile); ok && entry.File.Link != "" {
-			visit(entry.File.Link)
+		if target := linkOf(path); target != "" {
+			visit(target)
 		}
 		visiting[path] = false
 		visited[path] = true
