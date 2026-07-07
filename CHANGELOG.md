@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.6.0 — 2026-07-07
+
+- `onlyWhen` conditions can select repositories by `tags` — carrying all
+  listed tags, inherited group tags included — by `path`, or both combined.
+  Support artifacts can follow capabilities instead of locations: an API
+  skill gated on `tags: ["api"]` materializes whenever any api-tagged
+  repository is active or installed. Validation requires every condition to
+  be satisfiable by some repository in the schema.
+
 ## v1.5.0 — 2026-07-07
 
 - Commands exit non-zero when any entry was skipped (`clone`, `sync`,
