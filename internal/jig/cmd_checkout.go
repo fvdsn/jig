@@ -59,6 +59,9 @@ func Checkout(options CheckoutOptions, out io.Writer) error {
 		fmt.Fprintf(out, "%s: %s\n", verb, candidates[i].repoPath)
 	})
 	printGroup(out, "skipped", skipped)
+	if len(skipped) > 0 {
+		return fmt.Errorf("%d repositories were skipped", len(skipped))
+	}
 	return nil
 }
 

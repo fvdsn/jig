@@ -166,10 +166,15 @@ func TestFilesDirsAndLinks(t *testing.T) {
 		t.Fatal("expected dev.sh v2")
 	}
 
-	// A local edit is never overwritten, even when upstream moves again.
+	// A local edit is never overwritten, even when upstream moves again;
+	// the skipped entry makes the sync fail so scripts see it.
 	w.writeFiles(w.path("ws", "scripts"), map[string]string{"dev.sh": "edited\n"})
 	w.commitRemote(config, map[string]string{"scripts/dev.sh": "v3\n"}, "v3")
-	w.assertContains(w.mustJig(ws, "sync"), "locally modified")
+	out, err := w.jig(ws, "sync")
+	if err == nil {
+		t.Fatalf("expected sync to fail on a skipped entry:\n%s", out)
+	}
+	w.assertContains(out, "locally modified")
 	if w.read("ws", "scripts", "dev.sh") != "edited\n" {
 		t.Fatal("expected local edit preserved")
 	}
@@ -314,7 +319,10 @@ func TestSafetyRefusals(t *testing.T) {
   "tree": { "svc/renamed": { "$repo": { "id": "app", "git": "%s" } } }
 }`, app)
 	w.commitRemote(schemaRemote, map[string]string{"jig.json": schemaMoved}, "rename")
-	out = w.mustJig(ws, "update", "--sync")
+	out, err = w.jig(ws, "update", "--sync")
+	if err == nil {
+		t.Fatalf("expected update --sync to fail on the skipped move:\n%s", out)
+	}
 	w.assertContains(out, "uncommitted changes")
 	if !w.exists("ws", "svc", "app", "WIP2.txt") || w.exists("ws", "svc", "renamed") {
 		t.Fatal("expected dirty checkout left in place")

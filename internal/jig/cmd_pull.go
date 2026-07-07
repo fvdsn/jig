@@ -66,5 +66,8 @@ func runGitInInstalled(out io.Writer, path string, includeArchived bool, tags []
 		mu.Unlock()
 	})
 	printGroup(out, "skipped", skipped)
+	if len(skipped) > 0 {
+		return fmt.Errorf("%d repositories were skipped", len(skipped))
+	}
 	return nil
 }

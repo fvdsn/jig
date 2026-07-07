@@ -35,8 +35,7 @@ func resolveAndApplyPlan(out io.Writer, ws *Workspace, roots []string, explicitF
 		plan = excludeArchivedFiles(&ws.Model, plan, installed.Files)
 		plan = excludeArchivedDirs(&ws.Model, plan, installed.Dirs)
 	}
-	applyPlan(out, ws, plan, opts, installed.Repos)
-	return nil
+	return applyPlan(out, ws, plan, opts, installed.Repos)
 }
 
 func includeExplicitDirs(model *Model, base plan, dirs []string) plan {
@@ -132,7 +131,10 @@ func excludeArchivedFiles(model *Model, base plan, installed map[string]bool) pl
 	return base
 }
 
-func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, installedRepos map[string]bool) {
+// applyPlan materializes the plan, reporting every entry that could not be
+// brought to its desired state as skipped. Anything skipped makes the
+// command fail, so scripts and agents see partial failures in the exit code.
+func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, installedRepos map[string]bool) error {
 	// Repositories are independent of each other, so the git work runs in
 	// parallel; each result is applied to state and printed as it completes,
 	// so long runs show progress instead of a report at the end.
@@ -140,6 +142,7 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, insta
 	for i, repoPath := range plan.Repos {
 		entries[i], _ = ws.Model.entry(repoPath, EntryRepo)
 	}
+	skipped := 0
 	var mu sync.Mutex
 	forEachParallel(len(plan.Repos), func(i int) {
 		mu.Lock()
@@ -158,12 +161,14 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, insta
 			fmt.Fprintln(out, message)
 		}
 		if result.Err != nil {
+			skipped++
 			fmt.Fprintf(out, "skipped:\n  %s: %s\n", plan.Repos[i], result.Err)
 		}
 	})
 	fetcher := newFileFetcher()
 	for _, filePath := range plan.Files {
 		if err := ensureFile(out, ws.Root, &ws.Model, &ws.State, filePath, opts.Sync, fetcher); err != nil {
+			skipped++
 			fmt.Fprintf(out, "skipped:\n  %s: %s\n", filePath, err)
 		}
 	}
@@ -173,7 +178,12 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, insta
 	}
 	for _, dirPath := range plan.Dirs {
 		if err := ensureDir(out, ws.Root, &ws.Model, &ws.State, dirPath, opts.Sync, fetcher, activeRepos, installedRepos); err != nil {
+			skipped++
 			fmt.Fprintf(out, "skipped:\n  %s: %s\n", dirPath, err)
 		}
 	}
+	if skipped > 0 {
+		return fmt.Errorf("%d entries were skipped", skipped)
+	}
+	return nil
 }

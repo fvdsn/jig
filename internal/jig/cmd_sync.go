@@ -55,18 +55,21 @@ func syncWorkspace(out io.Writer, ws *Workspace, options SyncOptions) error {
 		}
 	}
 
-	if err := resolveAndApplyPlan(out, ws, roots, explicitFiles, explicitDirs, applyOptions{
+	// A skip failure still leaves valid work behind: report stale entries,
+	// keep the state, and surface the failure in the exit code.
+	applyErr := resolveAndApplyPlan(out, ws, roots, explicitFiles, explicitDirs, applyOptions{
 		IncludeOptional: options.IncludeOptional,
 		IncludeArchived: options.IncludeArchived,
 		SkipDeps:        options.SkipDeps,
 		Sync:            true,
-	}); err != nil {
-		return err
-	}
+	})
 	if options.Prune {
 		pruneStale(out, ws.Root, &ws.Model, &ws.State)
 	} else {
 		reportStale(out, ws.Root, &ws.Model, &ws.State)
 	}
-	return saveState(ws.Root, ws.State)
+	if err := saveState(ws.Root, ws.State); err != nil {
+		return err
+	}
+	return applyErr
 }

@@ -69,7 +69,13 @@ func TestCheckoutAcrossInstalledRepos(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(localA, "README.md"), []byte("uncommitted edit\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got = checkout(CheckoutOptions{Branch: defaultBranch})
+	// The skip is surfaced in the exit code, while the other repo still
+	// switches.
+	var skipOut bytes.Buffer
+	if err := Checkout(CheckoutOptions{Branch: defaultBranch}, &skipOut); err == nil {
+		t.Fatalf("expected an error when a repository is skipped:\n%s", skipOut.String())
+	}
+	got = skipOut.String()
 	if !strings.Contains(got, "switched: services/b") {
 		t.Fatalf("switch run = %q, want switched: services/b", got)
 	}

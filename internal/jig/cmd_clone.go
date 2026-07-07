@@ -19,10 +19,12 @@ func Clone(options CloneOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if err := clonePathIntoWorkspace(out, ws, options); err != nil {
+	// State accumulated before a skip or failure is valid and must be kept.
+	cloneErr := clonePathIntoWorkspace(out, ws, options)
+	if err := saveState(ws.Root, ws.State); err != nil {
 		return err
 	}
-	return saveState(ws.Root, ws.State)
+	return cloneErr
 }
 
 func clonePathIntoWorkspace(out io.Writer, ws *Workspace, options CloneOptions) error {
