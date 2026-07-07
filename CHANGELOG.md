@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.7.0 — 2026-07-07
+
+- Commands are position-aware: run from a subdirectory, pathless commands
+  scope to that subtree (inside a checkout, they address that one repo), and
+  path arguments resolve like filesystem paths — `.`, `..`, and a leading
+  `/` anchoring to the workspace root. Pathless `sync` converges installed
+  entries within the subtree only; `sync --prune` requires the root.
+- Fixed: jig errored when run from inside a checkout containing a
+  `.jig.json` at its root (such as a schema repository installed in the
+  workspace).
+
 ## v1.6.0 — 2026-07-07
 
 - `onlyWhen` conditions can select repositories by `tags` — carrying all
