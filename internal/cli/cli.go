@@ -17,6 +17,13 @@ func Run(args []string, out io.Writer, _ io.Writer) error {
 		return nil
 	}
 
+	if args[0] == "help" && len(args) > 1 {
+		return printCommandHelp(out, args[1])
+	}
+	if _, known := commandDocFor(args[0]); known && wantsHelp(args[1:]) {
+		return printCommandHelp(out, args[0])
+	}
+
 	switch args[0] {
 	case "init":
 		return cmdInit(args[1:], out)
@@ -162,6 +169,128 @@ func checkPruneScope(parsed parsedArgs) error {
 	return nil
 }
 
+// commandDoc is the single source of truth for a command's usage and
+// description: the overview, per-command help, and usage errors all derive
+// from it so they cannot drift apart.
+type commandDoc struct {
+	name        string
+	usages      []string
+	description []string
+}
+
+var commandDocs = []commandDoc{
+	{"init",
+		[]string{"init [git-url-or-file [workspace-dir]] [--path <path>] [--clone [path]] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]"},
+		[]string{
+			"Initialize a workspace: clone the schema repository into .jig/source, optionally cloning a path.",
+			"With no arguments, start a fresh workspace here with a starter schema in .jig/source.",
+		}},
+	{"validate",
+		[]string{"validate [schema-file]"},
+		[]string{"Validate the current workspace schema, or a schema file given by path."}},
+	{"list",
+		[]string{"list [path] [--archived] [--tags a,b]"},
+		[]string{"List groups, repositories, and files defined in the schema."}},
+	{"info",
+		[]string{"info <path> [--archived] [--tags a,b]"},
+		[]string{"Show repository, file, or group metadata."}},
+	{"deps",
+		[]string{"deps <path> [--with-optional-deps] [--archived] [--tags a,b]"},
+		[]string{"Show expanded recursive dependencies for repositories matching a path."}},
+	{"clone",
+		[]string{"clone [path] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]"},
+		[]string{"Clone/materialize all entries, or repositories/files matching a path. --no-deps skips dependencies."}},
+	{"sync",
+		[]string{"sync [path] [--no-deps] [--with-optional-deps] [--archived] [--prune] [--tags a,b]"},
+		[]string{
+			"Clone missing repos, move renamed repos/files, update origins/files, and refresh local state.",
+			"--prune deletes entries removed from the schema; dirty/unpushed repos and modified files are kept.",
+		}},
+	{"pull",
+		[]string{"pull [path] [--archived] [--tags a,b]"},
+		[]string{"Run git pull --ff-only in installed repositories matching a path or group."}},
+	{"fetch",
+		[]string{"fetch [path] [--archived] [--tags a,b]"},
+		[]string{"Run git fetch in installed repositories matching a path or group."}},
+	{"checkout",
+		[]string{"checkout [-b] <branch> [path] [--archived] [--tags a,b]"},
+		[]string{"Switch installed repositories to a branch; -b creates it. Repos where the switch would lose local changes are skipped."}},
+	{"rm",
+		[]string{"rm <path>... [-r|--recursive] [-f|--force]"},
+		[]string{"Uninstall repositories or files: delete the checkout and stop tracking it. -r removes groups, -f overrides dirty/unpushed checks."}},
+	{"status",
+		[]string{"status [path] [--all] [--archived] [--tags a,b]"},
+		[]string{"Show the state of installed entries; repos never installed are only counted unless --all is given."}},
+	{"update",
+		[]string{
+			"update",
+			"update --sync [path] [--no-deps] [--with-optional-deps] [--archived] [--prune] [--tags a,b]",
+		},
+		[]string{
+			"Fast-forward the schema checkout (.jig/source) from its remote without changing local checkouts.",
+			"With --sync, then sync the workspace.",
+		}},
+	{"cache",
+		[]string{
+			"cache",
+			"cache clean [--unused <days>]",
+		},
+		[]string{
+			"Show the clone cache location, mirror count, and size.",
+			"cache clean removes cached mirrors, optionally only those unused for at least <days> days.",
+		}},
+	{"version",
+		[]string{"version"},
+		[]string{"Print the jig version."}},
+}
+
+func commandDocFor(name string) (commandDoc, bool) {
+	for _, doc := range commandDocs {
+		if doc.name == name {
+			return doc, true
+		}
+	}
+	return commandDoc{}, false
+}
+
+// usageError derives a command's usage error from its doc.
+func usageError(name string) error {
+	doc, ok := commandDocFor(name)
+	if !ok {
+		return fmt.Errorf("unknown command %q", name)
+	}
+	forms := make([]string, len(doc.usages))
+	for i, usage := range doc.usages {
+		forms[i] = "jig " + usage
+	}
+	return errors.New("usage: " + strings.Join(forms, " | "))
+}
+
+// printCommandHelp prints one command's usage and description.
+func printCommandHelp(out io.Writer, name string) error {
+	doc, ok := commandDocFor(name)
+	if !ok {
+		return fmt.Errorf("unknown command %q", name)
+	}
+	for _, usage := range doc.usages {
+		fmt.Fprintln(out, "usage: jig "+usage)
+	}
+	for _, line := range doc.description {
+		fmt.Fprintln(out, "  "+line)
+	}
+	return nil
+}
+
+// wantsHelp reports whether the command arguments ask for help.
+func wantsHelp(args []string) bool {
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" {
+			return true
+		}
+	}
+	return false
+}
+
 func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "Jig is a workspace CLI for managing many related Git repositories and generated files from a shared schema.")
 	fmt.Fprintln(out)
@@ -169,42 +298,14 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "  jig <command> [args]")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Commands:")
-	fmt.Fprintln(out, "  init [git-url-or-file [workspace-dir]] [--path <path>] [--clone [path]] [--no-deps] [--with-optional-deps] [--archived]")
-	fmt.Fprintln(out, "      Initialize a workspace: clone the schema repository into .jig/source, optionally cloning a path.")
-	fmt.Fprintln(out, "      With no arguments, start a fresh workspace here with a starter schema in .jig/source.")
-	fmt.Fprintln(out, "  validate [schema-file]")
-	fmt.Fprintln(out, "      Validate the current workspace schema, or a schema file given by path.")
-	fmt.Fprintln(out, "  list [path] [--archived] [--tags a,b]")
-	fmt.Fprintln(out, "      List groups, repositories, and files defined in the schema.")
-	fmt.Fprintln(out, "  info <path> [--archived] [--tags a,b]")
-	fmt.Fprintln(out, "      Show repository, file, or group metadata.")
-	fmt.Fprintln(out, "  deps <path> [--with-optional-deps] [--archived] [--tags a,b]")
-	fmt.Fprintln(out, "      Show expanded recursive dependencies for repositories matching a path.")
-	fmt.Fprintln(out, "  clone [path] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]")
-	fmt.Fprintln(out, "      Clone/materialize all entries, or repositories/files matching a path. --no-deps skips dependencies.")
-	fmt.Fprintln(out, "  sync [path] [--no-deps] [--with-optional-deps] [--archived] [--prune] [--tags a,b]")
-	fmt.Fprintln(out, "      Clone missing repos, move renamed repos/files, update origins/files, and refresh local state.")
-	fmt.Fprintln(out, "      --prune deletes entries removed from the schema; dirty/unpushed repos and modified files are kept.")
-	fmt.Fprintln(out, "  pull [path] [--archived] [--tags a,b]")
-	fmt.Fprintln(out, "      Run git pull --ff-only in installed repositories matching a path or group.")
-	fmt.Fprintln(out, "  fetch [path] [--archived] [--tags a,b]")
-	fmt.Fprintln(out, "      Run git fetch in installed repositories matching a path or group.")
-	fmt.Fprintln(out, "  checkout [-b] <branch> [path] [--archived] [--tags a,b]")
-	fmt.Fprintln(out, "      Switch installed repositories to a branch; -b creates it. Repos where the switch would lose local changes are skipped.")
-	fmt.Fprintln(out, "  rm <path>... [-r|--recursive] [-f|--force]")
-	fmt.Fprintln(out, "      Uninstall repositories or files: delete the checkout and stop tracking it. -r removes groups, -f overrides dirty/unpushed checks.")
-	fmt.Fprintln(out, "  status [path] [--all] [--archived] [--tags a,b]")
-	fmt.Fprintln(out, "      Show the state of installed entries; repos never installed are only counted unless --all is given.")
-	fmt.Fprintln(out, "  update")
-	fmt.Fprintln(out, "      Fast-forward the schema checkout (.jig/source) from its remote without changing local checkouts.")
-	fmt.Fprintln(out, "  update --sync [path] [--no-deps] [--with-optional-deps] [--archived] [--prune] [--tags a,b]")
-	fmt.Fprintln(out, "      Update the schema, then sync the workspace.")
-	fmt.Fprintln(out, "  cache")
-	fmt.Fprintln(out, "      Show the clone cache location, mirror count, and size.")
-	fmt.Fprintln(out, "  cache clean [--unused <days>]")
-	fmt.Fprintln(out, "      Remove cached mirrors, optionally only those unused for at least <days> days.")
-	fmt.Fprintln(out, "  version")
-	fmt.Fprintln(out, "      Print the jig version.")
+	for _, doc := range commandDocs {
+		for _, usage := range doc.usages {
+			fmt.Fprintln(out, "  "+usage)
+		}
+		for _, line := range doc.description {
+			fmt.Fprintln(out, "      "+line)
+		}
+	}
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Paths identify repositories, files, or groups using slash paths such as services/checkout or platform.")
 	fmt.Fprintln(out, "--tags a,b keeps only entries carrying all the listed tags; tags on groups are inherited by their children.")
@@ -216,7 +317,7 @@ func cmdInit(args []string, out io.Writer) error {
 		return err
 	}
 	if len(parsed.Positionals) > 2 {
-		return errors.New("usage: jig init [git-url-or-file [workspace-dir]] [--path <path>] [--clone [path]] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]")
+		return usageError("init")
 	}
 	// A bare init starts a fresh workspace in the current directory and
 	// clones immediately, so the starter schema materializes right away.
@@ -253,7 +354,7 @@ func cmdValidate(args []string, out io.Writer) error {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig validate [schema-file]")
+		return usageError("validate")
 	}
 	return jig.Validate(jig.ValidateOptions{
 		File: optionalPath(parsed.Positionals),
@@ -266,7 +367,7 @@ func cmdList(args []string, out io.Writer) error {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig list [path] [--archived] [--tags a,b]")
+		return usageError("list")
 	}
 	return jig.List(jig.ListOptions{
 		Path:            optionalPath(parsed.Positionals),
@@ -281,7 +382,7 @@ func cmdInfo(args []string, out io.Writer) error {
 		return err
 	}
 	if len(parsed.Positionals) != 1 {
-		return errors.New("usage: jig info <path> [--archived] [--tags a,b]")
+		return usageError("info")
 	}
 	return jig.Info(jig.InfoOptions{
 		Path:            parsed.Positionals[0],
@@ -296,7 +397,7 @@ func cmdDeps(args []string, out io.Writer) error {
 		return err
 	}
 	if len(parsed.Positionals) != 1 {
-		return errors.New("usage: jig deps <path> [--with-optional-deps] [--archived] [--tags a,b]")
+		return usageError("deps")
 	}
 	return jig.Dependencies(jig.DependenciesOptions{
 		Path:            parsed.Positionals[0],
@@ -312,7 +413,7 @@ func cmdClone(args []string, out io.Writer) error {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig clone [path] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]")
+		return usageError("clone")
 	}
 	if err := checkDepsFlags(parsed); err != nil {
 		return err
@@ -332,7 +433,7 @@ func cmdSync(args []string, out io.Writer) error {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig sync [path] [--no-deps] [--with-optional-deps] [--archived] [--prune] [--tags a,b]")
+		return usageError("sync")
 	}
 	if err := checkDepsFlags(parsed); err != nil {
 		return err
@@ -356,7 +457,7 @@ func cmdPull(args []string, out io.Writer) error {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig pull [path] [--archived] [--tags a,b]")
+		return usageError("pull")
 	}
 	return jig.Pull(jig.PullOptions{
 		Path:            optionalPath(parsed.Positionals),
@@ -370,14 +471,14 @@ func cmdCache(args []string, out io.Writer) error {
 		return jig.CacheInfo(out)
 	}
 	if args[0] != "clean" {
-		return errors.New("usage: jig cache | jig cache clean [--unused <days>]")
+		return usageError("cache")
 	}
 	parsed, err := parseArgs(args[1:], map[string]flagKind{"--unused": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 0 {
-		return errors.New("usage: jig cache clean [--unused <days>]")
+		return usageError("cache")
 	}
 	days := -1
 	if value := parsed.Values["--unused"]; value != "" {
@@ -395,7 +496,7 @@ func cmdFetch(args []string, out io.Writer) error {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig fetch [path] [--archived] [--tags a,b]")
+		return usageError("fetch")
 	}
 	return jig.Fetch(jig.FetchOptions{
 		Path:            optionalPath(parsed.Positionals),
@@ -410,7 +511,7 @@ func cmdCheckout(args []string, out io.Writer) error {
 		return err
 	}
 	if len(parsed.Positionals) < 1 || len(parsed.Positionals) > 2 {
-		return errors.New("usage: jig checkout [-b] <branch> [path] [--archived] [--tags a,b]")
+		return usageError("checkout")
 	}
 	return jig.Checkout(jig.CheckoutOptions{
 		Branch:          parsed.Positionals[0],
@@ -430,7 +531,7 @@ func cmdRemove(args []string, out io.Writer) error {
 		return err
 	}
 	if len(parsed.Positionals) == 0 {
-		return errors.New("usage: jig rm <path>... [-r|--recursive] [-f|--force]")
+		return usageError("rm")
 	}
 	return jig.Remove(jig.RemoveOptions{
 		Paths:     parsed.Positionals,
@@ -445,7 +546,7 @@ func cmdStatus(args []string, out io.Writer) error {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
-		return errors.New("usage: jig status [path] [--all] [--archived] [--tags a,b]")
+		return usageError("status")
 	}
 	return jig.Status(jig.StatusOptions{
 		Path:            optionalPath(parsed.Positionals),
@@ -461,7 +562,7 @@ func cmdUpdate(args []string, out io.Writer) error {
 		return err
 	}
 	if len(parsed.Positionals) > 1 || len(parsed.Positionals) == 1 && !parsed.Flags["--sync"] {
-		return errors.New("usage: jig update | jig update --sync [path] [--no-deps] [--with-optional-deps] [--archived] [--prune]")
+		return usageError("update")
 	}
 	if !parsed.Flags["--sync"] && (parsed.Flags["--no-deps"] || parsed.Flags["--with-optional-deps"] || parsed.Flags["--archived"] || parsed.Flags["--prune"]) {
 		return errors.New("--no-deps, --with-optional-deps, --archived, and --prune require --sync")
