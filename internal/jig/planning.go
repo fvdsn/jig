@@ -171,7 +171,7 @@ func (p *planner) expandDependencies(repoPath string) error {
 			if p.rootIDs[match.Identity] {
 				continue
 			}
-			if len(match.Conditions) > 0 && !conditionsMetIn(p.evidence, match.Conditions) {
+			if len(match.Conditions) > 0 && !conditionsMetIn(p.model, p.evidence, match.Conditions) {
 				continue // R3 picks it up if its conditions come to hold
 			}
 			p.activate(match.Path)
@@ -195,7 +195,7 @@ func (p *planner) activateConditionalRepos() bool {
 		if archivedExcluded(entry, p.opts.Installed, p.opts.IncludeArchived) {
 			continue
 		}
-		if conditionsMetIn(p.evidence, entry.Conditions) {
+		if conditionsMetIn(p.model, p.evidence, entry.Conditions) {
 			p.activate(repoPath)
 			activated = true
 		}
@@ -222,20 +222,30 @@ func evidenceSet(model *Model, activeRepos map[string]bool, installedIdentities 
 	return evidence
 }
 
-func conditionsMetIn(evidence map[string]bool, conditions []Condition) bool {
+func conditionsMetIn(model *Model, evidence map[string]bool, conditions []Condition) bool {
 	for _, condition := range conditions {
-		if !conditionMetIn(evidence, condition) {
+		if !conditionMetIn(model, evidence, condition) {
 			return false
 		}
 	}
 	return true
 }
 
-func conditionMetIn(evidence map[string]bool, condition Condition) bool {
+// conditionMetIn reports whether some repository in the evidence satisfies
+// the condition: under its path (when given) and carrying all its tags
+// (when given).
+func conditionMetIn(model *Model, evidence map[string]bool, condition Condition) bool {
 	for repoPath := range evidence {
-		if pathMatches(condition.Path, repoPath) {
-			return true
+		if condition.Path != "" && !pathMatches(condition.Path, repoPath) {
+			continue
 		}
+		if len(condition.Tags) > 0 {
+			entry, ok := model.entry(repoPath, EntryRepo)
+			if !ok || !entry.hasAllTags(condition.Tags) {
+				continue
+			}
+		}
+		return true
 	}
 	return false
 }
@@ -243,7 +253,7 @@ func conditionMetIn(evidence map[string]bool, condition Condition) bool {
 // conditionMatches reports whether a single condition holds against active
 // and installed repositories; used by per-source dir gating.
 func conditionMatches(condition Condition, activeRepos map[string]bool, installedIdentities map[string]bool, model *Model) bool {
-	return conditionMetIn(evidenceSet(model, activeRepos, installedIdentities), condition)
+	return conditionMetIn(model, evidenceSet(model, activeRepos, installedIdentities), condition)
 }
 
 // artifactsActive computes the active files or dirs for the given repository
@@ -311,13 +321,13 @@ func artifactBaseActive(model *Model, repoPaths []string, entry Entry, evidence 
 		return true
 	}
 	if len(entry.Conditions) > 0 {
-		return conditionsMetIn(evidence, entry.Conditions)
+		return conditionsMetIn(model, evidence, entry.Conditions)
 	}
 	scope := entryScope(repoPaths, entry.Path)
 	if scope == "" {
 		return len(evidence) > 0
 	}
-	return conditionMetIn(evidence, Condition{Path: scope})
+	return conditionMetIn(model, evidence, Condition{Path: scope})
 }
 
 // entryScope returns the nearest ancestor path of entryPath containing at

@@ -156,22 +156,21 @@ func printTags(out io.Writer, tags []string) {
 
 func printConditions(out io.Writer, label string, conditions []Condition) {
 	if len(conditions) == 1 {
-		condition := conditions[0]
-		if condition.Reason == "" {
-			fmt.Fprintf(out, "%s: %s\n", label, condition.Path)
-		} else {
-			fmt.Fprintf(out, "%s: %s: %s\n", label, condition.Path, condition.Reason)
-		}
+		fmt.Fprintf(out, "%s: %s\n", label, describeConditionWithReason(conditions[0]))
 		return
 	}
 	fmt.Fprintf(out, "%s:\n", label)
 	for _, condition := range conditions {
-		if condition.Reason == "" {
-			fmt.Fprintf(out, "  %s\n", condition.Path)
-		} else {
-			fmt.Fprintf(out, "  %s: %s\n", condition.Path, condition.Reason)
-		}
+		fmt.Fprintf(out, "  %s\n", describeConditionWithReason(condition))
 	}
+}
+
+func describeConditionWithReason(condition Condition) string {
+	described := describeCondition(condition)
+	if condition.Reason != "" {
+		described += ": " + condition.Reason
+	}
+	return described
 }
 
 func printDependency(out io.Writer, dep Dependency) {

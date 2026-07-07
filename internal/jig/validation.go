@@ -136,18 +136,31 @@ func validateFileEntry(result *validationResult, model Model, path string, file 
 }
 
 func validateCondition(result *validationResult, model Model, ownerPath string, condition Condition) {
-	if condition.Path == "" {
-		result.Errors = append(result.Errors, fmt.Sprintf("%s has onlyWhen with empty path", ownerPath))
+	if condition.Path == "" && len(condition.Tags) == 0 {
+		result.Errors = append(result.Errors, fmt.Sprintf("%s has onlyWhen without a path or tags", ownerPath))
 		return
 	}
-	if err := validateSafePath(condition.Path); err != nil {
-		result.Errors = append(result.Errors, fmt.Sprintf("%s has invalid onlyWhen path %q: %s", ownerPath, condition.Path, err))
-		return
+	if condition.Path != "" {
+		if err := validateSafePath(condition.Path); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s has invalid onlyWhen path %q: %s", ownerPath, condition.Path, err))
+			return
+		}
 	}
+	for _, tag := range condition.Tags {
+		if tag == "" || strings.ContainsAny(tag, ", \t") {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s has invalid onlyWhen tag %q: tags must be non-empty without spaces or commas", ownerPath, tag))
+			return
+		}
+	}
+	// The condition must be satisfiable by some repository in the schema,
+	// which catches path typos and misspelled tags.
 	matches, _ := model.Select(NodeQuery{Path: condition.Path, IncludeArchived: true})
-	if len(matches.ofKind(EntryRepo)) == 0 {
-		result.Errors = append(result.Errors, fmt.Sprintf("%s onlyWhen path %s does not resolve to any repository", ownerPath, condition.Path))
+	for _, match := range matches.ofKind(EntryRepo) {
+		if match.hasAllTags(condition.Tags) {
+			return
+		}
 	}
+	result.Errors = append(result.Errors, fmt.Sprintf("%s onlyWhen %s does not match any repository", ownerPath, describeCondition(condition)))
 }
 
 func (v validationResult) asError(prefix string) error {

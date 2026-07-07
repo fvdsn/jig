@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"strings"
 )
 
 // DirSource is one source of a $dir entry. An optional onlyWhen gates just
@@ -108,9 +109,26 @@ type Dependency struct {
 	Reason   string `json:"reason,omitempty"`
 }
 
+// Condition holds when some active or installed repository matches the path
+// (when given) and carries all the tags (when given). At least one of the
+// two selectors is required.
 type Condition struct {
-	Path   string `json:"path"`
-	Reason string `json:"reason,omitempty"`
+	Path   string   `json:"path,omitempty"`
+	Tags   []string `json:"tags,omitempty"`
+	Reason string   `json:"reason,omitempty"`
+}
+
+// describeCondition renders a condition's selectors for messages and info
+// output, e.g. "services" or "tags api,go" or "services tags api".
+func describeCondition(condition Condition) string {
+	parts := []string{}
+	if condition.Path != "" {
+		parts = append(parts, condition.Path)
+	}
+	if len(condition.Tags) > 0 {
+		parts = append(parts, "tags "+strings.Join(condition.Tags, ","))
+	}
+	return strings.Join(parts, " ")
 }
 
 func loadDefinition(path string) (*Definition, error) {

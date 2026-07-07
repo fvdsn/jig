@@ -241,7 +241,7 @@ func TestTagsSelectAndGateSources(t *testing.T) {
     ".agents/skills": {
       "$dir": { "id": "skills", "src": [
         "%s#skills",
-        { "src": "%s#skills", "onlyWhen": { "path": "services/web" } }
+        { "src": "%s#skills", "onlyWhen": { "tags": ["frontend"] } }
       ] }
     }
   }
@@ -259,8 +259,8 @@ func TestTagsSelectAndGateSources(t *testing.T) {
 		t.Fatal("did not expect gated skills without services/web")
 	}
 
-	// Installing the gating repo activates the gated source; removing it
-	// cleans the source's files up again.
+	// Installing a frontend-tagged repo activates the tag-gated source;
+	// removing it cleans the source's files up again.
 	w.mustJig(ws, "clone", "services/web")
 	w.mustJig(ws, "sync")
 	if !w.exists("ws", ".agents", "skills", "web", "SKILL.md") {

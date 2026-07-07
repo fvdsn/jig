@@ -95,7 +95,7 @@ A JSON tree where paths are the directory layout. Repos, files, and dirs are lea
 - **`$dir`** — a whole subtree materialized from a source repo (`<clone-url>#<subtree>`, or a pasted `…/tree/main/…` web URL). `src` may also be a list of sources merged in order (first wins on conflicts) — e.g. one `.agents/skills` assembled from several skill repositories; list entries can be `{ "src": ..., "onlyWhen": ... }` objects to gate individual sources. A `$dir` can instead declare `link` to become a relative symlink to another `$dir` — one real skills directory, symlinked into every harness path. Jig tracks a manifest of what it wrote, so updates touch only unmodified files and user files inside are never touched.
 - **`$group`** — metadata on a directory: `description`, `tags`, `dependsOn`, `archived`, `onlyWhen` are inherited by everything beneath it.
 - **`dependsOn`** — cloning a repo brings its dependency closure along (`optional: true` deps only with `--with-optional-deps`).
-- **`onlyWhen`** — conditional entries, active only when some repository path is installed.
+- **`onlyWhen`** — conditional entries, active only when some active or installed repository matches a `path`, carries all listed `tags`, or both — e.g. API skills materialize whenever anything tagged `api` is installed.
 - **`archived`** — hidden and skipped by default, kept synced if already installed.
 
 Files and dirs follow the repositories around them: a support file placed inside a group is materialized whenever any repo of that group is installed; root-level files follow the workspace as a whole.
