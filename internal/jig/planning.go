@@ -1,5 +1,34 @@
 package jig
 
+// The planner answers one question: given what the user selected and what is
+// already installed, which entries does a command operate on?
+//
+// Repositories become active by exactly three rules:
+//
+//  R1 Selection: each selected root is active (unless the command only wants
+//     the dependencies, as jig deps does).
+//  R2 Dependencies: an active repository activates the repositories its
+//     dependsOn paths select. Optional dependencies join only when requested
+//     or (during sync) already installed; roots never re-enter through a
+//     dependency edge; condition-gated targets wait for R3.
+//  R3 Conditions: a repository with onlyWhen conditions activates as soon as
+//     all of them hold.
+//
+// Conditions and scopes are judged against the evidence set: the repository
+// paths active so far plus the paths of installed repositories defined in
+// the schema. Evidence only ever grows, so the rules are monotone and a
+// worklist pass reaches the unique fixed point.
+//
+// Everywhere, archived entries are excluded unless requested or already
+// installed. With SkipDeps only R1 applies.
+//
+// Files and dirs are support artifacts, activated per entry by the first
+// matching rule: installed (state records intent), explicit onlyWhen
+// conditions hold, or — with no conditions — a repository in the entry's
+// scope is in evidence. The scope is the nearest ancestor path containing
+// repositories, or the whole workspace. A link entry additionally requires
+// its target to be active.
+
 import (
 	"fmt"
 	"strings"
@@ -29,129 +58,273 @@ func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
 	if opts.InstalledFiles == nil {
 		opts.InstalledFiles = map[string]bool{}
 	}
-	active := map[string]bool{}
-	rootIDs := map[string]bool{}
-	for _, root := range roots {
-		entry, ok := model.entry(root, EntryRepo)
-		if !ok {
-			return plan{}, fmt.Errorf("unknown repository %q", root)
-		}
-		rootIDs[entry.Identity] = true
-		if opts.IncludeRoots && !archivedExcluded(entry, opts.Installed, opts.IncludeArchived) {
-			active[root] = true
+	if opts.InstalledDirs == nil {
+		opts.InstalledDirs = map[string]bool{}
+	}
+	p := newPlanner(model, opts)
+	if err := p.seed(roots); err != nil {
+		return plan{}, err
+	}
+	if !opts.SkipDeps {
+		if err := p.solve(roots); err != nil {
+			return plan{}, err
 		}
 	}
-
-	changed := !opts.SkipDeps
-	for changed {
-		changed = false
-		for _, root := range roots {
-			if !opts.IncludeRoots {
-				if changedRoot, err := addDependencies(model, root, active, opts, rootIDs); err != nil {
-					return plan{}, err
-				} else if changedRoot {
-					changed = true
-				}
-			}
-		}
-		for _, repoPath := range sortedRepoPaths(model) {
-			entry, _ := model.entry(repoPath, EntryRepo)
-			if archivedExcluded(entry, opts.Installed, opts.IncludeArchived) {
-				continue
-			}
-			if active[repoPath] {
-				if changedDeps, err := addDependencies(model, repoPath, active, opts, rootIDs); err != nil {
-					return plan{}, err
-				} else if changedDeps {
-					changed = true
-				}
-				continue
-			}
-			if len(entry.Conditions) > 0 && conditionsMatch(entry.Conditions, active, opts.Installed, model) {
-				active[repoPath] = true
-				changed = true
-			}
-		}
-	}
-
-	activeFilesSet := activeFilesForRepoSet(model, active, opts.Installed, opts.InstalledFiles, opts.IncludeArchived)
-	activeDirsSet := activeDirsForRepoSet(model, active, opts.Installed, opts.InstalledDirs, opts.IncludeArchived)
+	files := artifactsActive(model, EntryFile, p.evidence, opts.InstalledFiles, opts.IncludeArchived)
+	dirs := artifactsActive(model, EntryDir, p.evidence, opts.InstalledDirs, opts.IncludeArchived)
 	return plan{
-		Repos: sortedKeys(active),
-		Files: orderFilesForApply(model, activeFilesSet),
-		Dirs:  orderDirsForApply(model, activeDirsSet),
+		Repos: sortedKeys(p.active),
+		Files: orderFilesForApply(model, files),
+		Dirs:  orderDirsForApply(model, dirs),
 	}, nil
 }
 
-// activeDirsForRepoSet mirrors activeFilesForRepoSet for $dir entries. Link
-// dirs are active only when their target dir is active, hence the fixed
-// point.
-func activeDirsForRepoSet(model *Model, activeRepos map[string]bool, installedRepos map[string]bool, installedDirs map[string]bool, includeArchived bool) map[string]bool {
-	dirs := map[string]bool{}
-	changed := true
-	for changed {
-		changed = false
-		for _, dirPath := range sortedPathsOfKind(model, EntryDir) {
-			if dirs[dirPath] {
-				continue
-			}
-			entry, _ := model.entry(dirPath, EntryDir)
-			if archivedExcluded(entry, installedDirs, includeArchived) {
-				continue
-			}
-			if !entryActive(model, entry, activeRepos, installedRepos, installedDirs) {
-				continue
-			}
-			if entry.Dir.Link != "" && !dirs[entry.Dir.Link] {
-				continue
-			}
-			dirs[dirPath] = true
-			changed = true
-		}
-	}
-	return dirs
+// planner carries the repository fixed point of rules R1-R3.
+type planner struct {
+	model *Model
+	opts  planOptions
+
+	repoPaths []string        // all repo paths, sorted
+	rootIDs   map[string]bool // root identities never re-enter via dependency edges
+	active    map[string]bool // repo paths in the plan
+	evidence  map[string]bool // active plus installed defined repo paths
+	queue     []string        // repos whose dependencies still need expanding
 }
 
-// entryActive decides whether a file or dir participates in plans: it is
-// already installed (state records intent, like repos), its explicit
-// conditions match, or - with no explicit conditions - a repository in its
-// scope is active or installed.
-func entryActive(model *Model, entry Entry, activeRepos map[string]bool, installedRepos map[string]bool, installedSelf map[string]bool) bool {
+func newPlanner(model *Model, opts planOptions) *planner {
+	return &planner{
+		model:     model,
+		opts:      opts,
+		repoPaths: sortedRepoPaths(model),
+		rootIDs:   map[string]bool{},
+		active:    map[string]bool{},
+		evidence:  evidenceSet(model, nil, opts.Installed),
+	}
+}
+
+// seed applies R1: selected roots enter the plan directly.
+func (p *planner) seed(roots []string) error {
+	for _, root := range roots {
+		entry, ok := p.model.entry(root, EntryRepo)
+		if !ok {
+			return fmt.Errorf("unknown repository %q", root)
+		}
+		p.rootIDs[entry.Identity] = true
+		if p.opts.IncludeRoots && !archivedExcluded(entry, p.opts.Installed, p.opts.IncludeArchived) {
+			p.activate(root)
+		}
+	}
+	return nil
+}
+
+func (p *planner) activate(repoPath string) {
+	if p.active[repoPath] {
+		return
+	}
+	p.active[repoPath] = true
+	p.evidence[repoPath] = true
+	p.queue = append(p.queue, repoPath)
+}
+
+// solve alternates R2 and R3 until nothing changes. Each repository's
+// dependencies expand exactly once (when it activates); condition-gated
+// entries are re-checked whenever the evidence has grown.
+func (p *planner) solve(roots []string) error {
+	if !p.opts.IncludeRoots {
+		// jig deps: the roots stay out of the plan, but their dependencies
+		// seed it.
+		p.queue = append(p.queue, roots...)
+	}
+	for {
+		for len(p.queue) > 0 {
+			repoPath := p.queue[0]
+			p.queue = p.queue[1:]
+			if err := p.expandDependencies(repoPath); err != nil {
+				return err
+			}
+		}
+		if !p.activateConditionalRepos() {
+			return nil
+		}
+	}
+}
+
+// expandDependencies applies R2 for one repository.
+func (p *planner) expandDependencies(repoPath string) error {
+	entry, _ := p.model.entry(repoPath, EntryRepo)
+	for _, dep := range entry.Repo.DependsOn {
+		selection, err := p.model.Select(NodeQuery{Path: dep.Path, IncludeArchived: true})
+		if err != nil {
+			return fmt.Errorf("invalid dependency %s for %s: %w", dep.Path, repoPath, err)
+		}
+		matches := selection.ofKind(EntryRepo)
+		if len(matches) == 0 {
+			return fmt.Errorf("dependency %s for %s does not resolve to any repository", dep.Path, repoPath)
+		}
+		for _, match := range matches {
+			if archivedExcluded(match, p.opts.Installed, p.opts.IncludeArchived) {
+				continue
+			}
+			if dep.Optional && !p.opts.IncludeOptional && !(p.opts.IncludeInstalledOptional && p.opts.Installed[match.Identity]) {
+				continue
+			}
+			if p.rootIDs[match.Identity] {
+				continue
+			}
+			if len(match.Conditions) > 0 && !conditionsMetIn(p.evidence, match.Conditions) {
+				continue // R3 picks it up if its conditions come to hold
+			}
+			p.activate(match.Path)
+		}
+	}
+	return nil
+}
+
+// activateConditionalRepos applies R3 once, reporting whether anything new
+// became active.
+func (p *planner) activateConditionalRepos() bool {
+	activated := false
+	for _, repoPath := range p.repoPaths {
+		if p.active[repoPath] {
+			continue
+		}
+		entry, _ := p.model.entry(repoPath, EntryRepo)
+		if len(entry.Conditions) == 0 {
+			continue
+		}
+		if archivedExcluded(entry, p.opts.Installed, p.opts.IncludeArchived) {
+			continue
+		}
+		if conditionsMetIn(p.evidence, entry.Conditions) {
+			p.activate(repoPath)
+			activated = true
+		}
+	}
+	return activated
+}
+
+// evidenceSet builds the repository paths that conditions and scopes are
+// judged against: activeRepos (path-keyed) plus the schema paths of the
+// installed identities.
+func evidenceSet(model *Model, activeRepos map[string]bool, installedIdentities map[string]bool) map[string]bool {
+	evidence := map[string]bool{}
+	for repoPath := range activeRepos {
+		evidence[repoPath] = true
+	}
+	if len(installedIdentities) > 0 {
+		identityToPath := repoIdentityToPath(model)
+		for identity := range installedIdentities {
+			if repoPath, ok := identityToPath[identity]; ok {
+				evidence[repoPath] = true
+			}
+		}
+	}
+	return evidence
+}
+
+func conditionsMetIn(evidence map[string]bool, conditions []Condition) bool {
+	for _, condition := range conditions {
+		if !conditionMetIn(evidence, condition) {
+			return false
+		}
+	}
+	return true
+}
+
+func conditionMetIn(evidence map[string]bool, condition Condition) bool {
+	for repoPath := range evidence {
+		if pathMatches(condition.Path, repoPath) {
+			return true
+		}
+	}
+	return false
+}
+
+// conditionMatches reports whether a single condition holds against active
+// and installed repositories; used by per-source dir gating.
+func conditionMatches(condition Condition, activeRepos map[string]bool, installedIdentities map[string]bool, model *Model) bool {
+	return conditionMetIn(evidenceSet(model, activeRepos, installedIdentities), condition)
+}
+
+// artifactsActive computes the active files or dirs for the given repository
+// evidence. Link chains are resolved by a memoized walk: a link entry is
+// active only when its whole chain is; cycles (rejected by validation)
+// resolve to inactive.
+func artifactsActive(model *Model, kind EntryKind, evidence map[string]bool, installedSelf map[string]bool, includeArchived bool) map[string]bool {
+	repoPaths := sortedRepoPaths(model)
+	linkOf := func(entry Entry) string {
+		if kind == EntryFile {
+			return entry.File.Link
+		}
+		return entry.Dir.Link
+	}
+
+	const (
+		unknown = iota
+		visiting
+		activeState
+		inactiveState
+	)
+	state := map[string]int{}
+	var isActive func(path string) bool
+	isActive = func(path string) bool {
+		switch state[path] {
+		case activeState:
+			return true
+		case inactiveState, visiting:
+			return false
+		}
+		entry, ok := model.entry(path, kind)
+		if !ok {
+			return false
+		}
+		state[path] = visiting
+		result := !archivedExcluded(entry, installedSelf, includeArchived) &&
+			artifactBaseActive(model, repoPaths, entry, evidence, installedSelf)
+		if result {
+			if target := linkOf(entry); target != "" {
+				result = isActive(target)
+			}
+		}
+		if result {
+			state[path] = activeState
+		} else {
+			state[path] = inactiveState
+		}
+		return result
+	}
+
+	set := map[string]bool{}
+	for _, path := range sortedPathsOfKind(model, kind) {
+		if isActive(path) {
+			set[path] = true
+		}
+	}
+	return set
+}
+
+// artifactBaseActive is the per-entry activation rule for files and dirs:
+// installed, explicit conditions hold, or a repository in scope is in
+// evidence.
+func artifactBaseActive(model *Model, repoPaths []string, entry Entry, evidence map[string]bool, installedSelf map[string]bool) bool {
 	if installedSelf[entry.Identity] {
 		return true
 	}
 	if len(entry.Conditions) > 0 {
-		return conditionsMatch(entry.Conditions, activeRepos, installedRepos, model)
+		return conditionsMetIn(evidence, entry.Conditions)
 	}
-	return scopeActive(model, entry.Path, activeRepos, installedRepos)
-}
-
-// scopeActive reports whether any repository in the entry's scope is active
-// or installed. The scope is the nearest ancestor path that contains
-// repositories, so a support file placed next to a group of repos follows
-// those repos; the workspace root is the last resort.
-func scopeActive(model *Model, entryPath string, activeRepos map[string]bool, installedRepos map[string]bool) bool {
-	scope := entryScope(model, entryPath)
+	scope := entryScope(repoPaths, entry.Path)
 	if scope == "" {
-		if len(activeRepos) > 0 {
-			return true
-		}
-		identityToPath := repoIdentityToPath(model)
-		for identity := range installedRepos {
-			if _, ok := identityToPath[identity]; ok {
-				return true
-			}
-		}
-		return false
+		return len(evidence) > 0
 	}
-	return conditionMatches(Condition{Path: scope}, activeRepos, installedRepos, model)
+	return conditionMetIn(evidence, Condition{Path: scope})
 }
 
 // entryScope returns the nearest ancestor path of entryPath containing at
 // least one repository, or "" for the workspace root.
-func entryScope(model *Model, entryPath string) string {
+func entryScope(repoPaths []string, entryPath string) string {
 	for scope := parentPath(entryPath); scope != ""; scope = parentPath(scope) {
-		for _, repoPath := range sortedRepoPaths(model) {
+		for _, repoPath := range repoPaths {
 			if pathMatches(scope, repoPath) {
 				return scope
 			}
@@ -166,6 +339,17 @@ func parentPath(path string) string {
 		return ""
 	}
 	return path[:idx]
+}
+
+// activeFilesForRepoSet reports the active files given active repository
+// paths and installed repository identities; status uses it directly.
+func activeFilesForRepoSet(model *Model, activeRepos map[string]bool, installedRepos map[string]bool, installedFiles map[string]bool, includeArchived bool) map[string]bool {
+	return artifactsActive(model, EntryFile, evidenceSet(model, activeRepos, installedRepos), installedFiles, includeArchived)
+}
+
+// activeDirsForRepoSet mirrors activeFilesForRepoSet for $dir entries.
+func activeDirsForRepoSet(model *Model, activeRepos map[string]bool, installedRepos map[string]bool, installedDirs map[string]bool, includeArchived bool) map[string]bool {
+	return artifactsActive(model, EntryDir, evidenceSet(model, activeRepos, installedRepos), installedDirs, includeArchived)
 }
 
 // archivedExcluded reports whether an archived entry should be left out of a
@@ -218,89 +402,4 @@ func orderLinkedForApply(active map[string]bool, linkOf func(string) string) []s
 		visit(path)
 	}
 	return result
-}
-
-func addDependencies(model *Model, repoPath string, active map[string]bool, opts planOptions, excludedIDs map[string]bool) (bool, error) {
-	entry, _ := model.entry(repoPath, EntryRepo)
-	changed := false
-	for _, dep := range entry.Repo.DependsOn {
-		selection, err := model.Select(NodeQuery{Path: dep.Path, IncludeArchived: true})
-		if err != nil {
-			return false, fmt.Errorf("invalid dependency %s for %s: %w", dep.Path, repoPath, err)
-		}
-		matches := selection.ofKind(EntryRepo)
-		if len(matches) == 0 {
-			return false, fmt.Errorf("dependency %s for %s does not resolve to any repository", dep.Path, repoPath)
-		}
-		for _, matchEntry := range matches {
-			match := matchEntry.Path
-			if archivedExcluded(matchEntry, opts.Installed, opts.IncludeArchived) {
-				continue
-			}
-			if dep.Optional && !opts.IncludeOptional && !(opts.IncludeInstalledOptional && opts.Installed[matchEntry.Identity]) {
-				continue
-			}
-			if excludedIDs[matchEntry.Identity] {
-				continue
-			}
-			if len(matchEntry.Conditions) > 0 && !conditionsMatch(matchEntry.Conditions, active, opts.Installed, model) {
-				continue
-			}
-			if !active[match] {
-				active[match] = true
-				changed = true
-			}
-		}
-	}
-	return changed, nil
-}
-
-func activeFilesForRepoSet(model *Model, activeRepos map[string]bool, installedRepos map[string]bool, installedFiles map[string]bool, includeArchived bool) map[string]bool {
-	files := map[string]bool{}
-	changed := true
-	for changed {
-		changed = false
-		for _, filePath := range sortedFilePaths(model) {
-			if files[filePath] {
-				continue
-			}
-			entry, _ := model.entry(filePath, EntryFile)
-			if archivedExcluded(entry, installedFiles, includeArchived) {
-				continue
-			}
-			if !entryActive(model, entry, activeRepos, installedRepos, installedFiles) {
-				continue
-			}
-			if entry.File.Link != "" && !files[entry.File.Link] {
-				continue
-			}
-			files[filePath] = true
-			changed = true
-		}
-	}
-	return files
-}
-
-func conditionsMatch(conditions []Condition, activeRepos map[string]bool, installed map[string]bool, model *Model) bool {
-	for _, condition := range conditions {
-		if !conditionMatches(condition, activeRepos, installed, model) {
-			return false
-		}
-	}
-	return true
-}
-
-func conditionMatches(condition Condition, activeRepos map[string]bool, installed map[string]bool, model *Model) bool {
-	for repoPath := range activeRepos {
-		if pathMatches(condition.Path, repoPath) {
-			return true
-		}
-	}
-	identityToPath := repoIdentityToPath(model)
-	for identity := range installed {
-		if repoPath, ok := identityToPath[identity]; ok && pathMatches(condition.Path, repoPath) {
-			return true
-		}
-	}
-	return false
 }
