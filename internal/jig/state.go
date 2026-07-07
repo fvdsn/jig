@@ -57,6 +57,11 @@ func loadState(root string) (State, error) {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return State{}, err
 	}
+	if state.Version > 1 {
+		// Rewriting newer state would silently strip fields this jig does
+		// not know about.
+		return State{}, fmt.Errorf("the workspace state uses version %d, which this jig does not understand; upgrade jig", state.Version)
+	}
 	if state.Version == 0 {
 		state.Version = 1
 	}

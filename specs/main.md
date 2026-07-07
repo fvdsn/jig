@@ -823,6 +823,10 @@ Rules:
   those unused for at least the given number of days), skipping mirrors
   locked by another process.
 
+## Compatibility
+
+The schema, workspace config, and state files each carry a `version` field. Version 1 is the current version of all three. When jig encounters a version newer than it understands, it must fail with an error telling the user to upgrade jig; it must never guess at newer formats or rewrite a newer state file (which would silently strip unknown fields). Future format changes bump the corresponding version.
+
 ## Operation Rules
 
 Repository operations should use repository identity to avoid duplicate work.

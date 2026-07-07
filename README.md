@@ -137,6 +137,14 @@ Everything jig manages lives under `.jig/` at the workspace root:
 - **Clone cache.** Jig keeps a bare mirror per remote in the user cache directory; clones hardlink from it, so history transfers over the network once per machine. Checkouts stay fully independent — deleting the cache is always safe. `JIG_CACHE_DIR` relocates it (empty disables), `jig cache clean --unused 30` prunes it.
 - **Terminal-aware output.** `list` and `status` align and truncate on a terminal; piped output stays full and tab-separated for scripts.
 
+## Compatibility
+
+- **Schemas are stable.** A `version: 1` schema keeps working across jig releases; schema and CLI behavior follow semver from v1.0.0.
+- **Versioned formats fail loudly.** When jig meets a schema, workspace config, or state file with a version it does not understand, it stops with an "upgrade jig" error instead of guessing (or silently dropping fields a newer jig wrote).
+- **Concurrent-safe.** Commands that mutate the workspace take a lock (`.jig/lock`); state files are written atomically.
+- **Exit codes tell the truth.** Commands exit non-zero when any entry could not be brought to its desired state, so scripts and agents never mistake a partial run for success.
+- **Platforms.** macOS and Linux are supported and tested in CI. Windows is not supported.
+
 ## Validating the schema in CI
 
 In the schema repository:

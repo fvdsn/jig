@@ -79,6 +79,10 @@ func loadWorkspace(withState bool) (*Workspace, error) {
 		ws.Close()
 		return nil, err
 	}
+	if def.Version > 1 {
+		ws.Close()
+		return nil, fmt.Errorf("the schema uses version %d, which this jig does not understand; upgrade jig", def.Version)
+	}
 	model, err := flattenDefinition(def)
 	if err != nil {
 		ws.Close()
@@ -125,6 +129,9 @@ func loadConfig(root string) (Config, error) {
 	var config Config
 	if err := json.Unmarshal(data, &config); err != nil {
 		return Config{}, err
+	}
+	if config.Version > 1 {
+		return Config{}, fmt.Errorf("this workspace was created by a newer jig (config version %d); upgrade jig", config.Version)
 	}
 	if config.Schema == "" {
 		return Config{}, errors.New("workspace config is missing the schema path")
