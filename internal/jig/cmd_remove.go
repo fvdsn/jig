@@ -23,6 +23,7 @@ func Remove(options RemoveOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	defer ws.Close()
 	installed := ws.installedNodes()
 
 	var targets []Entry

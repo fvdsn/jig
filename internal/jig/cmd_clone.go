@@ -19,6 +19,7 @@ func Clone(options CloneOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	defer ws.Close()
 	// State accumulated before a skip or failure is valid and must be kept.
 	cloneErr := clonePathIntoWorkspace(out, ws, options)
 	if err := saveState(ws.Root, ws.State); err != nil {

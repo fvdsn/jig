@@ -19,6 +19,7 @@ func Sync(options SyncOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	defer ws.Close()
 	return syncWorkspace(out, ws, options)
 }
 

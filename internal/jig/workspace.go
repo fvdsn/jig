@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 const (
 	configFile           = ".jig/config.json"
 	stateFile            = ".jig/state.json"
 	sourceDir            = ".jig/source"
+	workspaceLockFile    = ".jig/lock"
 	legacyDefinitionFile = ".jig.json"
 )
 
@@ -30,6 +32,17 @@ type Workspace struct {
 	Def    Definition
 	Model  Model
 	State  State
+
+	unlock func() // releases the workspace lock; set when loaded with state
+}
+
+// Close releases the workspace lock. Commands that load the workspace with
+// state must defer it.
+func (ws *Workspace) Close() {
+	if ws.unlock != nil {
+		ws.unlock()
+		ws.unlock = nil
+	}
 }
 
 // SchemaFile returns the absolute path of the live schema file inside the
@@ -52,12 +65,23 @@ func loadWorkspace(withState bool) (*Workspace, error) {
 		return nil, err
 	}
 	ws := &Workspace{Root: root, Config: config}
+	if withState {
+		// Commands that mutate state hold an exclusive lock so concurrent
+		// jig runs cannot silently drop each other's updates.
+		unlock, err := acquireLock(filepath.Join(root, workspaceLockFile), 10*time.Second)
+		if err != nil {
+			return nil, err
+		}
+		ws.unlock = unlock
+	}
 	def, err := loadDefinition(ws.SchemaFile())
 	if err != nil {
+		ws.Close()
 		return nil, err
 	}
 	model, err := flattenDefinition(def)
 	if err != nil {
+		ws.Close()
 		return nil, err
 	}
 	ws.Def = *def
@@ -65,6 +89,7 @@ func loadWorkspace(withState bool) (*Workspace, error) {
 	ws.State, err = loadState(root)
 	if err != nil {
 		if withState {
+			ws.Close()
 			return nil, err
 		}
 		ws.State = emptyState()

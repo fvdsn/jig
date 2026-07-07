@@ -26,6 +26,7 @@ func Update(options UpdateOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	defer ws.Close()
 	src := filepath.Join(ws.Root, sourceDir)
 	if _, err := gitOrigin(src); err != nil {
 		return fmt.Errorf("schema checkout has no origin remote (%s): %s", sourceDir, shortError(err))
