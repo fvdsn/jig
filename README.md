@@ -62,6 +62,8 @@ jig rm services/checkout        # uninstall
 
 Most commands accept `--tags a,b` (entries carrying all listed tags), `--archived`, and paths that address a single entry or a whole subtree.
 
+Commands are position-aware: run from a subdirectory, pathless commands scope to that subtree (inside a checkout, they address that one repo), and path arguments resolve like filesystem paths — `.`, `..`, and a leading `/` for the workspace root all work. `jig status` in `services/` shows just your services; `jig pull` inside a checkout pulls just it.
+
 ## The schema
 
 A JSON tree where paths are the directory layout. Repos, files, and dirs are leaves; any level can carry group metadata that children inherit.

@@ -170,6 +170,16 @@ foo//bar
 
 Source repo file paths use the same safety rules, but are interpreted relative to the source Git repository.
 
+## Position-Relative CLI Paths
+
+CLI path arguments and pathless commands are interpreted relative to the directory the command runs in (the subdirectory of the workspace root; `.jig` counts as the root):
+
+- A pathless command uses the current subtree as its selection. At the workspace root this selects everything, preserving root behavior.
+- Path arguments resolve like filesystem paths: `.` is the current subtree, `..` climbs, and a leading `/` anchors to the workspace root. A resolved path escaping the workspace is an error.
+- Pathless `sync` converges installed entries within the current subtree only; an explicit path (including `.`) materializes the selection as before. `sync --prune` requires the workspace root.
+- Resolution is CLI-side only: schema paths are unchanged and still reject `.`, `..`, and leading `/`.
+- Reported paths remain workspace-relative regardless of where the command runs.
+
 ## Tree Node Rules
 
 A tree node must be one of:

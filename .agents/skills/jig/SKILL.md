@@ -402,6 +402,15 @@ In this example, `.agents/skills/platform` is only written when a repository und
 
 Inherited `onlyWhen` conditions are additive. All inherited and local conditions must match.
 
+## Position-Relative Commands
+
+Commands are aware of where they run inside the workspace:
+
+- Pathless commands scope to the subtree of the current directory: `jig status` in `services/` reports only entries under `services`. Inside a repository checkout, pathless `status`, `pull`, and `checkout` address that one repository.
+- Path arguments resolve like filesystem paths against the current directory: `.`, `..`, `../other`, and a leading `/` anchoring to the workspace root (`jig info /platform/auth`). Escaping the workspace is an error.
+- Pathless `jig sync` in a subtree converges only what is installed there; `jig sync .` (an explicit path) materializes the whole subtree. `sync --prune` must run from the workspace root.
+- Output always shows full workspace paths.
+
 ## Safe Paths
 
 Workspace paths must be relative and use `/`.
