@@ -5,16 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 const (
-	configFile           = ".jig/config.json"
-	stateFile            = ".jig/state.json"
-	sourceDir            = ".jig/source"
-	workspaceLockFile    = ".jig/lock"
-	legacyDefinitionFile = ".jig.json"
+	configFile        = ".jig/config.json"
+	stateFile         = ".jig/state.json"
+	sourceDir         = ".jig/source"
+	workspaceLockFile = ".jig/lock"
 )
 
 // schemaCandidates are the schema file names probed at the root of a source
@@ -28,6 +29,7 @@ type Config struct {
 
 type Workspace struct {
 	Root   string
+	Subdir string // where the command runs, relative to Root; "" at the root
 	Config Config
 	Def    Definition
 	Model  Model
@@ -60,11 +62,15 @@ func loadWorkspace(withState bool) (*Workspace, error) {
 	if err != nil {
 		return nil, err
 	}
+	subdir, err := workspaceSubdir(root, cwd)
+	if err != nil {
+		return nil, err
+	}
 	config, err := loadConfig(root)
 	if err != nil {
 		return nil, err
 	}
-	ws := &Workspace{Root: root, Config: config}
+	ws := &Workspace{Root: root, Subdir: subdir, Config: config}
 	if withState {
 		// Commands that mutate state hold an exclusive lock so concurrent
 		// jig runs cannot silently drop each other's updates.
@@ -110,15 +116,49 @@ func findWorkspace(start string) (string, error) {
 		if pathExists(filepath.Join(dir, configFile)) {
 			return dir, nil
 		}
-		if pathExists(filepath.Join(dir, legacyDefinitionFile)) {
-			return "", fmt.Errorf("found legacy .jig.json at %s; this layout is no longer supported, delete it and re-run jig init", dir)
-		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			return "", errors.New("could not find a .jig workspace in current directory or parents; run jig init to create one")
 		}
 		dir = parent
 	}
+}
+
+// workspaceSubdir reports where the command runs relative to the workspace
+// root, in slash form. Inside .jig (editing the schema checkout, say) counts
+// as the root.
+func workspaceSubdir(root string, cwd string) (string, error) {
+	rel, err := filepath.Rel(root, cwd)
+	if err != nil {
+		return "", err
+	}
+	subdir := filepath.ToSlash(rel)
+	if subdir == "." || subdir == ".jig" || strings.HasPrefix(subdir, ".jig/") {
+		return "", nil
+	}
+	return subdir, nil
+}
+
+// ResolvePath interprets a CLI path argument relative to the directory the
+// command runs in: an empty path means the current subtree, "." and ".."
+// work like filesystem paths, and a leading "/" anchors to the workspace
+// root. The result is a workspace path ("" for the whole workspace).
+func (ws *Workspace) ResolvePath(arg string) (string, error) {
+	var resolved string
+	if strings.HasPrefix(arg, "/") {
+		resolved = path.Clean(strings.TrimPrefix(arg, "/"))
+	} else if arg == "" {
+		return ws.Subdir, nil
+	} else {
+		resolved = path.Join(ws.Subdir, arg)
+	}
+	if resolved == "." || resolved == "" {
+		return "", nil
+	}
+	if resolved == ".." || strings.HasPrefix(resolved, "../") {
+		return "", fmt.Errorf("path %q is outside the workspace", arg)
+	}
+	return resolved, nil
 }
 
 func loadConfig(root string) (Config, error) {

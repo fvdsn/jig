@@ -436,3 +436,74 @@ func TestConditionsScopeAndArchived(t *testing.T) {
 		t.Fatal("expected conditional repo to stay uninstalled")
 	}
 }
+
+// TestSubdirScoping covers position-relative behavior: pathless commands
+// scope to the subtree the command runs in, explicit paths resolve like
+// filesystem paths (".", "..", leading "/" for the root), and running
+// inside a checkout addresses that one repository.
+func TestSubdirScoping(t *testing.T) {
+	w := newWorld(t)
+	app1 := w.newRemote("app1", map[string]string{"README.md": "app1\n"})
+	app2 := w.newRemote("app2", map[string]string{"README.md": "app2\n"})
+	schemaRemote := w.newRemote("schema", map[string]string{"jig.json": fmt.Sprintf(`{
+  "version": 1,
+  "tree": {
+    "groupa/app1": { "$repo": { "id": "app1", "git": "%s" } },
+    "groupb/app2": { "$repo": { "id": "app2", "git": "%s" } }
+  }
+}`, app1, app2)})
+	w.mustJig(w.root, "init", schemaRemote, "ws", "--clone")
+	ws := w.path("ws")
+	inA := w.path("ws", "groupa")
+
+	// Pathless status scopes to the subtree; ".." climbs; "/" reaches root.
+	out := w.mustJig(inA, "status")
+	w.assertContains(out, "groupa/app1")
+	w.assertNotContains(out, "groupb/app2")
+	w.assertContains(w.mustJig(inA, "status", ".."), "groupb/app2")
+	w.assertContains(w.mustJig(inA, "info", "/groupb/app2"), "identity: app2")
+	if _, err := w.jig(inA, "status", "../.."); err == nil {
+		t.Fatal("expected error for a path outside the workspace")
+	}
+
+	// Scoped pull touches only the subtree.
+	w.commitRemote(app1, map[string]string{"README.md": "v2\n"}, "v2")
+	w.commitRemote(app2, map[string]string{"README.md": "v2\n"}, "v2")
+	out = w.mustJig(inA, "pull")
+	w.assertContains(out, "pulled: groupa/app1")
+	w.assertNotContains(out, "groupb/app2")
+
+	// Inside a checkout, pathless commands address that one repository.
+	inApp2 := w.path("ws", "groupb", "app2")
+	w.mustJig(inApp2, "fetch")
+	out = w.mustJig(inApp2, "status")
+	w.assertContains(out, "groupb/app2", "behind 1")
+	w.assertNotContains(out, "groupa/app1")
+	w.mustJig(inApp2, "pull")
+
+	// Pathless sync converges only the subtree: a checkout deleted outside
+	// the scope is not restored.
+	if err := os.RemoveAll(w.path("ws", "groupb", "app2")); err != nil {
+		t.Fatal(err)
+	}
+	out = w.mustJig(inA, "sync")
+	w.assertNotContains(out, "groupb/app2")
+	if w.exists("ws", "groupb", "app2") {
+		t.Fatal("expected out-of-scope repo untouched by scoped sync")
+	}
+	w.assertContains(w.mustJig(ws, "sync"), "restored: groupb/app2")
+
+	// --prune requires the workspace root.
+	if _, err := w.jig(inA, "sync", "--prune"); err == nil {
+		t.Fatal("expected --prune to require the workspace root")
+	}
+
+	// Relative rm works from the subtree (and prunes the emptied parent).
+	w.mustJig(inA, "rm", "app1")
+	if w.exists("ws", "groupa") {
+		t.Fatal("expected relative rm to remove the checkout")
+	}
+
+	// Relative clone from the subtree reinstalls.
+	w.assertContains(w.mustJig(w.path("ws", "groupb"), "clone", "/groupa/app1"), "cloned: groupa/app1")
+}

@@ -30,7 +30,11 @@ func Remove(options RemoveOptions, out io.Writer) error {
 	var failures []string
 	seen := map[string]bool{}
 	for _, rawPath := range options.Paths {
-		selection, err := ws.Model.Select(NodeQuery{Path: rawPath, IncludeArchived: true, Installed: installed})
+		resolved, err := ws.ResolvePath(rawPath)
+		if err != nil {
+			return err
+		}
+		selection, err := ws.Model.Select(NodeQuery{Path: resolved, IncludeArchived: true, Installed: installed})
 		if err != nil {
 			return err
 		}

@@ -29,6 +29,9 @@ func syncWorkspace(out io.Writer, ws *Workspace, options SyncOptions) error {
 	// the checkout as already tracked instead of stale.
 	readoptRenamedIdentities(out, &ws.Model, &ws.State)
 
+	if options.Prune && ws.Subdir != "" {
+		return fmt.Errorf("--prune applies to the whole workspace; run it from the workspace root")
+	}
 	var roots []string
 	var explicitFiles []string
 	var explicitDirs []string
@@ -44,7 +47,19 @@ func syncWorkspace(out io.Writer, ws *Workspace, options SyncOptions) error {
 			return fmt.Errorf("no repositories or files match %s", describeQuery(selection.Path, options.Tags))
 		}
 	} else {
+		// Pathless sync converges what is already installed — scoped to the
+		// subtree the command runs in. (An explicit path, including ".",
+		// materializes the whole selection instead.)
 		roots = desiredDefinedRepos(ws.Root, &ws.Model, &ws.State)
+		if ws.Subdir != "" {
+			var scoped []string
+			for _, repoPath := range roots {
+				if pathMatches(ws.Subdir, repoPath) {
+					scoped = append(scoped, repoPath)
+				}
+			}
+			roots = scoped
+		}
 		if len(options.Tags) > 0 {
 			var tagged []string
 			for _, repoPath := range roots {

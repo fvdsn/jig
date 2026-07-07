@@ -80,6 +80,11 @@ func (entry Entry) hasAllTags(tags []string) bool {
 }
 
 func (ws *Workspace) Select(query NodeQuery) (NodeSelection, error) {
+	resolved, err := ws.ResolvePath(query.Path)
+	if err != nil {
+		return NodeSelection{}, err
+	}
+	query.Path = resolved
 	query.Installed = ws.installedNodes()
 	return ws.Model.Select(query)
 }
