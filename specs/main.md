@@ -629,37 +629,24 @@ This is intended for humans and should not affect dependency resolution.
 
 ## Conditional Nodes
 
-`$group`, `$repo`, and `$file` may declare `onlyWhen`.
+Use `onlyWhen` to make a repo, file, or dir active only when some active or installed repository satisfies the condition.
 
-Example:
+A condition has two selectors, of which at least one is required:
+
+- `path`: a safe workspace path; a repository at or under it satisfies the condition.
+- `tags`: a list of tags; a repository carrying all of them (declared or inherited from groups) satisfies the condition. Multiple tags are conjunctive, matching the `--tags` CLI flag.
+
+When both selectors are given, one repository must satisfy both. An optional `reason` documents the condition.
 
 ```json
-{
-  "onlyWhen": {
-    "path": "platform",
-    "reason": "Only useful when platform repositories are installed"
-  }
-}
+{ "onlyWhen": { "path": "platform" } }
+{ "onlyWhen": { "tags": ["api"] } }
+{ "onlyWhen": { "path": "services", "tags": ["frontend"], "reason": "frontend tooling" } }
 ```
 
-Fields:
+Validation requires each condition to be satisfiable by at least one repository in the schema (archived included), which catches path typos and misspelled tags.
 
-- `path`: required safe workspace path. Refers to a repository or repository group.
-- `reason`: optional string. Human explanation for the condition.
-
-A condition matches when `onlyWhen.path` intersects either:
-
-- The repository set being installed or synced in the current operation.
-- The repository set already installed locally.
-
-Conditional activation is resolved to a fixed point:
-
-- Start with the requested repositories and their dependencies, ignoring inactive `onlyWhen` nodes.
-- Activate conditional nodes whose inherited and local `onlyWhen` conditions all match the active or already-installed repository set.
-- If an activated conditional repo has dependencies, include those dependencies.
-- Repeat until no new repositories or files become active.
-
-Files are not dependency graph nodes. Dependencies and `onlyWhen.path` match repositories only.
+Inherited `onlyWhen` conditions are additive. All inherited and local conditions must match.
 
 ## File And Dir Activation
 

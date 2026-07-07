@@ -368,7 +368,14 @@ Rules:
 
 ## Conditional Nodes
 
-Use `onlyWhen` to make a repo or file active only when another repository path or group is active or installed.
+Use `onlyWhen` to make a repo, file, or dir active only when some active or installed repository satisfies it. A condition selects by `path` (a repository under that path), by `tags` (a repository carrying all listed tags, inherited group tags included), or both combined:
+
+```json
+{ "onlyWhen": { "tags": ["api"], "reason": "API tooling for any API service" } }
+{ "onlyWhen": { "path": "services", "tags": ["frontend"] } }
+```
+
+Tag conditions make support artifacts follow capabilities instead of locations: an API skill gated on `tags: ["api"]` materializes whenever any api-tagged repository is installed, with no schema edits as the catalog grows.
 
 ```json
 {
