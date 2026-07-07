@@ -26,6 +26,8 @@ jig clone services/checkout   # clones the service and everything it depends on
 go install github.com/fvdsn/jig@latest
 ```
 
+Or grab a prebuilt binary for macOS or Linux from the [releases page](https://github.com/fvdsn/jig/releases).
+
 ## Quick start
 
 ```sh

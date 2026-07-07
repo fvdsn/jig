@@ -64,9 +64,16 @@ func Run(args []string, out io.Writer, _ io.Writer) error {
 	}
 }
 
-// versionString reports the module version embedded by go install, falling
-// back to the VCS revision for local builds.
+// buildVersion is stamped by the release workflow via -ldflags; go install
+// builds leave it empty and rely on the module version instead.
+var buildVersion string
+
+// versionString reports the release version, the module version embedded by
+// go install, or the VCS revision for local builds.
 func versionString() string {
+	if buildVersion != "" {
+		return "jig " + buildVersion
+	}
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return "jig (unknown version)"
