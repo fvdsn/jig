@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.8.1 — 2026-07-14
+
+- Source repository mirrors are freshened in parallel before files and dirs
+  are materialized, instead of one network round-trip at a time during the
+  pass. A sync whose support files draw from several source repositories
+  spends only the slowest fetch on the network, not the sum (measured ~8s
+  to ~2.5s on a workspace with four source repositories).
+
 ## v1.8.0 — 2026-07-13
 
 - `$file.src` accepts a list of sources, concatenated in order into the

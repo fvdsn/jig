@@ -243,6 +243,21 @@ func (f *fileFetcher) mirror(gitURL string) (string, error) {
 	return dir, err
 }
 
+// prefetchMirrors freshens the mirrors of the given URLs concurrently, so
+// the serial file and dir passes only hit memoized results instead of paying
+// one network round-trip each. Errors are memoized too and surface through
+// the existing per-entry handling.
+func (f *fileFetcher) prefetchMirrors(gitURLs []string) {
+	results := make([]mirrorResult, len(gitURLs))
+	forEachParallel(len(gitURLs), func(i int) {
+		dir, err := freshMirror(gitURLs[i])
+		results[i] = mirrorResult{dir, err}
+	})
+	for i, gitURL := range gitURLs {
+		f.mirrors[gitURL] = results[i]
+	}
+}
+
 // srcBlob returns the git blob id of the source file at the repository's
 // HEAD, without transferring the content.
 func (f *fileFetcher) srcBlob(src string) (string, error) {
