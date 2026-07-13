@@ -7,9 +7,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
-func ensureFile(out io.Writer, root string, model *Model, state *State, filePath string, allowMove bool, fetcher *fileFetcher) error {
+func ensureFile(out io.Writer, root string, model *Model, state *State, filePath string, allowMove bool, fetcher *fileFetcher, activeRepos map[string]bool, installedRepos map[string]bool) error {
 	entry, _ := model.entry(filePath, EntryFile)
 	file := entry.File
 	if file.Link != "" {
@@ -46,6 +47,20 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 		}
 	}
 
+	// A per-source onlyWhen gates just this source's content in the
+	// concatenation.
+	var activeSrcs []string
+	for _, source := range file.Src {
+		if source.OnlyWhen != nil && !conditionMatches(*source.OnlyWhen, activeRepos, installedRepos, model) {
+			continue
+		}
+		activeSrcs = append(activeSrcs, source.Src)
+	}
+	srcKey := strings.Join(activeSrcs, " ")
+	if len(activeSrcs) == 0 {
+		return ensureFileWithoutSources(out, root, state, entry, filePath, stateFile, hasState)
+	}
+
 	// A symlink at the path is not a file jig wrote (link files are handled
 	// above), and pathExists would miss a dangling or looping one.
 	if isSymlink(expectedAbs) {
@@ -71,10 +86,10 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 		if currentHash != stateFile.SHA256 {
 			return fmt.Errorf("locally modified")
 		}
-		// The tracked content is unmodified; when the source blob has not
+		// The tracked content is unmodified; when the source blobs have not
 		// moved either, there is nothing to transfer.
-		if stateFile.Src == file.Src && stateFile.SrcBlob != "" {
-			blob, err := fetcher.srcBlob(file.Src)
+		if stateFile.Src == srcKey && stateFile.SrcBlob != "" {
+			blob, err := combinedSrcBlob(fetcher, activeSrcs)
 			if err != nil {
 				fmt.Fprintf(out, "present-file: %s (source not checked: %s)\n", filePath, shortError(err))
 				return nil
@@ -91,12 +106,12 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 		delete(state.Files, entry.Identity)
 	}
 
-	content, blob, err := fetcher.content(file.Src)
+	content, blob, err := fetchConcatenated(fetcher, activeSrcs)
 	if err != nil {
 		return err
 	}
 	newHash := sha256Hex(content)
-	state.Files[entry.Identity] = StateFile{Path: expectedRel, Src: file.Src, SHA256: newHash, SrcBlob: blob}
+	state.Files[entry.Identity] = StateFile{Path: expectedRel, Src: srcKey, SHA256: newHash, SrcBlob: blob}
 
 	if exists && newHash == currentHash {
 		// The content is already current; only the recorded blob moved.
@@ -129,6 +144,81 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 		fmt.Fprintf(out, "wrote-file: %s\n", filePath)
 	}
 	return nil
+}
+
+// ensureFileWithoutSources converges a file entry whose sources are all
+// gated off: no file is generated, and a previously written untouched file is
+// removed. A locally modified file is kept but abandoned as untracked,
+// mirroring how $dir treats modified files of a deactivated source.
+func ensureFileWithoutSources(out io.Writer, root string, state *State, entry Entry, filePath string, stateFile StateFile, hasState bool) error {
+	if !hasState {
+		fmt.Fprintf(out, "inactive-file: %s (no active sources)\n", filePath)
+		return nil
+	}
+	expectedAbs := filepath.Join(root, entry.Path)
+	if pathExists(expectedAbs) && !isSymlink(expectedAbs) {
+		currentHash, err := fileSHA256(expectedAbs)
+		if err != nil {
+			return err
+		}
+		if currentHash != stateFile.SHA256 {
+			delete(state.Files, entry.Identity)
+			fmt.Fprintf(out, "inactive-file: %s (no active sources; modified file left untracked)\n", filePath)
+			return nil
+		}
+		if err := os.Remove(expectedAbs); err != nil {
+			return err
+		}
+		pruneEmptyParents(root, filepath.Dir(entry.Path))
+		delete(state.Files, entry.Identity)
+		fmt.Fprintf(out, "removed-file: %s (no active sources)\n", filePath)
+		return nil
+	}
+	delete(state.Files, entry.Identity)
+	fmt.Fprintf(out, "inactive-file: %s (no active sources)\n", filePath)
+	return nil
+}
+
+// combinedSrcBlob joins the source blob ids of every active source with "+":
+// the multi-source analogue of a single source's blob id.
+func combinedSrcBlob(fetcher *fileFetcher, srcs []string) (string, error) {
+	blobs := make([]string, 0, len(srcs))
+	for _, src := range srcs {
+		blob, err := fetcher.srcBlob(src)
+		if err != nil {
+			return "", err
+		}
+		blobs = append(blobs, blob)
+	}
+	return strings.Join(blobs, "+"), nil
+}
+
+// fetchConcatenated fetches every active source and concatenates the parts
+// in order, inserting a newline between parts when one is missing. The
+// combined blob id is empty when any source's blob id is unknown, so the
+// next run re-fetches instead of trusting a partial key.
+func fetchConcatenated(fetcher *fileFetcher, srcs []string) ([]byte, string, error) {
+	var content []byte
+	blobs := make([]string, 0, len(srcs))
+	blobsKnown := true
+	for _, src := range srcs {
+		part, blob, err := fetcher.content(src)
+		if err != nil {
+			return nil, "", err
+		}
+		if len(content) > 0 && content[len(content)-1] != '\n' {
+			content = append(content, '\n')
+		}
+		content = append(content, part...)
+		if blob == "" {
+			blobsKnown = false
+		}
+		blobs = append(blobs, blob)
+	}
+	if !blobsKnown {
+		return content, "", nil
+	}
+	return content, strings.Join(blobs, "+"), nil
 }
 
 // ensureFileMode fixes the executable bit on an otherwise up-to-date file.

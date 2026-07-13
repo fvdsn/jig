@@ -113,12 +113,15 @@ func validateDefinition(def *Definition) validationResult {
 }
 
 func validateFileEntry(result *validationResult, model Model, path string, file *File) {
-	if (file.Src == "") == (file.Link == "") {
+	if (len(file.Src) == 0) == (file.Link == "") {
 		result.Errors = append(result.Errors, fmt.Sprintf("file %s must define exactly one of src or link", path))
 	}
-	if file.Src != "" {
-		if _, err := parseFileSrc(file.Src); err != nil {
+	for _, source := range file.Src {
+		if _, err := parseFileSrc(source.Src); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("file %s invalid src: %s", path, err))
+		}
+		if source.OnlyWhen != nil {
+			validateCondition(result, model, path, *source.OnlyWhen)
 		}
 	}
 	if file.Link != "" {

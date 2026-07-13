@@ -277,6 +277,21 @@ https://gitlab.com/acme/workspace-config/-/blob/main/scripts/dev.sh
 
 Such a URL is treated as the repository's https clone URL plus the in-repo path; line anchors and query parameters are ignored. The URL must point at the repository's default branch.
 
+`src` may also be a list of sources; their contents are concatenated in order into the single generated file, with a newline inserted between parts when one is missing (intended for text content). List entries can be plain strings or objects with a per-source `onlyWhen`, gating just that section — the same shape `$dir` uses, but appending instead of merging trees. When every source is gated off, no file is generated (a previously written untouched file is removed). This assembles e.g. one `AGENTS.md` from sections that follow the installed repositories:
+
+```json
+{
+  "$file": {
+    "id": "agents-md",
+    "src": [
+      "git@github.com:acme/workspace-config.git#agents/base.md",
+      { "src": "git@github.com:acme/workspace-config.git#agents/billing.md",
+        "onlyWhen": { "path": "billing" } }
+    ]
+  }
+}
+```
+
 Files are written during `clone` and `sync` when active. A file without an explicit `onlyWhen` is active when any repository in its scope is active or installed; the scope is the nearest ancestor path containing repositories (the whole workspace for root-level files). A support file placed next to a group of repos therefore follows those repos automatically. Installed files stay active until removed with `jig rm`.
 
 Files can set `archived: true` to exclude them by default. Files already installed by Jig remain included; pass `--archived` to include uninstalled archived files too.

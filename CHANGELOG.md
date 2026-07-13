@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.8.0 — 2026-07-13
+
+- `$file.src` accepts a list of sources, concatenated in order into the
+  single generated file (a newline is inserted between parts when one is
+  missing). List entries can be `{ "src": ..., "onlyWhen": ... }` objects
+  gating individual sections — the same shape `$dir` uses, but appending
+  instead of merging trees. One `AGENTS.md` can now be assembled from a
+  base section plus sections that follow the installed repositories. When
+  every source is gated off, no file is generated: a previously written
+  untouched file is removed on sync.
+- `jig info` renders per-source `onlyWhen` tag conditions (previously only
+  the condition's path was shown).
+
 ## v1.7.0 — 2026-07-07
 
 - Commands are position-aware: run from a subdirectory, pathless commands

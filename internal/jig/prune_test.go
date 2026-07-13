@@ -12,7 +12,7 @@ import (
 func TestReadoptRenamedIdentities(t *testing.T) {
 	model := Model{Entries: map[string]Entry{
 		"services/a": testRepoEntry("services/a", "new-id", Repo{Git: "git@example.com:a.git"}),
-		"dev.sh":     testFileEntry("dev.sh", "new-script", File{Src: "git@example.com:config.git#dev.sh"}),
+		"dev.sh":     testFileEntry("dev.sh", "new-script", File{Src: SrcList{{Src: "git@example.com:config.git#dev.sh"}}}),
 	}}
 	state := emptyState()
 	state.Repos["old-id"] = StateRepo{Path: "services/a", Git: "git@example.com:a.git"}

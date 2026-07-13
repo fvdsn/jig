@@ -60,11 +60,11 @@ func TestEnsureLinkFileCreatesRelativeSymlink(t *testing.T) {
 	}
 	state := emptyState()
 	model := Model{Entries: map[string]Entry{
-		"scripts/dev.sh": testFileEntry("scripts/dev.sh", "dev-script", File{Src: "git:git@example.com:config.git#scripts/dev.sh"}),
+		"scripts/dev.sh": testFileEntry("scripts/dev.sh", "dev-script", File{Src: SrcList{{Src: "git:git@example.com:config.git#scripts/dev.sh"}}}),
 		"bin/dev":        testFileEntry("bin/dev", "dev-command", File{Link: "scripts/dev.sh"}),
 	}}
 
-	if err := ensureFile(ioDiscard{}, root, &model, &state, "bin/dev", true, newFileFetcher()); err != nil {
+	if err := ensureFile(ioDiscard{}, root, &model, &state, "bin/dev", true, newFileFetcher(), nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	target, err := os.Readlink(filepath.Join(root, "bin", "dev"))
@@ -92,10 +92,10 @@ func TestEnsureFilePreservesLocalModification(t *testing.T) {
 		"dev-script": {Path: "scripts/dev.sh", Src: "git:git@example.com:config.git#scripts/dev.sh", SHA256: sha256Hex([]byte("original"))},
 	}}
 	model := Model{Entries: map[string]Entry{
-		"scripts/dev.sh": testFileEntry("scripts/dev.sh", "dev-script", File{Src: "git:git@example.com:config.git#scripts/dev.sh"}),
+		"scripts/dev.sh": testFileEntry("scripts/dev.sh", "dev-script", File{Src: SrcList{{Src: "git:git@example.com:config.git#scripts/dev.sh"}}}),
 	}}
 
-	err := ensureFile(ioDiscard{}, root, &model, &state, "scripts/dev.sh", true, newFileFetcher())
+	err := ensureFile(ioDiscard{}, root, &model, &state, "scripts/dev.sh", true, newFileFetcher(), nil, nil)
 	if err == nil || err.Error() != "locally modified" {
 		t.Fatalf("expected locally modified error, got %v", err)
 	}
@@ -110,11 +110,11 @@ func TestEnsureFilePicksUpSourceChanges(t *testing.T) {
 
 	state := emptyState()
 	model := Model{Entries: map[string]Entry{
-		"docs/readme.md": testFileEntry("docs/readme.md", "readme", File{Src: src}),
+		"docs/readme.md": testFileEntry("docs/readme.md", "readme", File{Src: SrcList{{Src: src}}}),
 	}}
 	ensure := func() string {
 		var out bytes.Buffer
-		if err := ensureFile(&out, root, &model, &state, "docs/readme.md", true, newFileFetcher()); err != nil {
+		if err := ensureFile(&out, root, &model, &state, "docs/readme.md", true, newFileFetcher(), nil, nil); err != nil {
 			t.Fatalf("ensureFile: %v", err)
 		}
 		return out.String()
@@ -151,9 +151,239 @@ func TestEnsureFilePicksUpSourceChanges(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "docs", "readme.md"), []byte("edited\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err = ensureFile(ioDiscard{}, root, &model, &state, "docs/readme.md", true, newFileFetcher())
+	err = ensureFile(ioDiscard{}, root, &model, &state, "docs/readme.md", true, newFileFetcher(), nil, nil)
 	if err == nil || err.Error() != "locally modified" {
 		t.Fatalf("expected locally modified error, got %v", err)
+	}
+}
+
+// testFileSource creates a git repository holding the given files, for use
+// as a $file source.
+func testFileSource(t *testing.T, dir string, files map[string]string) {
+	t.Helper()
+	for rel, content := range files {
+		path := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitIn(t, dir, "init", "-q")
+	gitIn(t, dir, "add", ".")
+	gitIn(t, dir, "commit", "-qm", "init")
+}
+
+func TestEnsureFileConcatenatesMultipleSources(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	source := filepath.Join(root, "config")
+	// The first part misses its trailing newline: the join inserts one.
+	testFileSource(t, source, map[string]string{
+		"agents/base.md":  "base",
+		"agents/extra.md": "extra\n",
+	})
+
+	state := emptyState()
+	model := Model{Entries: map[string]Entry{
+		"AGENTS.md": testFileEntry("AGENTS.md", "agents", File{Src: SrcList{
+			{Src: source + "#agents/base.md"},
+			{Src: source + "#agents/extra.md"},
+		}}),
+	}}
+	ensure := func() string {
+		var out bytes.Buffer
+		if err := ensureFile(&out, root, &model, &state, "AGENTS.md", true, newFileFetcher(), nil, nil); err != nil {
+			t.Fatalf("ensureFile: %v", err)
+		}
+		return out.String()
+	}
+
+	if got := ensure(); !strings.Contains(got, "wrote-file:") {
+		t.Fatalf("first run = %q, want wrote-file", got)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
+	if err != nil || string(data) != "base\nextra\n" {
+		t.Fatalf("content = %q, %v; want base and extra joined by a newline", data, err)
+	}
+	if !strings.Contains(state.Files["agents"].SrcBlob, "+") {
+		t.Fatalf("srcBlob = %q, want combined blob ids", state.Files["agents"].SrcBlob)
+	}
+	if got := ensure(); !strings.Contains(got, "present-file:") {
+		t.Fatalf("second run = %q, want present-file", got)
+	}
+
+	// An update in the second source flows through the concatenation.
+	if err := os.WriteFile(filepath.Join(source, "agents", "extra.md"), []byte("extra v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, source, "commit", "-qam", "v2")
+	if got := ensure(); !strings.Contains(got, "updated-file:") {
+		t.Fatalf("update run = %q, want updated-file", got)
+	}
+	if data, _ := os.ReadFile(filepath.Join(root, "AGENTS.md")); string(data) != "base\nextra v2\n" {
+		t.Fatalf("content = %q, want updated concatenation", data)
+	}
+}
+
+func TestFileSourcesGatedByOnlyWhen(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	source := filepath.Join(root, "config")
+	testFileSource(t, source, map[string]string{
+		"agents/base.md":    "base\n",
+		"agents/billing.md": "billing\n",
+	})
+
+	state := emptyState()
+	model := Model{Entries: map[string]Entry{
+		"billing/api": testRepoEntry("billing/api", "billing-api", Repo{Git: "git@example.com:billing.git"}),
+		"AGENTS.md": testFileEntry("AGENTS.md", "agents", File{Src: SrcList{
+			{Src: source + "#agents/base.md"},
+			{Src: source + "#agents/billing.md", OnlyWhen: &Condition{Path: "billing"}},
+		}}),
+	}}
+	ensure := func(activeRepos map[string]bool) string {
+		var out bytes.Buffer
+		if err := ensureFile(&out, root, &model, &state, "AGENTS.md", true, newFileFetcher(), activeRepos, nil); err != nil {
+			t.Fatalf("ensureFile: %v", err)
+		}
+		return out.String()
+	}
+	content := func() string {
+		data, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+
+	// Without billing active, only the base section is written.
+	ensure(nil)
+	if content() != "base\n" {
+		t.Fatalf("content = %q, want base only", content())
+	}
+
+	// Activating billing appends the gated section.
+	if got := ensure(map[string]bool{"billing/api": true}); !strings.Contains(got, "updated-file:") {
+		t.Fatalf("activation run = %q, want updated-file", got)
+	}
+	if content() != "base\nbilling\n" {
+		t.Fatalf("content = %q, want base and billing", content())
+	}
+
+	// Deactivating drops it again.
+	ensure(nil)
+	if content() != "base\n" {
+		t.Fatalf("content = %q, want base only after deactivation", content())
+	}
+}
+
+func TestFileWithoutActiveSourcesIsNotGenerated(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	source := filepath.Join(root, "config")
+	testFileSource(t, source, map[string]string{"agents/billing.md": "billing\n"})
+
+	state := emptyState()
+	model := Model{Entries: map[string]Entry{
+		"billing/api": testRepoEntry("billing/api", "billing-api", Repo{Git: "git@example.com:billing.git"}),
+		"AGENTS.md": testFileEntry("AGENTS.md", "agents", File{Src: SrcList{
+			{Src: source + "#agents/billing.md", OnlyWhen: &Condition{Path: "billing"}},
+		}}),
+	}}
+	ensure := func(activeRepos map[string]bool) string {
+		var out bytes.Buffer
+		if err := ensureFile(&out, root, &model, &state, "AGENTS.md", true, newFileFetcher(), activeRepos, nil); err != nil {
+			t.Fatalf("ensureFile: %v", err)
+		}
+		return out.String()
+	}
+
+	// With every source gated off, no file appears.
+	if got := ensure(nil); !strings.Contains(got, "inactive-file:") {
+		t.Fatalf("inactive run = %q, want inactive-file", got)
+	}
+	if pathExists(filepath.Join(root, "AGENTS.md")) {
+		t.Fatal("did not expect AGENTS.md without active sources")
+	}
+
+	// Deactivating every source of a written untouched file removes it.
+	ensure(map[string]bool{"billing/api": true})
+	if !pathExists(filepath.Join(root, "AGENTS.md")) {
+		t.Fatal("expected AGENTS.md with billing active")
+	}
+	if got := ensure(nil); !strings.Contains(got, "removed-file:") {
+		t.Fatalf("deactivation run = %q, want removed-file", got)
+	}
+	if pathExists(filepath.Join(root, "AGENTS.md")) {
+		t.Fatal("expected AGENTS.md removed after deactivation")
+	}
+	if _, tracked := state.Files["agents"]; tracked {
+		t.Fatalf("expected state entry dropped, got %#v", state.Files["agents"])
+	}
+
+	// A locally modified file is never deleted; it is left untracked.
+	ensure(map[string]bool{"billing/api": true})
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := ensure(nil); !strings.Contains(got, "left untracked") {
+		t.Fatalf("modified deactivation run = %q, want left untracked", got)
+	}
+	if data, _ := os.ReadFile(filepath.Join(root, "AGENTS.md")); string(data) != "edited\n" {
+		t.Fatalf("content = %q, want local edit kept", data)
+	}
+	if _, tracked := state.Files["agents"]; tracked {
+		t.Fatal("expected state entry dropped for the abandoned file")
+	}
+}
+
+func TestFileSrcListValidation(t *testing.T) {
+	good := testDefinition(t, `{
+  "version": 1,
+  "tree": {
+    "billing/api": { "$repo": { "git": "git@example.com:billing.git" } },
+    "AGENTS.md": {
+      "$file": {
+        "src": [
+          "git@example.com:config.git#agents/base.md",
+          { "src": "git@example.com:config.git#agents/billing.md",
+            "onlyWhen": { "path": "billing" } }
+        ]
+      }
+    }
+  }
+}`)
+	if result := validateDefinition(good); len(result.Errors) > 0 {
+		t.Fatalf("unexpected validation errors: %#v", result.Errors)
+	}
+
+	bad := testDefinition(t, `{
+  "version": 1,
+  "tree": {
+    "billing/api": { "$repo": { "git": "git@example.com:billing.git" } },
+    "AGENTS.md": {
+      "$file": {
+        "src": [
+          "git@example.com:config.git",
+          { "src": "git@example.com:config.git#agents/billing.md",
+            "onlyWhen": { "path": "nope" } }
+        ]
+      }
+    }
+  }
+}`)
+	result := validateDefinition(bad)
+	if len(result.Errors) != 2 {
+		t.Fatalf("errors = %#v, want invalid src and unsatisfiable onlyWhen", result.Errors)
+	}
+	if !strings.Contains(result.Errors[0], "invalid src") {
+		t.Fatalf("first error = %q, want invalid src", result.Errors[0])
+	}
+	if !strings.Contains(result.Errors[1], "does not match any repository") {
+		t.Fatalf("second error = %q, want unsatisfiable onlyWhen", result.Errors[1])
 	}
 }
 

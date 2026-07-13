@@ -166,15 +166,15 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, insta
 		}
 	})
 	fetcher := newFileFetcher()
-	for _, filePath := range plan.Files {
-		if err := ensureFile(out, ws.Root, &ws.Model, &ws.State, filePath, opts.Sync, fetcher); err != nil {
-			skipped++
-			fmt.Fprintf(out, "skipped:\n  %s: %s\n", filePath, err)
-		}
-	}
 	activeRepos := map[string]bool{}
 	for _, repoPath := range plan.Repos {
 		activeRepos[repoPath] = true
+	}
+	for _, filePath := range plan.Files {
+		if err := ensureFile(out, ws.Root, &ws.Model, &ws.State, filePath, opts.Sync, fetcher, activeRepos, installedRepos); err != nil {
+			skipped++
+			fmt.Fprintf(out, "skipped:\n  %s: %s\n", filePath, err)
+		}
 	}
 	for _, dirPath := range plan.Dirs {
 		if err := ensureDir(out, ws.Root, &ws.Model, &ws.State, dirPath, opts.Sync, fetcher, activeRepos, installedRepos); err != nil {

@@ -54,8 +54,8 @@ func Info(options InfoOptions, out io.Writer) error {
 		fmt.Fprintf(out, "path: %s\n", path)
 		fmt.Fprintln(out, "type: file")
 		fmt.Fprintf(out, "identity: %s\n", entry.Identity)
-		if file.Src != "" {
-			fmt.Fprintf(out, "src: %s\n", file.Src)
+		if len(file.Src) > 0 {
+			printSrcList(out, file.Src)
 		}
 		if file.Link != "" {
 			fmt.Fprintf(out, "link: %s\n", file.Link)
@@ -81,17 +81,8 @@ func Info(options InfoOptions, out io.Writer) error {
 		fmt.Fprintf(out, "identity: %s\n", entry.Identity)
 		if dir.Link != "" {
 			fmt.Fprintf(out, "link: %s\n", dir.Link)
-		} else if len(dir.Src) == 1 && dir.Src[0].OnlyWhen == nil {
-			fmt.Fprintf(out, "src: %s\n", dir.Src[0].Src)
 		} else {
-			fmt.Fprintln(out, "src:")
-			for _, source := range dir.Src {
-				line := "  " + source.Src
-				if source.OnlyWhen != nil {
-					line += " (onlyWhen: " + source.OnlyWhen.Path + ")"
-				}
-				fmt.Fprintln(out, line)
-			}
+			printSrcList(out, dir.Src)
 		}
 		if dir.Description != "" {
 			fmt.Fprintf(out, "description: %s\n", dir.Description)
@@ -146,6 +137,23 @@ func Info(options InfoOptions, out io.Writer) error {
 		}
 	}
 	return nil
+}
+
+// printSrcList renders a $file or $dir source list: a single unconditional
+// source inline, anything else as one line per source.
+func printSrcList(out io.Writer, sources SrcList) {
+	if len(sources) == 1 && sources[0].OnlyWhen == nil {
+		fmt.Fprintf(out, "src: %s\n", sources[0].Src)
+		return
+	}
+	fmt.Fprintln(out, "src:")
+	for _, source := range sources {
+		line := "  " + source.Src
+		if source.OnlyWhen != nil {
+			line += " (onlyWhen: " + describeCondition(*source.OnlyWhen) + ")"
+		}
+		fmt.Fprintln(out, line)
+	}
 }
 
 func printTags(out io.Writer, tags []string) {

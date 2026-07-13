@@ -434,7 +434,7 @@ File identities must be unique after applying this rule. Two files cannot resolv
 
 ### `$file.src`
 
-Optional string.
+Optional string or list.
 
 Identifies where the file content comes from.
 
@@ -458,6 +458,28 @@ Parsing rules:
 - The right side is a safe source repo file path.
 - The source repo file path must not contain `#`.
 - A legacy `git:` prefix is accepted and ignored (real `git://` protocol URLs are untouched).
+
+`src` may also be a list of such sources; their contents are concatenated in order into the single generated file. A list entry may be an object `{"src": ..., "onlyWhen": ...}`; the per-source condition gates just that source's content within the concatenation, evaluated against active and installed repositories — the same shape `$dir` uses, but appending instead of merging trees. Rules:
+
+- All active sources are resolved before the file is written; parts are joined in list order.
+- A newline is inserted between two parts when the earlier one does not end with one, so text sections never run together. Multi-source files are therefore intended for text content.
+- A condition flip changes the expected content: the file is rewritten on the next sync when untouched, and a locally modified file is reported instead of overwritten, as usual.
+- When every source is gated off, no file is generated: a previously written untouched file is removed and dropped from state; a locally modified one is kept but left untracked.
+
+This assembles e.g. one `AGENTS.md` from a base section plus sections that follow the installed repositories:
+
+```json
+{
+  "$file": {
+    "id": "agents-md",
+    "src": [
+      "git@github.com:org/workspace-config.git#agents/base.md",
+      { "src": "git@github.com:org/workspace-config.git#agents/billing.md",
+        "onlyWhen": { "path": "billing" } }
+    ]
+  }
+}
+```
 
 ### `$file.link`
 
@@ -731,7 +753,7 @@ Repository state fields:
 File state fields:
 
 - `path`: required safe workspace path relative to the workspace root.
-- `src`: required string. Source recorded when Jig last wrote the file.
+- `src`: required string. Source recorded when Jig last wrote the file; for a multi-source file, the space-separated active sources.
 - `link`: optional string. Link target recorded when Jig last created a symlink.
 - `sha256`: required string. Hash of the file contents written by Jig.
 

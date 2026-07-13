@@ -7,16 +7,17 @@ import (
 	"strings"
 )
 
-// DirSource is one source of a $dir entry. An optional onlyWhen gates just
-// this source's tree within the merge.
-type DirSource struct {
+// SrcEntry is one source of a $file or $dir entry. An optional onlyWhen
+// gates just this source's contribution: its tree within a dir merge, or its
+// content within a file concatenation.
+type SrcEntry struct {
 	Src      string     `json:"src"`
 	OnlyWhen *Condition `json:"onlyWhen,omitempty"`
 }
 
 // SrcList accepts a single source string, or a list whose elements are
 // strings or {src, onlyWhen} objects.
-type SrcList []DirSource
+type SrcList []SrcEntry
 
 func (s *SrcList) UnmarshalJSON(data []byte) error {
 	var single string
@@ -32,10 +33,10 @@ func (s *SrcList) UnmarshalJSON(data []byte) error {
 	for _, raw := range raws {
 		var str string
 		if err := json.Unmarshal(raw, &str); err == nil {
-			list = append(list, DirSource{Src: str})
+			list = append(list, SrcEntry{Src: str})
 			continue
 		}
-		var source DirSource
+		var source SrcEntry
 		if err := json.Unmarshal(raw, &source); err != nil {
 			return errors.New("src entries must be strings or {src, onlyWhen} objects")
 		}
@@ -71,7 +72,7 @@ type Repo struct {
 
 type File struct {
 	ID          string     `json:"id,omitempty"`
-	Src         string     `json:"src"`
+	Src         SrcList    `json:"src,omitempty"` // one or more sources, concatenated in order
 	Link        string     `json:"link,omitempty"`
 	Description string     `json:"description,omitempty"`
 	Executable  bool       `json:"executable,omitempty"`
