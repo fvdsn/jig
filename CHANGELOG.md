@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.8.2 — 2026-07-14
+
+- jig can now be installed with Homebrew: `brew install fvdsn/tap/jig`
+  (macOS and Linux, Apple Silicon and Intel/amd64). The release workflow
+  updates the [fvdsn/homebrew-tap](https://github.com/fvdsn/homebrew-tap)
+  formula automatically on every release. No changes to jig itself.
+
 ## v1.8.1 — 2026-07-14
 
 - Source repository mirrors are freshened in parallel before files and dirs

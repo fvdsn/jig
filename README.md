@@ -22,6 +22,14 @@ jig clone services/checkout   # clones the service and everything it depends on
 
 ## Install
 
+With Homebrew (macOS or Linux):
+
+```sh
+brew install fvdsn/tap/jig
+```
+
+With Go:
+
 ```sh
 go install github.com/fvdsn/jig@latest
 ```
