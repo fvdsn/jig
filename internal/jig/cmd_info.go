@@ -38,6 +38,7 @@ func Info(options InfoOptions, out io.Writer) error {
 			fmt.Fprintln(out, "archived: true")
 		}
 		printTags(out, entry.Tags)
+		printMeta(out, entry.Meta)
 		if len(entry.Conditions) > 0 {
 			printConditions(out, "onlyWhen", entry.Conditions)
 		}
@@ -67,6 +68,7 @@ func Info(options InfoOptions, out io.Writer) error {
 			fmt.Fprintln(out, "archived: true")
 		}
 		printTags(out, entry.Tags)
+		printMeta(out, entry.Meta)
 		fmt.Fprintf(out, "executable: %v\n", file.Executable)
 		if len(entry.Conditions) > 0 {
 			printConditions(out, "onlyWhen", entry.Conditions)
@@ -91,6 +93,7 @@ func Info(options InfoOptions, out io.Writer) error {
 			fmt.Fprintln(out, "archived: true")
 		}
 		printTags(out, entry.Tags)
+		printMeta(out, entry.Meta)
 		if len(entry.Conditions) > 0 {
 			printConditions(out, "onlyWhen", entry.Conditions)
 		}
@@ -114,6 +117,7 @@ func Info(options InfoOptions, out io.Writer) error {
 			fmt.Fprintln(out, "archived: true")
 		}
 		printTags(out, group.Tags)
+		printMeta(out, group.Meta)
 		if len(group.Conditions) > 0 {
 			printConditions(out, "onlyWhen", group.Conditions)
 		}
@@ -153,6 +157,16 @@ func printSrcList(out io.Writer, sources SrcList) {
 			line += " (onlyWhen: " + describeCondition(*source.OnlyWhen) + ")"
 		}
 		fmt.Fprintln(out, line)
+	}
+}
+
+func printMeta(out io.Writer, meta map[string]string) {
+	if len(meta) == 0 {
+		return
+	}
+	fmt.Fprintln(out, "meta:")
+	for _, key := range sortedMetaKeys(meta) {
+		fmt.Fprintf(out, "  %s: %s\n", key, meta[key])
 	}
 }
 

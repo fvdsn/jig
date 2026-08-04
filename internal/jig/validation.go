@@ -59,6 +59,11 @@ func validateDefinition(def *Definition) validationResult {
 				result.Errors = append(result.Errors, fmt.Sprintf("%s %s has invalid tag %q: tags must be non-empty without spaces or commas", kind, path, tag))
 			}
 		}
+		for _, key := range sortedMetaKeys(entry.Meta) {
+			if key == "" || strings.HasPrefix(key, "$") || strings.ContainsAny(key, "=, \t") {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s %s has invalid meta key %q: meta keys must be non-empty without spaces, commas, or \"=\", and must not start with \"$\"", kind, path, key))
+			}
+		}
 		for _, dep := range entry.dependsOn() {
 			if err := validateSafePath(dep.Path); err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("%s %s has invalid dependency path %q: %s", kind, path, dep.Path, err))

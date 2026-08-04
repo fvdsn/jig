@@ -13,6 +13,7 @@ type ListOptions struct {
 	Path            string
 	IncludeArchived bool
 	Tags            []string
+	Meta            MetaFilter
 	Width           int // output width; 0 auto-detects, <0 or non-terminal output disables truncation
 }
 
@@ -21,7 +22,7 @@ func List(options ListOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	query := NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived, Tags: options.Tags}
+	query := NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived, Tags: options.Tags, Meta: options.Meta}
 	selection, err := ws.Select(query)
 	if err != nil {
 		return err

@@ -9,8 +9,18 @@ import (
 type NodeQuery struct {
 	Path            string
 	IncludeArchived bool
-	Tags            []string // when set, only entries carrying all of these tags match
+	Tags            []string   // when set, only entries carrying all of these tags match
+	Meta            MetaFilter // when set, only entries carrying the meta key (and value) match
 	Installed       InstalledNodes
+}
+
+// MetaFilter selects entries by user-defined meta: a bare key matches
+// entries carrying it, and with HasValue the value must also be equal.
+// The zero value matches everything.
+type MetaFilter struct {
+	Key      string
+	Value    string
+	HasValue bool
 }
 
 type InstalledNodes struct {
@@ -46,6 +56,9 @@ func (model *Model) Select(query NodeQuery) (NodeSelection, error) {
 		if !entry.hasAllTags(query.Tags) {
 			continue
 		}
+		if !entry.matchesMeta(query.Meta) {
+			continue
+		}
 		if entry.archived() && !query.IncludeArchived && !entryInstalled(model, entry, query.Installed) {
 			continue
 		}
@@ -61,6 +74,17 @@ func describeQuery(path string, tags []string) string {
 		description += " with tags " + strings.Join(tags, ",")
 	}
 	return description
+}
+
+func (entry Entry) matchesMeta(filter MetaFilter) bool {
+	if filter.Key == "" {
+		return true
+	}
+	value, ok := entry.Meta[filter.Key]
+	if !ok {
+		return false
+	}
+	return !filter.HasValue || value == filter.Value
 }
 
 func (entry Entry) hasAllTags(tags []string) bool {
@@ -263,6 +287,15 @@ func sortedFilePaths(model *Model) []string {
 func sortedKeys(values map[string]bool) []string {
 	keys := make([]string, 0, len(values))
 	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedMetaKeys(meta map[string]string) []string {
+	keys := make([]string, 0, len(meta))
+	for key := range meta {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)

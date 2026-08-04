@@ -26,7 +26,8 @@ type Entry struct {
 	Identity   string
 	Kind       EntryKind
 	Conditions []Condition
-	Tags       []string // declared tags plus tags inherited from parent groups
+	Tags       []string          // declared tags plus tags inherited from parent groups
+	Meta       map[string]string // declared meta overlaid on meta inherited from parent groups
 
 	Repo  *Repo
 	File  *File
@@ -39,6 +40,7 @@ type inheritedGroup struct {
 	Web         string
 	Archived    bool
 	Tags        []string
+	Meta        map[string]string
 	DependsOn   []Dependency
 	Conditions  []Condition
 }
@@ -146,6 +148,7 @@ func flattenTreeNode(node *treeNode, path string, inherited inheritedGroup, mode
 				Kind:       EntryRepo,
 				Conditions: leafConditions(inherited, repo.OnlyWhen),
 				Tags:       mergeTags(inherited.Tags, repo.Tags),
+				Meta:       mergeMeta(inherited.Meta, repo.Meta),
 				Repo:       &repo,
 			}
 			return nil
@@ -162,6 +165,7 @@ func flattenTreeNode(node *treeNode, path string, inherited inheritedGroup, mode
 				Kind:       EntryFile,
 				Conditions: leafConditions(inherited, file.OnlyWhen),
 				Tags:       mergeTags(inherited.Tags, file.Tags),
+				Meta:       mergeMeta(inherited.Meta, file.Meta),
 				File:       &file,
 			}
 			return nil
@@ -182,6 +186,7 @@ func flattenTreeNode(node *treeNode, path string, inherited inheritedGroup, mode
 			Kind:       EntryDir,
 			Conditions: leafConditions(inherited, dir.OnlyWhen),
 			Tags:       mergeTags(inherited.Tags, dir.Tags),
+			Meta:       mergeMeta(inherited.Meta, dir.Meta),
 			Dir:        &dir,
 		}
 		return nil
@@ -201,6 +206,7 @@ func flattenTreeNode(node *treeNode, path string, inherited inheritedGroup, mode
 			Kind:       EntryGroup,
 			Conditions: append([]Condition{}, inherited.Conditions...),
 			Tags:       append([]string{}, inherited.Tags...),
+			Meta:       mergeMeta(inherited.Meta, nil),
 			Group:      &group,
 		}
 	}
@@ -219,6 +225,22 @@ func flattenTreeNode(node *treeNode, path string, inherited inheritedGroup, mode
 		}
 	}
 	return nil
+}
+
+// mergeMeta overlays own meta keys onto inherited ones, so the nearest
+// declaration wins. Returns nil when both are empty.
+func mergeMeta(inherited map[string]string, own map[string]string) map[string]string {
+	if len(inherited) == 0 && len(own) == 0 {
+		return nil
+	}
+	merged := make(map[string]string, len(inherited)+len(own))
+	for key, value := range inherited {
+		merged[key] = value
+	}
+	for key, value := range own {
+		merged[key] = value
+	}
+	return merged
 }
 
 // mergeTags unions inherited and declared tags, preserving first-seen order.
@@ -282,6 +304,7 @@ func mergeGroup(inherited inheritedGroup, group Group) inheritedGroup {
 		Web:         inherited.Web,
 		Archived:    inherited.Archived,
 		Tags:        mergeTags(inherited.Tags, group.Tags),
+		Meta:        mergeMeta(inherited.Meta, group.Meta),
 		DependsOn:   append([]Dependency{}, inherited.DependsOn...),
 		Conditions:  append([]Condition{}, inherited.Conditions...),
 	}

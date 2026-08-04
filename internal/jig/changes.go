@@ -52,5 +52,6 @@ func entryChanged(oldEntry, newEntry Entry) bool {
 		!reflect.DeepEqual(oldEntry.Dir, newEntry.Dir) ||
 		!reflect.DeepEqual(oldEntry.Group, newEntry.Group) ||
 		!reflect.DeepEqual(oldEntry.Conditions, newEntry.Conditions) ||
-		!reflect.DeepEqual(oldEntry.Tags, newEntry.Tags)
+		!reflect.DeepEqual(oldEntry.Tags, newEntry.Tags) ||
+		!reflect.DeepEqual(oldEntry.Meta, newEntry.Meta)
 }

@@ -149,6 +149,7 @@ Important fields:
 - `description`: optional human description.
 - `archived`: optional boolean; archived repos are excluded by default unless already installed. Pass `--archived` to include uninstalled archived repos too.
 - `tags`: optional list of strings used for filtering with `--tags`.
+- `meta`: optional object of user-defined string keys and values, carried but never interpreted by jig.
 - `dependsOn`: optional dependency list.
 - `onlyWhen`: optional activation condition.
 
@@ -240,6 +241,7 @@ Inherited behavior:
 - `web` is inherited by child repos when they do not define one.
 - `archived` is inherited by child repos/files.
 - `tags` are inherited additively by child repos/files.
+- `meta` is inherited per key by child repos/files/dirs; the nearest declaration of a key wins.
 - `dependsOn` is inherited additively by child repos.
 - `onlyWhen` is inherited additively by child repos/files.
 
@@ -379,7 +381,7 @@ Rules:
 - Files removed upstream are deleted locally only when untouched.
 - Files the user adds inside the directory are never touched.
 - A `$dir` defines exactly one of `src` or `link`. Link dirs are active only when their target dir is active, and removing a link dir removes only the symlink.
-- `$dir` supports `description`, `archived`, `tags`, and `onlyWhen` like `$file`, but not `executable`.
+- `$dir` supports `description`, `archived`, `tags`, `meta`, and `onlyWhen` like `$file`, but not `executable`.
 
 ## Conditional Nodes
 
@@ -416,6 +418,23 @@ Tag conditions make support artifacts follow capabilities instead of locations: 
 In this example, `.agents/skills/platform` is only written when a repository under `platform/` is active or installed.
 
 Inherited `onlyWhen` conditions are additive. All inherited and local conditions must match.
+
+## Custom Metadata
+
+Repos, files, dirs, and groups may carry a `meta` object: user-defined string keys and values that jig stores, displays (`jig info`), and filters on (`jig list --meta`), but never interprets. Use it for facts about entries that are not jig's business — for example, a GitLab repository can record where its synced GitHub mirror lives:
+
+```json
+{
+  "platform/auth": {
+    "$repo": {
+      "git": "git@gitlab.com:acme/auth.git",
+      "meta": { "github-mirror": "git@github.com:acme/auth.git" }
+    }
+  }
+}
+```
+
+Keys must be non-empty, must not start with `$`, and must not contain spaces, commas, or `=`. Values are arbitrary strings. Meta never affects cloning, dependencies, or activation; external tooling (like a mirror-push script) reads it from `jig info` or `jig list --meta` output.
 
 ## Position-Relative Commands
 
@@ -476,6 +495,13 @@ Filter by tags. `--tags a,b` keeps only entries carrying all the listed tags and
 jig list --tags backend
 jig clone services --tags backend,go
 jig status --tags frontend
+```
+
+Filter by custom metadata on `list`: `--meta key` keeps entries whose meta carries the key, `--meta key=value` additionally requires the exact value:
+
+```sh
+jig list --meta github-mirror
+jig list --meta team=core
 ```
 
 Show information about a repo, file, or group:

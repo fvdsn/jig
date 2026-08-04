@@ -272,6 +272,14 @@ Optional list of strings.
 
 Tags label entries for filtering with the `--tags` CLI flag. Tags must be non-empty and must not contain spaces or commas. Group tags are inherited additively by descendant repositories and files.
 
+### `$group.meta`
+
+Optional object mapping user-defined keys to string values.
+
+Custom metadata inherited by all descendant repositories, files, and dirs. Inheritance is per key: a descendant's effective meta is the union of ancestor and local keys, and the nearest declaration of a key wins.
+
+See [Custom Metadata](#custom-metadata).
+
 ### `$group.dependsOn`
 
 Optional array.
@@ -298,6 +306,7 @@ When flattening the tree:
 - `web` is inherited by descendant repositories when they do not define one locally. The nearest value wins.
 - `archived` is inherited by descendant repositories and files. A descendant cannot opt out of an archived ancestor.
 - `tags` are inherited additively by descendant repositories and files. An entry effective tag set is the union of its declared tags and all ancestor group tags.
+- `meta` is inherited per key by descendant repositories, files, and dirs. The nearest declaration of a key wins; other keys pass through.
 - `dependsOn` is inherited additively by descendant repositories. Ancestor dependencies come before local dependencies.
 - `onlyWhen` is inherited additively by descendant repositories and files. All conditions must match.
 
@@ -375,6 +384,12 @@ Archived repositories remain valid definition entries. They are excluded by defa
 Optional list of strings.
 
 Tags label entries for filtering with the `--tags` CLI flag. Tags must be non-empty and must not contain spaces or commas.
+
+### `$repo.meta`
+
+Optional object mapping user-defined keys to string values.
+
+See [Custom Metadata](#custom-metadata).
 
 ### `$repo.dependsOn`
 
@@ -547,6 +562,12 @@ Optional list of strings.
 
 Tags label entries for filtering with the `--tags` CLI flag. Tags must be non-empty and must not contain spaces or commas.
 
+### `$file.meta`
+
+Optional object mapping user-defined keys to string values.
+
+See [Custom Metadata](#custom-metadata).
+
 ### `$file.onlyWhen`
 
 Optional object.
@@ -574,7 +595,7 @@ Directory nodes are declared with `$dir` and materialize a whole subtree of a so
 }
 ```
 
-Fields: `id` (optional identity, defaults to the path), `src` (required, `<repo-url>[#<subtree-path>]` or a list of such sources; without a path the whole repository tree is materialized), `description`, `archived`, `tags`, and `onlyWhen` behave as for `$file`. There is no `executable` field (modes come from the git tree). A directory node may declare `link` instead of `src`: it becomes a relative symlink to another `$dir` entry. Exactly one of `src` and `link` is required; link dirs are active only when their target dir is active, targets are materialized before links, link cycles are validation errors, and removing a link dir removes only the symlink.
+Fields: `id` (optional identity, defaults to the path), `src` (required, `<repo-url>[#<subtree-path>]` or a list of such sources; without a path the whole repository tree is materialized), `description`, `archived`, `tags`, `meta`, and `onlyWhen` behave as for `$file`. There is no `executable` field (modes come from the git tree). A directory node may declare `link` instead of `src`: it becomes a relative symlink to another `$dir` entry. Exactly one of `src` and `link` is required; link dirs are active only when their target dir is active, targets are materialized before links, link cycles are validation errors, and removing a link dir removes only the symlink.
 
 State records the source tree id and a manifest mapping each written file to its content hash. Rules:
 
@@ -658,6 +679,33 @@ Optional string.
 Explains why the dependency exists.
 
 This is intended for humans and should not affect dependency resolution.
+
+## Custom Metadata
+
+Repositories, files, dirs, and groups may carry a `meta` object: user-defined string keys mapped to string values. Jig stores, displays, and filters on meta, but never interprets it — it is the extension point for facts about entries that are not jig's business. For example, a GitLab repository can record where its synced GitHub clone lives:
+
+```json
+{
+  "platform/auth": {
+    "$repo": {
+      "git": "git@gitlab.com:acme/auth.git",
+      "meta": {
+        "github-mirror": "git@github.com:acme/auth.git"
+      }
+    }
+  }
+}
+```
+
+Rules:
+
+- Keys must be non-empty, must not start with `$` (reserved), and must not contain spaces, commas, or `=`.
+- Values are arbitrary strings.
+- `$group.meta` is inherited per key by descendant repositories, files, and dirs; the nearest declaration of a key wins.
+- `jig info` shows an entry's effective meta.
+- `jig list --meta <key>` keeps only entries whose effective meta carries the key; `--meta <key>=<value>` additionally requires the exact value.
+
+Meta never affects planning, dependency resolution, or activation. External tooling that acts on meta (such as a mirror-push script) reads it from the schema or from `jig` output.
 
 ## Conditional Nodes
 
@@ -969,6 +1017,7 @@ Validation should catch:
 - Invalid `$group` objects.
 - Invalid `$repo` objects.
 - Invalid `$file` objects.
+- Invalid meta keys.
 - Duplicate repository identities.
 - Duplicate file identities.
 - Duplicate group identities.
@@ -984,6 +1033,8 @@ Dependency cycles should be detected and reported, but they do not necessarily m
 Lists known groups, repositories, and files.
 
 If `path` is provided, only entries matching that path are listed.
+
+`--meta <key>` keeps only entries whose effective meta carries the key; `--meta <key>=<value>` additionally requires the exact value.
 
 Archived entries are skipped unless they are already installed or `--archived` is provided.
 
@@ -1003,9 +1054,9 @@ file  scripts/dev.sh
 
 Shows information for a repository, file, or group path.
 
-For a repository, it should show metadata such as Git URL, web URL, description, and direct dependencies.
+For a repository, it should show metadata such as Git URL, web URL, description, custom meta, and direct dependencies.
 
-For a file, it should show metadata such as source, description, executable flag, and `onlyWhen` condition.
+For a file, it should show metadata such as source, description, executable flag, custom meta, and `onlyWhen` condition.
 
 For a group, it should show matching groups, repositories, and files together in path order.
 

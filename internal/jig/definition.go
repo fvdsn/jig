@@ -60,48 +60,52 @@ type Source struct {
 }
 
 type Repo struct {
-	ID          string       `json:"id,omitempty"`
-	Git         string       `json:"git"`
-	Web         string       `json:"web,omitempty"`
-	Description string       `json:"description,omitempty"`
-	Archived    bool         `json:"archived,omitempty"`
-	Tags        []string     `json:"tags,omitempty"`
-	DependsOn   []Dependency `json:"dependsOn,omitempty"`
-	OnlyWhen    *Condition   `json:"onlyWhen,omitempty"`
+	ID          string            `json:"id,omitempty"`
+	Git         string            `json:"git"`
+	Web         string            `json:"web,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Archived    bool              `json:"archived,omitempty"`
+	Tags        []string          `json:"tags,omitempty"`
+	Meta        map[string]string `json:"meta,omitempty"` // user-defined metadata, opaque to jig
+	DependsOn   []Dependency      `json:"dependsOn,omitempty"`
+	OnlyWhen    *Condition        `json:"onlyWhen,omitempty"`
 }
 
 type File struct {
-	ID          string     `json:"id,omitempty"`
-	Src         SrcList    `json:"src,omitempty"` // one or more sources, concatenated in order
-	Link        string     `json:"link,omitempty"`
-	Description string     `json:"description,omitempty"`
-	Executable  bool       `json:"executable,omitempty"`
-	Archived    bool       `json:"archived,omitempty"`
-	Tags        []string   `json:"tags,omitempty"`
-	OnlyWhen    *Condition `json:"onlyWhen,omitempty"`
+	ID          string            `json:"id,omitempty"`
+	Src         SrcList           `json:"src,omitempty"` // one or more sources, concatenated in order
+	Link        string            `json:"link,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Executable  bool              `json:"executable,omitempty"`
+	Archived    bool              `json:"archived,omitempty"`
+	Tags        []string          `json:"tags,omitempty"`
+	Meta        map[string]string `json:"meta,omitempty"` // user-defined metadata, opaque to jig
+	OnlyWhen    *Condition        `json:"onlyWhen,omitempty"`
 }
 
 // Dir materializes a whole subtree of a source repository into the
 // workspace, or symlinks to another $dir entry. Executable bits come from
 // the git tree, so there is no executable field.
 type Dir struct {
-	ID          string     `json:"id,omitempty"`
-	Src         SrcList    `json:"src,omitempty"`  // one or more sources, merged in order; first wins on conflicts
-	Link        string     `json:"link,omitempty"` // symlink to another $dir entry instead of materializing
-	Description string     `json:"description,omitempty"`
-	Archived    bool       `json:"archived,omitempty"`
-	Tags        []string   `json:"tags,omitempty"`
-	OnlyWhen    *Condition `json:"onlyWhen,omitempty"`
+	ID          string            `json:"id,omitempty"`
+	Src         SrcList           `json:"src,omitempty"`  // one or more sources, merged in order; first wins on conflicts
+	Link        string            `json:"link,omitempty"` // symlink to another $dir entry instead of materializing
+	Description string            `json:"description,omitempty"`
+	Archived    bool              `json:"archived,omitempty"`
+	Tags        []string          `json:"tags,omitempty"`
+	Meta        map[string]string `json:"meta,omitempty"` // user-defined metadata, opaque to jig
+	OnlyWhen    *Condition        `json:"onlyWhen,omitempty"`
 }
 
 type Group struct {
-	ID          string       `json:"id,omitempty"`
-	Description string       `json:"description,omitempty"`
-	Web         string       `json:"web,omitempty"`
-	Archived    bool         `json:"archived,omitempty"`
-	Tags        []string     `json:"tags,omitempty"`
-	DependsOn   []Dependency `json:"dependsOn,omitempty"`
-	OnlyWhen    *Condition   `json:"onlyWhen,omitempty"`
+	ID          string            `json:"id,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Web         string            `json:"web,omitempty"`
+	Archived    bool              `json:"archived,omitempty"`
+	Tags        []string          `json:"tags,omitempty"`
+	Meta        map[string]string `json:"meta,omitempty"` // user-defined metadata, inherited per key by descendants
+	DependsOn   []Dependency      `json:"dependsOn,omitempty"`
+	OnlyWhen    *Condition        `json:"onlyWhen,omitempty"`
 }
 
 type Dependency struct {

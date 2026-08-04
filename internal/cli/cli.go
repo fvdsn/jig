@@ -196,7 +196,7 @@ var commandDocs = []commandDoc{
 		[]string{"validate [schema-file]"},
 		[]string{"Validate the current workspace schema, or a schema file given by path."}},
 	{"list",
-		[]string{"list [path] [--archived] [--tags a,b]"},
+		[]string{"list [path] [--archived] [--tags a,b] [--meta key[=value]]"},
 		[]string{"List groups, repositories, and files defined in the schema."}},
 	{"info",
 		[]string{"info <path> [--archived] [--tags a,b]"},
@@ -316,6 +316,7 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Paths identify repositories, files, or groups using slash paths such as services/checkout or platform.")
 	fmt.Fprintln(out, "--tags a,b keeps only entries carrying all the listed tags; tags on groups are inherited by their children.")
+	fmt.Fprintln(out, "--meta key[=value] keeps only entries whose meta carries the key (and, when given, the exact value).")
 }
 
 func cmdInit(args []string, out io.Writer) error {
@@ -369,7 +370,7 @@ func cmdValidate(args []string, out io.Writer) error {
 }
 
 func cmdList(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag, "--meta": valueFlag})
 	if err != nil {
 		return err
 	}
@@ -380,6 +381,7 @@ func cmdList(args []string, out io.Writer) error {
 		Path:            optionalPath(parsed.Positionals),
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),
+		Meta:            parseMetaFilter(parsed.Values["--meta"]),
 	}, out)
 }
 
@@ -606,4 +608,14 @@ func parseTags(value string) []string {
 		}
 	}
 	return tags
+}
+
+// parseMetaFilter parses a --meta filter: a bare key matches entries
+// carrying the key, key=value additionally requires the exact value.
+func parseMetaFilter(value string) jig.MetaFilter {
+	if value == "" {
+		return jig.MetaFilter{}
+	}
+	key, val, hasValue := strings.Cut(value, "=")
+	return jig.MetaFilter{Key: key, Value: val, HasValue: hasValue}
 }

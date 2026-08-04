@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.9.0 — 2026-08-04
+
+- Repositories, files, dirs, and groups accept a `meta` object: user-defined
+  string keys and values that jig stores, displays, and filters on but never
+  interprets — e.g. a GitLab repo can record where its synced GitHub mirror
+  lives. `$group.meta` is inherited per key by descendants, nearest
+  declaration wins. `jig info` shows an entry's effective meta, and
+  `jig list --meta key[=value]` filters on it. Keys must not start with `$`
+  or contain spaces, commas, or `=`; `jig validate` checks them.
+
 ## v1.8.2 — 2026-07-14
 
 - jig can now be installed with Homebrew: `brew install fvdsn/tap/jig`
