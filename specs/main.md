@@ -929,6 +929,7 @@ jig deps <path> --archived
 jig clone [path]
 jig pull [path]
 jig pull [path] --archived
+jig push [-u] [path]
 jig checkout [-b] <branch> [path]
 jig status [path]
 jig status [path] --archived
@@ -1197,6 +1198,18 @@ Installed archived repositories are included by default. `--archived` applies th
 ### `jig fetch [path]`
 
 Runs `git fetch` in installed repositories matching `path`, or in all installed repositories when `path` is omitted. Selection semantics match `jig pull`. Fetch never touches working trees or local branches.
+
+### `jig push [-u] [path]`
+
+Publishes the current branch of installed repositories matching `path` (all installed repositories when `path` is omitted), in parallel. Selection semantics match `jig pull`.
+
+- Pushes are never forced; there is no force flag. A push the remote rejects (for example a non-fast-forward) is reported under `skipped` and the remote is left untouched — escalate per repository with plain Git when needed.
+- Repositories whose branch is not ahead of its upstream report `up to date`, computed locally without network access.
+- A branch with no upstream is skipped and reported, unless `-u` is passed, which pushes with `git push -u origin <branch>` and records the upstream. Re-running is therefore idempotent: the first `-u` push creates the upstream and later runs report `up to date`. This pairs with `jig checkout -b`, whose fresh branches have no upstream.
+- Repositories on a detached HEAD are skipped and reported: there is no branch to push.
+- The command exits non-zero when any repository was skipped.
+
+Only the current branch is pushed. There is no branch argument or refspec support.
 
 ### `jig checkout [-b] <branch> [path]`
 

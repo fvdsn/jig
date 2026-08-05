@@ -46,6 +46,7 @@ jig clone services/checkout     # install a service + its dependencies
 jig status                      # branches, dirty state, ahead/behind
 jig fetch && jig status         # what changed across the workspace?
 jig pull                        # fast-forward everything installed
+jig checkout -b fix-x && jig push -u   # branch, commit, publish across repos
 jig rm services/checkout        # uninstall
 ```
 
@@ -55,12 +56,14 @@ jig rm services/checkout        # uninstall
 | --- | --- |
 | `init [<git-url\|file> [dir]]` | Create a workspace from a schema repository or a local draft file; no args starts a fresh starter schema |
 | `list [path]` | List the catalog: groups, repos, files, dirs |
+| `tags [path]` | List the tags in scope, with entry counts |
 | `info <path>` | Show one entry's metadata |
 | `deps <path>` | Show a repo's recursive dependencies |
 | `clone [path]` | Install repos/files matching a path, plus dependencies (`--no-deps` to skip them) |
 | `sync [path]` | Converge the workspace: moves, origins, file updates, restores (`--prune` deletes what left the schema) |
 | `pull [path]` | `git pull --ff-only` across installed repos, in parallel |
 | `fetch [path]` | `git fetch` across installed repos, in parallel |
+| `push [-u] [path]` | `git push` (never forced) across installed repos, in parallel; `-u` sets missing upstreams |
 | `checkout [-b] <branch> [path]` | Switch installed repos to a branch (`-b` creates it); never discards local changes |
 | `status [path]` | One line per installed entry, plus a summary |
 | `rm <path>...` | Uninstall: delete the checkout and stop tracking it |

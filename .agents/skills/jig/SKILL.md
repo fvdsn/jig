@@ -613,6 +613,16 @@ jig fetch
 jig fetch platform
 ```
 
+Push the current branch of installed repositories (never forced; rejected pushes are reported as skipped):
+
+```sh
+jig push
+jig push services
+jig push -u
+```
+
+Repositories with nothing to push report `up to date`. Branches with no upstream are skipped unless `-u` is passed, which pushes with `git push -u origin <branch>` and records the upstream — the natural follow-up to `jig checkout -b feature-x` and committing across repos. Only the current branch is pushed.
+
 Switch installed repositories to a branch, mirroring `git checkout`:
 
 ```sh

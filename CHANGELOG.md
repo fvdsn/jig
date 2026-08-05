@@ -2,6 +2,14 @@
 
 ## v1.10.0 — 2026-08-05
 
+- New `jig push [-u] [path]` command publishes the current branch of
+  installed repositories in parallel, completing the multi-repo loop with
+  `jig checkout -b` and per-repo commits. Pushes are never forced (no
+  force flag exists); rejected pushes and detached HEADs are reported as
+  skipped, and repositories with nothing to push report `up to date`
+  without touching the network. `-u` sets the upstream on fresh branches
+  (`git push -u origin <branch>`), so a first push after
+  `jig checkout -b feature-x` is one command.
 - New `jig tags [path]` command lists the tags carried by the entries in
   scope, with entry counts — so `--tags` filter values are discoverable
   without reading the schema. Pathless, it scopes to the current subtree

@@ -45,6 +45,8 @@ func Run(args []string, out io.Writer, _ io.Writer) error {
 		return cmdPull(args[1:], out)
 	case "fetch":
 		return cmdFetch(args[1:], out)
+	case "push":
+		return cmdPush(args[1:], out)
 	case "checkout":
 		return cmdCheckout(args[1:], out)
 	case "rm":
@@ -224,6 +226,9 @@ var commandDocs = []commandDoc{
 	{"fetch",
 		[]string{"fetch [path] [--archived] [--tags a,b]"},
 		[]string{"Run git fetch in installed repositories matching a path or group."}},
+	{"push",
+		[]string{"push [-u] [path] [--archived] [--tags a,b]"},
+		[]string{"Run git push (never forced) in installed repositories matching a path or group; -u sets the upstream on branches that have none."}},
 	{"checkout",
 		[]string{"checkout [-b] <branch> [path] [--archived] [--tags a,b]"},
 		[]string{"Switch installed repositories to a branch; -b creates it. Repos where the switch would lose local changes are skipped."}},
@@ -530,6 +535,22 @@ func cmdFetch(args []string, out io.Writer) error {
 		Path:            optionalPath(parsed.Positionals),
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),
+	}, out)
+}
+
+func cmdPush(args []string, out io.Writer) error {
+	parsed, err := parseArgs(args, map[string]flagKind{"-u": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
+	if err != nil {
+		return err
+	}
+	if len(parsed.Positionals) > 1 {
+		return usageError("push")
+	}
+	return jig.Push(jig.PushOptions{
+		Path:            optionalPath(parsed.Positionals),
+		IncludeArchived: parsed.Flags["--archived"],
+		Tags:            parseTags(parsed.Values["--tags"]),
+		SetUpstream:     parsed.Flags["-u"],
 	}, out)
 }
 
