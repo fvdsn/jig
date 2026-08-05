@@ -535,6 +535,14 @@ jig deps platform/auth --reverse
 jig deps platform/auth --reverse --with-optional-deps
 ```
 
+Print the dependency graph as a Mermaid flowchart (raw diagram, no markdown fence — wrap it in a ```` ```mermaid ```` fence for READMEs, or pipe to `mmdc` to render an image). Directories render as subgraphs, group dependencies point at the subgraph, optional edges are dashed:
+
+```sh
+jig graph
+jig graph services
+jig graph > docs/deps.mmd
+```
+
 Clone everything:
 
 ```sh

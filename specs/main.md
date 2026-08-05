@@ -927,6 +927,8 @@ jig info <path> --archived
 jig deps <path>
 jig deps <path> --archived
 jig deps <path> --reverse
+jig graph [path]
+jig graph [path] --archived
 jig clone [path]
 jig pull [path]
 jig pull [path] --archived
@@ -1110,6 +1112,23 @@ Unlike forward resolution, `--reverse` is deliberately not recursive: it answers
 - A group `path` asks who depends on anything in the group. Intra-group edges count when they point at a different repository; a repository is never listed as its own dependent.
 - Optional edges are hidden unless `--with-optional-deps` is provided, and uninstalled archived dependents are hidden unless `--archived` is provided, mirroring the forward flags.
 - Files are ignored, as in forward `jig deps`.
+
+### `jig graph [path]`
+
+Prints the repository dependency graph as a Mermaid flowchart on stdout.
+
+The output is the raw diagram (starting at `flowchart TD`, no markdown fence), so it pipes directly into mermaid tooling; wrap it in a ` ```mermaid ` fence when embedding in markdown.
+
+Rules:
+
+- The workspace tree is the visual skeleton: directories containing repositories render as nested `subgraph` blocks, and repositories are leaf nodes labeled with their last path segment.
+- Dependency edges onto group paths point at the subgraph itself, matching what the schema declares, instead of fanning out to every member.
+- Optional dependencies are dashed (`-.->`); non-optional dependencies are solid (`-->`). Both are always shown.
+- If `path` is provided, the selected repositories are drawn along with any edge targets outside the selection, so no arrow dangles. A group target with no drawn repositories becomes a plain node.
+- Archived repositories follow the usual rule: hidden unless installed or `--archived`.
+- Repositories only; files, dirs, and `onlyWhen` relationships are not part of the graph.
+- Node identifiers are derived from workspace paths with unsafe characters replaced, and Mermaid keywords (such as a path segment named `end`) are escaped.
+- Output is deterministic: subgraphs, nodes, and edges are sorted.
 
 ### `jig clone [path]`
 

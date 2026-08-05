@@ -37,6 +37,8 @@ func Run(args []string, out io.Writer, _ io.Writer) error {
 		return cmdInfo(args[1:], out)
 	case "deps":
 		return cmdDeps(args[1:], out)
+	case "graph":
+		return cmdGraph(args[1:], out)
 	case "clone":
 		return cmdClone(args[1:], out)
 	case "sync":
@@ -211,6 +213,9 @@ var commandDocs = []commandDoc{
 	{"deps",
 		[]string{"deps <path> [--reverse] [--with-optional-deps] [--archived] [--tags a,b]"},
 		[]string{"Show expanded recursive dependencies for repositories matching a path; --reverse shows the direct dependents instead."}},
+	{"graph",
+		[]string{"graph [path] [--archived]"},
+		[]string{"Print the repository dependency graph as a Mermaid flowchart; group dependencies point at subgraphs, optional edges are dashed."}},
 	{"clone",
 		[]string{"clone [path] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]"},
 		[]string{"Clone/materialize all entries, or repositories/files matching a path. --no-deps skips dependencies."}},
@@ -438,6 +443,20 @@ func cmdDeps(args []string, out io.Writer) error {
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),
+	}, out)
+}
+
+func cmdGraph(args []string, out io.Writer) error {
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag})
+	if err != nil {
+		return err
+	}
+	if len(parsed.Positionals) > 1 {
+		return usageError("graph")
+	}
+	return jig.Graph(jig.GraphOptions{
+		Path:            optionalPath(parsed.Positionals),
+		IncludeArchived: parsed.Flags["--archived"],
 	}, out)
 }
 

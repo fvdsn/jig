@@ -10,6 +10,11 @@
   without touching the network. `-u` sets the upstream on fresh branches
   (`git push -u origin <branch>`), so a first push after
   `jig checkout -b feature-x` is one command.
+- New `jig graph [path]` command prints the repository dependency graph
+  as a Mermaid flowchart: directories render as nested subgraphs, group
+  dependencies point at the subgraph itself, and optional edges are
+  dashed. The output is the raw diagram, ready to pipe into mermaid
+  tooling or wrap in a ```` ```mermaid ```` fence for a README or PR.
 - `jig deps <path> --reverse` shows the direct dependents of a repository
   or group: every repo whose `dependsOn` resolves to it, including edges
   through group paths that never name it. Deliberately not recursive —

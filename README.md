@@ -59,6 +59,7 @@ jig rm services/checkout        # uninstall
 | `tags [path]` | List the tags in scope, with entry counts |
 | `info <path>` | Show one entry's metadata |
 | `deps <path>` | Show a repo's recursive dependencies (`--reverse` for its direct dependents) |
+| `graph [path]` | Print the dependency graph as a Mermaid flowchart |
 | `clone [path]` | Install repos/files matching a path, plus dependencies (`--no-deps` to skip them) |
 | `sync [path]` | Converge the workspace: moves, origins, file updates, restores (`--prune` deletes what left the schema) |
 | `pull [path]` | `git pull --ff-only` across installed repos, in parallel |
