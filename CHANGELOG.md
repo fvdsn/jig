@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.11.0 — 2026-08-06
+
+- Changed: with multiple `$dir` sources, a conflicting file is now won by
+  the **last** source instead of the first — a source list reads as base
+  layers first, overrides after, matching how layered systems usually
+  compose. Shadowed files are still reported. Schemas relying on the old
+  first-wins order should reverse their source lists.
+
 ## v1.10.0 — 2026-08-05
 
 - New `jig push [-u] [path]` command publishes the current branch of

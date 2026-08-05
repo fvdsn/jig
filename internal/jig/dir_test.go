@@ -168,9 +168,10 @@ func TestEnsureDirMergesMultipleSources(t *testing.T) {
 			t.Fatalf("expected skill %s materialized", skill)
 		}
 	}
-	// The first source wins the README conflict.
-	if data, _ := os.ReadFile(filepath.Join(root, ".agents", "skills", "README.md")); string(data) != "ez readme\n" {
-		t.Fatalf("README = %q, want ez readme", data)
+	// The last source wins the README conflict: sources layer base-first,
+	// overrides after.
+	if data, _ := os.ReadFile(filepath.Join(root, ".agents", "skills", "README.md")); string(data) != "awesome readme\n" {
+		t.Fatalf("README = %q, want awesome readme", data)
 	}
 	if got := ensure(); !strings.Contains(got, "present-dir:") {
 		t.Fatalf("second run = %q, want present-dir", got)

@@ -348,7 +348,7 @@ Declare whole subtrees with `$dir`. The subtree of the source repository is mate
 }
 ```
 
-`src` may also be a list of sources; their trees are merged in order into the same directory, and when two sources provide the same file the first one wins (reported as shadowed). List entries can be plain strings or objects with a per-source `onlyWhen`, gating just that source's tree: when the condition stops matching, that source's untouched files are removed on the next sync. This assembles e.g. one `.agents/skills` directory from several skill repositories:
+`src` may also be a list of sources; their trees are merged in order into the same directory, and when two sources provide the same file the last one wins (reported as shadowed) — list base layers first, overrides after. List entries can be plain strings or objects with a per-source `onlyWhen`, gating just that source's tree: when the condition stops matching, that source's untouched files are removed on the next sync. This assembles e.g. one `.agents/skills` directory from several skill repositories:
 
 ```json
 {

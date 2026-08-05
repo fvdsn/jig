@@ -103,8 +103,11 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 	}
 	newManifest := map[string]string{}
 	var counts dirCounts
-	for _, source := range sources {
-		if err := materializeTree(source.mirror, source.tree, expectedAbs, oldManifest, newManifest, &counts); err != nil {
+	// Later sources override earlier ones, so a source list reads as base
+	// layers first and overrides after. Materializing in reverse order makes
+	// the first-claim rule award a conflict to the last listed source.
+	for i := len(sources) - 1; i >= 0; i-- {
+		if err := materializeTree(sources[i].mirror, sources[i].tree, expectedAbs, oldManifest, newManifest, &counts); err != nil {
 			return err
 		}
 	}
@@ -220,7 +223,7 @@ type dirCounts struct {
 	kept      int // locally modified files that were not overwritten
 	deleted   int // removed because they vanished upstream and were untouched
 	abandoned int // vanished upstream but locally modified; left as untracked
-	shadowed  int // provided by more than one source; the first source won
+	shadowed  int // provided by more than one source; the last source won
 }
 
 func dirMessage(dirPath string, hadState bool, counts dirCounts) string {
@@ -263,9 +266,11 @@ func manifestClean(dirAbs string, manifest map[string]string) bool {
 }
 
 // materializeTree streams `git archive` of the tree from the mirror into
-// dirAbs, merging into manifest. Files already claimed by an earlier source
-// are shadowed; files matching the old manifest (untouched) are overwritten;
-// locally modified files are kept and counted.
+// dirAbs, merging into manifest. Files already claimed by a source
+// materialized before this one are shadowed (sources apply in reverse list
+// order, so the last listed source claims a conflicted path first); files
+// matching the old manifest (untouched) are overwritten; locally modified
+// files are kept and counted.
 func materializeTree(mirror string, treeOID string, dirAbs string, oldManifest map[string]string, manifest map[string]string, counts *dirCounts) error {
 	cmd := exec.Command("git", "archive", treeOID)
 	cmd.Dir = mirror
