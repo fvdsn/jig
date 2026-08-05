@@ -209,8 +209,8 @@ var commandDocs = []commandDoc{
 		[]string{"info <path> [--archived] [--tags a,b]"},
 		[]string{"Show repository, file, or group metadata."}},
 	{"deps",
-		[]string{"deps <path> [--with-optional-deps] [--archived] [--tags a,b]"},
-		[]string{"Show expanded recursive dependencies for repositories matching a path."}},
+		[]string{"deps <path> [--reverse] [--with-optional-deps] [--archived] [--tags a,b]"},
+		[]string{"Show expanded recursive dependencies for repositories matching a path; --reverse shows the direct dependents instead."}},
 	{"clone",
 		[]string{"clone [path] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]"},
 		[]string{"Clone/materialize all entries, or repositories/files matching a path. --no-deps skips dependencies."}},
@@ -425,7 +425,7 @@ func cmdInfo(args []string, out io.Writer) error {
 }
 
 func cmdDeps(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--reverse": boolFlag, "--with-optional-deps": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
 	if err != nil {
 		return err
 	}
@@ -434,6 +434,7 @@ func cmdDeps(args []string, out io.Writer) error {
 	}
 	return jig.Dependencies(jig.DependenciesOptions{
 		Path:            parsed.Positionals[0],
+		Reverse:         parsed.Flags["--reverse"],
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),

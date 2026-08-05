@@ -10,6 +10,11 @@
   without touching the network. `-u` sets the upstream on fresh branches
   (`git push -u origin <branch>`), so a first push after
   `jig checkout -b feature-x` is one command.
+- `jig deps <path> --reverse` shows the direct dependents of a repository
+  or group: every repo whose `dependsOn` resolves to it, including edges
+  through group paths that never name it. Deliberately not recursive —
+  the answer is the declared consumers, not the transitive blast radius.
+  `--with-optional-deps` and `--archived` mirror the forward direction.
 - New `jig tags [path]` command lists the tags carried by the entries in
   scope, with entry counts — so `--tags` filter values are discoverable
   without reading the schema. Pathless, it scopes to the current subtree

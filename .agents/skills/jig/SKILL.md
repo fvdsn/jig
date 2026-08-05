@@ -528,6 +528,13 @@ jig deps services/checkout
 jig deps legacy --archived
 ```
 
+Show the direct dependents instead — who consumes a repository (not recursive; edges through group paths count, so a repo depending on `platform` is a dependent of every repo under it). Optional edges need `--with-optional-deps`, as in the forward direction:
+
+```sh
+jig deps platform/auth --reverse
+jig deps platform/auth --reverse --with-optional-deps
+```
+
 Clone everything:
 
 ```sh

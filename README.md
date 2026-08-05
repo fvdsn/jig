@@ -58,7 +58,7 @@ jig rm services/checkout        # uninstall
 | `list [path]` | List the catalog: groups, repos, files, dirs |
 | `tags [path]` | List the tags in scope, with entry counts |
 | `info <path>` | Show one entry's metadata |
-| `deps <path>` | Show a repo's recursive dependencies |
+| `deps <path>` | Show a repo's recursive dependencies (`--reverse` for its direct dependents) |
 | `clone [path]` | Install repos/files matching a path, plus dependencies (`--no-deps` to skip them) |
 | `sync [path]` | Converge the workspace: moves, origins, file updates, restores (`--prune` deletes what left the schema) |
 | `pull [path]` | `git pull --ff-only` across installed repos, in parallel |

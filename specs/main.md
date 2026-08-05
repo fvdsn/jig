@@ -926,6 +926,7 @@ jig info <path>
 jig info <path> --archived
 jig deps <path>
 jig deps <path> --archived
+jig deps <path> --reverse
 jig clone [path]
 jig pull [path]
 jig pull [path] --archived
@@ -1098,6 +1099,17 @@ By default, only non-optional dependencies are included.
 Optional dependencies should be included only when requested.
 
 Archived repositories are skipped unless they are already installed or `--archived` is provided.
+
+### `jig deps <path> --reverse`
+
+Shows the direct dependents of the repositories matching `path`: every repository with a `dependsOn` edge resolving to a matching repository, one per line in path order.
+
+Unlike forward resolution, `--reverse` is deliberately not recursive: it answers "who are the declared consumers", not the transitive blast radius. Rules:
+
+- Edges through group paths count. A repository depending on `platform` is a direct dependent of every repository under `platform/`, even though it never names them.
+- A group `path` asks who depends on anything in the group. Intra-group edges count when they point at a different repository; a repository is never listed as its own dependent.
+- Optional edges are hidden unless `--with-optional-deps` is provided, and uninstalled archived dependents are hidden unless `--archived` is provided, mirroring the forward flags.
+- Files are ignored, as in forward `jig deps`.
 
 ### `jig clone [path]`
 
