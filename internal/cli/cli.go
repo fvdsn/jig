@@ -31,6 +31,8 @@ func Run(args []string, out io.Writer, _ io.Writer) error {
 		return cmdValidate(args[1:], out)
 	case "list":
 		return cmdList(args[1:], out)
+	case "tags":
+		return cmdTags(args[1:], out)
 	case "info":
 		return cmdInfo(args[1:], out)
 	case "deps":
@@ -198,6 +200,9 @@ var commandDocs = []commandDoc{
 	{"list",
 		[]string{"list [path] [--archived] [--tags a,b] [--meta key[=value]]"},
 		[]string{"List groups, repositories, and files defined in the schema."}},
+	{"tags",
+		[]string{"tags [path] [--archived]"},
+		[]string{"List the tags carried by entries matching a path, with entry counts."}},
 	{"info",
 		[]string{"info <path> [--archived] [--tags a,b]"},
 		[]string{"Show repository, file, or group metadata."}},
@@ -382,6 +387,20 @@ func cmdList(args []string, out io.Writer) error {
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),
 		Meta:            parseMetaFilter(parsed.Values["--meta"]),
+	}, out)
+}
+
+func cmdTags(args []string, out io.Writer) error {
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag})
+	if err != nil {
+		return err
+	}
+	if len(parsed.Positionals) > 1 {
+		return usageError("tags")
+	}
+	return jig.Tags(jig.TagsOptions{
+		Path:            optionalPath(parsed.Positionals),
+		IncludeArchived: parsed.Flags["--archived"],
 	}, out)
 }
 

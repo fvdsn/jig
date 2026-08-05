@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.10.0 — 2026-08-05
+
+- New `jig tags [path]` command lists the tags carried by the entries in
+  scope, with entry counts — so `--tags` filter values are discoverable
+  without reading the schema. Pathless, it scopes to the current subtree
+  like other position-relative commands; tags of uninstalled archived
+  entries are hidden unless `--archived`.
+
 ## v1.9.0 — 2026-08-04
 
 - Repositories, files, dirs, and groups accept a `meta` object: user-defined

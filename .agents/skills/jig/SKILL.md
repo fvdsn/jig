@@ -489,6 +489,14 @@ jig list services
 jig list --archived
 ```
 
+Discover which tags exist before filtering. `jig tags` lists the tags in scope with entry counts (pathless, it scopes to the current subtree like other commands):
+
+```sh
+jig tags
+jig tags services
+jig tags --archived
+```
+
 Filter by tags. `--tags a,b` keeps only entries carrying all the listed tags and works on `list`, `info`, `deps`, `clone`, `sync`, `pull`, `fetch`, `checkout`, `status`, and `update --sync`. Dependencies of a selected repository are always included, tagged or not:
 
 ```sh

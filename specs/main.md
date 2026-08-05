@@ -920,6 +920,8 @@ jig init <git-url-or-file> [workspace-dir] --clone [path] --archived
 jig validate
 jig list [path]
 jig list [path] --archived
+jig tags [path]
+jig tags [path] --archived
 jig info <path>
 jig info <path> --archived
 jig deps <path>
@@ -1049,6 +1051,24 @@ repo  platform/auth
 repo  services/checkout
 file  scripts/dev.sh
 ```
+
+### `jig tags [path]`
+
+Lists the tag vocabulary of the entries matching `path`, so `--tags` filter values are discoverable without reading the schema.
+
+If `path` is omitted, the current subtree is used, like other position-relative commands.
+
+Output is one line per tag with the number of entries carrying it (effective tags, so group-inherited tags are counted), sorted by tag.
+
+```text
+api       4
+backend   7
+frontend  3
+```
+
+Counts match what filtering on the same tag selects, group entries included.
+
+Tags of archived entries are hidden unless the entry is installed or `--archived` is provided, so the reported vocabulary matches what filtering will actually match.
 
 ### `jig info <path>`
 
