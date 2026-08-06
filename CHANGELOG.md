@@ -2,6 +2,15 @@
 
 ## v1.11.0 — 2026-08-06
 
+- Repositories declare lifecycle commands in the schema — `setup`, `fmt`,
+  `lint`, `test` — and the matching jig commands run them across installed
+  repositories: each repo's own tooling behind a standard verb, so
+  `jig test --tags go` needs no per-repo knowledge. `jig setup` runs in
+  dependency order to make a fresh clone usable; the others run in
+  parallel. Repos without a command are counted, not failed; failures
+  report the command's output and exit non-zero. Commands are inherited
+  from groups (nearest wins) and are only ever run by explicit
+  invocation — never on clone, sync, or update.
 - Changed: with multiple `$dir` sources, a conflicting file is now won by
   the **last** source instead of the first — a source list reads as base
   layers first, overrides after, matching how layered systems usually

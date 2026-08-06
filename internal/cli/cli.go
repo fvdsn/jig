@@ -43,6 +43,14 @@ func Run(args []string, out io.Writer, _ io.Writer) error {
 		return cmdClone(args[1:], out)
 	case "sync":
 		return cmdSync(args[1:], out)
+	case "setup":
+		return cmdLifecycle("setup", jig.Setup, args[1:], out)
+	case "fmt":
+		return cmdLifecycle("fmt", jig.Fmt, args[1:], out)
+	case "lint":
+		return cmdLifecycle("lint", jig.Lint, args[1:], out)
+	case "test":
+		return cmdLifecycle("test", jig.Test, args[1:], out)
 	case "pull":
 		return cmdPull(args[1:], out)
 	case "fetch":
@@ -225,6 +233,18 @@ var commandDocs = []commandDoc{
 			"Clone missing repos, move renamed repos/files, update origins/files, and refresh local state.",
 			"--prune deletes entries removed from the schema; dirty/unpushed repos and modified files are kept.",
 		}},
+	{"setup",
+		[]string{"setup [path] [--archived] [--tags a,b]"},
+		[]string{"Run each repository's schema-declared setup command in dependency order, making fresh checkouts usable."}},
+	{"fmt",
+		[]string{"fmt [path] [--archived] [--tags a,b]"},
+		[]string{"Run each repository's schema-declared fmt command in installed repositories, in parallel."}},
+	{"lint",
+		[]string{"lint [path] [--archived] [--tags a,b]"},
+		[]string{"Run each repository's schema-declared lint command in installed repositories, in parallel."}},
+	{"test",
+		[]string{"test [path] [--archived] [--tags a,b]"},
+		[]string{"Run each repository's schema-declared test command in installed repositories, in parallel."}},
 	{"pull",
 		[]string{"pull [path] [--archived] [--tags a,b]"},
 		[]string{"Run git pull --ff-only in installed repositories matching a path or group."}},
@@ -552,6 +572,23 @@ func cmdFetch(args []string, out io.Writer) error {
 		return usageError("fetch")
 	}
 	return jig.Fetch(jig.FetchOptions{
+		Path:            optionalPath(parsed.Positionals),
+		IncludeArchived: parsed.Flags["--archived"],
+		Tags:            parseTags(parsed.Values["--tags"]),
+	}, out)
+}
+
+// cmdLifecycle parses the shared argument shape of the lifecycle verbs
+// (setup, fmt, lint, test) and dispatches to the given runner.
+func cmdLifecycle(name string, run func(jig.LifecycleOptions, io.Writer) error, args []string, out io.Writer) error {
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag})
+	if err != nil {
+		return err
+	}
+	if len(parsed.Positionals) > 1 {
+		return usageError(name)
+	}
+	return run(jig.LifecycleOptions{
 		Path:            optionalPath(parsed.Positionals),
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),

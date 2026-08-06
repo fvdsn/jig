@@ -150,6 +150,7 @@ Important fields:
 - `archived`: optional boolean; archived repos are excluded by default unless already installed. Pass `--archived` to include uninstalled archived repos too.
 - `tags`: optional list of strings used for filtering with `--tags`.
 - `meta`: optional object of user-defined string keys and values, carried but never interpreted by jig.
+- `setup` / `fmt` / `lint` / `test`: optional lifecycle commands, run in the checkout by the matching jig command (never automatically).
 - `dependsOn`: optional dependency list.
 - `onlyWhen`: optional activation condition.
 
@@ -242,6 +243,7 @@ Inherited behavior:
 - `archived` is inherited by child repos/files.
 - `tags` are inherited additively by child repos/files.
 - `meta` is inherited per key by child repos/files/dirs; the nearest declaration of a key wins.
+- `setup`/`fmt`/`lint`/`test` are inherited by child repos that do not declare their own; nearest wins.
 - `dependsOn` is inherited additively by child repos.
 - `onlyWhen` is inherited additively by child repos/files.
 
@@ -612,6 +614,18 @@ Sync uninstalled archived repositories and files too:
 ```sh
 jig sync --archived
 ```
+
+Run each repository's schema-declared lifecycle commands. This is how to work across many repos of mixed technologies without knowing each one's tooling: the schema maps the fixed verb (`setup`, `fmt`, `lint`, `test`) to each repo's own command, and jig runs it in every installed repo in scope. Repos without the command are counted, not failed. `setup` runs in dependency order to make fresh checkouts usable; the others run in parallel. Failures report the command's output and exit non-zero:
+
+```sh
+jig setup            # after clone: make the workspace runnable
+jig fmt              # after bulk edits: run every repo's formatter
+jig lint             # run every repo's checks, whatever they are
+jig test services    # run the tests of one subtree
+jig test --tags go   # run the tests of all go repos
+```
+
+Jig never runs these automatically — not on clone, sync, or update.
 
 Pull installed repositories (fast-forward only):
 

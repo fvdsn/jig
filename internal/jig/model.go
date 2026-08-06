@@ -38,6 +38,10 @@ type Entry struct {
 type inheritedGroup struct {
 	Description string
 	Web         string
+	Setup       string
+	Fmt         string
+	Lint        string
+	Test        string
 	Archived    bool
 	Tags        []string
 	Meta        map[string]string
@@ -278,6 +282,18 @@ func applyInheritedRepo(repo Repo, inherited inheritedGroup) Repo {
 	if repo.Web == "" {
 		repo.Web = inherited.Web
 	}
+	if repo.Setup == "" {
+		repo.Setup = inherited.Setup
+	}
+	if repo.Fmt == "" {
+		repo.Fmt = inherited.Fmt
+	}
+	if repo.Lint == "" {
+		repo.Lint = inherited.Lint
+	}
+	if repo.Test == "" {
+		repo.Test = inherited.Test
+	}
 	if inherited.Archived {
 		repo.Archived = true
 	}
@@ -302,6 +318,10 @@ func mergeGroup(inherited inheritedGroup, group Group) inheritedGroup {
 	merged := inheritedGroup{
 		Description: inherited.Description,
 		Web:         inherited.Web,
+		Setup:       inherited.Setup,
+		Fmt:         inherited.Fmt,
+		Lint:        inherited.Lint,
+		Test:        inherited.Test,
 		Archived:    inherited.Archived,
 		Tags:        mergeTags(inherited.Tags, group.Tags),
 		Meta:        mergeMeta(inherited.Meta, group.Meta),
@@ -313,6 +333,18 @@ func mergeGroup(inherited inheritedGroup, group Group) inheritedGroup {
 	}
 	if group.Web != "" {
 		merged.Web = group.Web
+	}
+	if group.Setup != "" {
+		merged.Setup = group.Setup
+	}
+	if group.Fmt != "" {
+		merged.Fmt = group.Fmt
+	}
+	if group.Lint != "" {
+		merged.Lint = group.Lint
+	}
+	if group.Test != "" {
+		merged.Test = group.Test
 	}
 	if group.Archived {
 		merged.Archived = true

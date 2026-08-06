@@ -43,10 +43,13 @@ jig init git@github.com:acme/jig-schema.git ~/Code/acme   # create a workspace f
 cd ~/Code/acme                  # (or start from scratch in an empty directory: jig init)
 jig list                        # browse the catalog
 jig clone services/checkout     # install a service + its dependencies
+jig setup                       # run each repo's bootstrap → a runnable workspace
 jig status                      # branches, dirty state, ahead/behind
 jig fetch && jig status         # what changed across the workspace?
 jig pull                        # fast-forward everything installed
-jig checkout -b fix-x && jig push -u   # branch, commit, publish across repos
+jig checkout -b fix-x           # branch across repos, edit away…
+jig fmt && jig lint && jig test # …then check every repo, each with its own tooling
+jig push -u                     # publish across repos
 jig rm services/checkout        # uninstall
 ```
 
@@ -62,6 +65,7 @@ jig rm services/checkout        # uninstall
 | `graph [path]` | Print the dependency graph as a Mermaid flowchart |
 | `clone [path]` | Install repos/files matching a path, plus dependencies (`--no-deps` to skip them) |
 | `sync [path]` | Converge the workspace: moves, origins, file updates, restores (`--prune` deletes what left the schema) |
+| `setup` / `fmt` / `lint` / `test` `[path]` | Run each repo's own schema-declared command behind a standard verb; `setup` runs in dependency order |
 | `pull [path]` | `git pull --ff-only` across installed repos, in parallel |
 | `fetch [path]` | `git fetch` across installed repos, in parallel |
 | `push [-u] [path]` | `git push` (never forced) across installed repos, in parallel; `-u` sets missing upstreams |
@@ -111,6 +115,7 @@ A JSON tree where paths are the directory layout. Repos, files, and dirs are lea
 - **`dependsOn`** — cloning a repo brings its dependency closure along (`optional: true` deps only with `--with-optional-deps`).
 - **`onlyWhen`** — conditional entries, active only when some active or installed repository matches a `path`, carries all listed `tags`, or both — e.g. API skills materialize whenever anything tagged `api` is installed.
 - **`archived`** — hidden and skipped by default, kept synced if already installed.
+- **`setup` / `fmt` / `lint` / `test`** — each repo's own lifecycle commands behind four standard verbs, so `jig test --tags go` runs every Go repo's suite without anyone knowing per-repo tooling. Inherited from groups; run only when you invoke them, never automatically.
 - **`meta`** — user-defined string keys and values jig carries but never interprets, e.g. `"meta": { "github-mirror": "git@github.com:acme/auth.git" }` on a GitLab repo with a synced GitHub clone. Shown by `jig info`, filtered with `jig list --meta key[=value]`, inherited per key from groups.
 
 Files and dirs follow the repositories around them: a support file placed inside a group is materialized whenever any repo of that group is installed; root-level files follow the workspace as a whole.

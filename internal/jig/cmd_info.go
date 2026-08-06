@@ -34,6 +34,7 @@ func Info(options InfoOptions, out io.Writer) error {
 		if repo.Description != "" {
 			fmt.Fprintf(out, "description: %s\n", repo.Description)
 		}
+		printLifecycleCommands(out, repo.Setup, repo.Fmt, repo.Lint, repo.Test)
 		if repo.Archived {
 			fmt.Fprintln(out, "archived: true")
 		}
@@ -113,6 +114,7 @@ func Info(options InfoOptions, out io.Writer) error {
 		if group.Group.Web != "" {
 			fmt.Fprintf(out, "web: %s\n", group.Group.Web)
 		}
+		printLifecycleCommands(out, group.Group.Setup, group.Group.Fmt, group.Group.Lint, group.Group.Test)
 		if group.Group.Archived {
 			fmt.Fprintln(out, "archived: true")
 		}
@@ -157,6 +159,16 @@ func printSrcList(out io.Writer, sources SrcList) {
 			line += " (onlyWhen: " + describeCondition(*source.OnlyWhen) + ")"
 		}
 		fmt.Fprintln(out, line)
+	}
+}
+
+func printLifecycleCommands(out io.Writer, setup, fmtCmd, lint, test string) {
+	for _, command := range []struct{ verb, cmd string }{
+		{"setup", setup}, {"fmt", fmtCmd}, {"lint", lint}, {"test", test},
+	} {
+		if command.cmd != "" {
+			fmt.Fprintf(out, "%s: %s\n", command.verb, command.cmd)
+		}
 	}
 }
 

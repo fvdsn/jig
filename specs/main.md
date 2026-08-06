@@ -256,6 +256,12 @@ Descendant repositories inherit this value when they do not define their own `we
 
 Nearest ancestor wins.
 
+### `$group.setup`, `$group.fmt`, `$group.lint`, `$group.test`
+
+Optional strings.
+
+Lifecycle commands inherited by descendant repositories that do not declare their own. Nearest ancestor wins, as for `web`. This lets a homogeneous group declare e.g. `"lint": "make check"` once.
+
 ### `$group.archived`
 
 Optional boolean.
@@ -304,6 +310,7 @@ When flattening the tree:
 
 - `description` is inherited by descendant repositories and files when they do not define one locally. The nearest value wins.
 - `web` is inherited by descendant repositories when they do not define one locally. The nearest value wins.
+- `setup`, `fmt`, `lint`, and `test` are inherited by descendant repositories when they do not define their own. The nearest value wins.
 - `archived` is inherited by descendant repositories and files. A descendant cannot opt out of an archived ancestor.
 - `tags` are inherited additively by descendant repositories and files. An entry effective tag set is the union of its declared tags and all ancestor group tags.
 - `meta` is inherited per key by descendant repositories, files, and dirs. The nearest declaration of a key wins; other keys pass through.
@@ -370,6 +377,14 @@ The web URL for the repository.
 Optional string.
 
 A short human-readable description of the repository.
+
+### `$repo.setup`, `$repo.fmt`, `$repo.lint`, `$repo.test`
+
+Optional strings.
+
+The repository's lifecycle commands, run through the shell in the checkout by the matching jig command (`jig setup`, `jig fmt`, `jig lint`, `jig test`) — and only then, never as a side effect of clone, sync, or update.
+
+See [Repository Lifecycle Commands](#repository-lifecycle-commands).
 
 ### `$repo.archived`
 
@@ -680,6 +695,36 @@ Explains why the dependency exists.
 
 This is intended for humans and should not affect dependency resolution.
 
+## Repository Lifecycle Commands
+
+Working across many repositories of mixed technologies requires a standard vocabulary for per-repo operations: a Go repository lints with `golangci-lint run`, a Node repository with `npm run checks`, and nobody working fleet-wide (human or agent) should need to know which is which. The schema declares each repository's own implementation behind four fixed verbs:
+
+```json
+"$repo": {
+  "git": "git@gitlab.com:acme/checkout.git",
+  "setup": "make bootstrap",
+  "fmt": "npm run fmt",
+  "lint": "npm run checks",
+  "test": "npm test"
+}
+```
+
+- `setup` — bring a fresh checkout to a usable state (install dependencies, create local config).
+- `fmt` — run the repository's formatter.
+- `lint` — run the repository's checks.
+- `test` — run the repository's test suite.
+
+The vocabulary is deliberately fixed and closed. A verb belongs here only if it is a short-lived, repo-scoped command that terminates with a verdict; this excludes long-running commands (`start`, `watch` — process supervision is a different program shape), free-form script maps (which would only enable standardization where fixed verbs enforce it), and content-authoring steps (`commit`, PR creation — per-forge tooling is already uniform, so the schema adds nothing). `build` and `teardown` (undoing out-of-checkout setup state) are the reserved future additions, added only on real demand.
+
+Execution rules:
+
+- Commands run through the shell with the checkout as working directory.
+- Jig runs them only when the user invokes the matching command — never as a side effect of `clone`, `sync`, or `update`. The schema carries a short, reviewable entrypoint; the logic belongs in the repository, reviewed by the people who own it.
+- `jig setup` runs sequentially in dependency order: a repository's setup may rely on its dependencies being set up. `jig fmt`, `jig lint`, and `jig test` run in parallel.
+- Selection matches `jig pull`: installed repositories under the path, with `--tags` and `--archived` as usual.
+- Repositories without the verb's command are counted (`N repositories define no lint command`), not failed — the org can fill the schema in incrementally.
+- One `<verb>: <path>` line per success; a failing command is reported under `skipped` with its exit status and captured output, and the run exits non-zero.
+
 ## Custom Metadata
 
 Repositories, files, dirs, and groups may carry a `meta` object: user-defined string keys mapped to string values. Jig stores, displays, and filters on meta, but never interprets it — it is the extension point for facts about entries that are not jig's business. For example, a GitLab repository can record where its synced GitHub clone lives:
@@ -930,6 +975,10 @@ jig deps <path> --reverse
 jig graph [path]
 jig graph [path] --archived
 jig clone [path]
+jig setup [path]
+jig fmt [path]
+jig lint [path]
+jig test [path]
 jig pull [path]
 jig pull [path] --archived
 jig push [-u] [path]
@@ -1215,6 +1264,10 @@ Syncs repositories matching `path`, non-optional dependencies, optional dependen
 ### `jig sync [path] --archived`
 
 Syncs uninstalled archived repositories and files in addition to the default selection.
+
+### `jig setup [path]`, `jig fmt [path]`, `jig lint [path]`, `jig test [path]`
+
+Run each installed repository's schema-declared lifecycle command. See [Repository Lifecycle Commands](#repository-lifecycle-commands) for the vocabulary, execution rules, and reporting.
 
 ### `jig pull [path]`
 

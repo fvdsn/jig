@@ -64,6 +64,10 @@ type Repo struct {
 	Git         string            `json:"git"`
 	Web         string            `json:"web,omitempty"`
 	Description string            `json:"description,omitempty"`
+	Setup       string            `json:"setup,omitempty"` // lifecycle commands, run in the checkout by the
+	Fmt         string            `json:"fmt,omitempty"`   // matching jig verb and never automatically; the
+	Lint        string            `json:"lint,omitempty"`  // vocabulary is fixed so a mixed-technology fleet
+	Test        string            `json:"test,omitempty"`  // standardizes on the verb, not the tooling
 	Archived    bool              `json:"archived,omitempty"`
 	Tags        []string          `json:"tags,omitempty"`
 	Meta        map[string]string `json:"meta,omitempty"` // user-defined metadata, opaque to jig
@@ -101,6 +105,10 @@ type Group struct {
 	ID          string            `json:"id,omitempty"`
 	Description string            `json:"description,omitempty"`
 	Web         string            `json:"web,omitempty"`
+	Setup       string            `json:"setup,omitempty"` // lifecycle commands inherited by descendant
+	Fmt         string            `json:"fmt,omitempty"`   // repositories that do not declare their own;
+	Lint        string            `json:"lint,omitempty"`  // nearest ancestor wins
+	Test        string            `json:"test,omitempty"`
 	Archived    bool              `json:"archived,omitempty"`
 	Tags        []string          `json:"tags,omitempty"`
 	Meta        map[string]string `json:"meta,omitempty"` // user-defined metadata, inherited per key by descendants
