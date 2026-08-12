@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.0.4 — 2026-08-13
+
+- The lifecycle commands (setup, fmt, lint, test) show a transient
+  progress line on stderr while repositories run — a done counter plus
+  the entries currently in flight — so slow runs (a first pre-commit
+  environment build, a cold npm ci) no longer look stuck. The line only
+  appears when stderr is a terminal; piped output is byte-identical to
+  before.
+
 ## v2.0.3 — 2026-08-13
 
 - Fixed: repositories on machines using git `url.<base>.insteadOf`

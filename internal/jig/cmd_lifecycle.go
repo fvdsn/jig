@@ -87,8 +87,11 @@ func runLifecycle(verb string, options LifecycleOptions, out io.Writer) error {
 
 	var mu sync.Mutex
 	var skipped []string
+	tracker := newProgress(len(candidates))
 	run := func(i int) {
+		tracker.start(candidates[i].repoPath)
 		output, err := runRepoCommand(candidates[i].local, candidates[i].command)
+		tracker.finish(candidates[i].repoPath)
 		mu.Lock()
 		defer mu.Unlock()
 		if err != nil {
@@ -100,7 +103,7 @@ func runLifecycle(verb string, options LifecycleOptions, out io.Writer) error {
 			skipped = append(skipped, fmt.Sprintf("%s: %s", candidates[i].repoPath, msg))
 			return
 		}
-		fmt.Fprintf(out, "%s: %s\n", verb, candidates[i].repoPath)
+		tracker.println(out, fmt.Sprintf("%s: %s", verb, candidates[i].repoPath))
 	}
 	if verb == "setup" {
 		// A repository's setup may rely on its dependencies being set up
@@ -120,6 +123,7 @@ func runLifecycle(verb string, options LifecycleOptions, out io.Writer) error {
 		forEachParallel(len(candidates), run)
 	}
 
+	tracker.close()
 	if withoutCommand > 0 {
 		fmt.Fprintf(out, "%d repositories define no %s command\n", withoutCommand, verb)
 	}
