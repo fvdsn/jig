@@ -10,7 +10,7 @@ Filesystem trees are shown relative to the workspace root. The workspace root is
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform/auth": {
       "$repo": {
@@ -33,7 +33,7 @@ Filesystem trees are shown relative to the workspace root. The workspace root is
         "description": "Checkout service",
         "dependsOn": [
           {
-            "path": "platform",
+            "path": "platform/*",
             "reason": "checkout uses shared platform services"
           }
         ]
@@ -124,7 +124,7 @@ workspace/
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform/auth": {
       "$repo": {
@@ -144,7 +144,7 @@ workspace/
         "src": "git@github.com:acme/workspace-config.git#agents/skills/platform.md",
         "description": "Agent skill for platform repositories",
         "onlyWhen": {
-          "path": "platform",
+          "path": "platform/*",
           "reason": "Only useful when platform repositories are installed"
         }
       }
@@ -191,7 +191,7 @@ The file `.agents/skills/platform` becomes active because `platform` is active, 
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform/auth": {
       "$repo": {
@@ -238,7 +238,7 @@ The clone step uses the same behavior as `jig clone services/checkout`.
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform/auth": {
       "$repo": {
@@ -251,7 +251,7 @@ The clone step uses the same behavior as `jig clone services/checkout`.
         "id": "platform-debug-tools",
         "git": "git@github.com:acme/platform-debug-tools.git",
         "onlyWhen": {
-          "path": "platform",
+          "path": "platform/*",
           "reason": "Debug tooling only needed when platform repositories are installed"
         }
       }
@@ -287,7 +287,7 @@ Nested form:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform": {
       "auth": {
@@ -304,7 +304,7 @@ Slash shorthand form:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform/auth": {
       "$repo": {
@@ -386,7 +386,7 @@ skipped:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "tree": {
     "../outside": {
       "$file": {

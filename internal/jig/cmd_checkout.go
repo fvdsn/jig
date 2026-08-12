@@ -10,8 +10,9 @@ import (
 type CheckoutOptions struct {
 	Branch          string
 	Path            string
-	Create          bool // create the branch (git checkout -b) when it does not exist
-	Default         bool // switch each repository to its remote's default branch
+	Id              string // selects one entry by identity instead of a path
+	Create          bool   // create the branch (git checkout -b) when it does not exist
+	Default         bool   // switch each repository to its remote's default branch
 	IncludeArchived bool
 	Tags            []string
 }
@@ -34,7 +35,7 @@ func Checkout(options CheckoutOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Select(NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
+	selection, err := ws.Select(NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
 	if err != nil {
 		return err
 	}

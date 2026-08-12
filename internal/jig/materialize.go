@@ -50,8 +50,8 @@ func includeExplicitDirs(model *Model, base plan, dirs []string) plan {
 			return
 		}
 		active[dirPath] = true
-		if entry.Dir.Link != "" {
-			add(entry.Dir.Link)
+		if entry.Dir.linkPath != "" {
+			add(entry.Dir.linkPath)
 		}
 	}
 	for _, dirPath := range dirs {
@@ -75,7 +75,7 @@ func excludeArchivedDirs(model *Model, base plan, installed map[string]bool) pla
 		changed = false
 		for dirPath := range active {
 			entry, _ := model.entry(dirPath, EntryDir)
-			if entry.Dir.Link != "" && !active[entry.Dir.Link] {
+			if entry.Dir.linkPath != "" && !active[entry.Dir.linkPath] {
 				delete(active, dirPath)
 				changed = true
 			}
@@ -96,8 +96,8 @@ func includeExplicitFiles(model *Model, base plan, files []string) plan {
 		if !ok {
 			return
 		}
-		if entry.File.Link != "" {
-			add(entry.File.Link)
+		if entry.File.linkPath != "" {
+			add(entry.File.linkPath)
 		}
 		active[filePath] = true
 	}
@@ -121,7 +121,7 @@ func excludeArchivedFiles(model *Model, base plan, installed map[string]bool) pl
 		changed = false
 		for filePath := range active {
 			entry, _ := model.entry(filePath, EntryFile)
-			if entry.File.Link != "" && !active[entry.File.Link] {
+			if entry.File.linkPath != "" && !active[entry.File.linkPath] {
 				delete(active, filePath)
 				changed = true
 			}
@@ -205,12 +205,12 @@ func activeSourceURLs(model *Model, plan plan, activeRepos map[string]bool, inst
 		}
 	}
 	for _, filePath := range plan.Files {
-		if entry, ok := model.entry(filePath, EntryFile); ok && entry.File.Link == "" {
+		if entry, ok := model.entry(filePath, EntryFile); ok && entry.File.Link == nil {
 			add(entry.File.Src, parseFileSrc)
 		}
 	}
 	for _, dirPath := range plan.Dirs {
-		if entry, ok := model.entry(dirPath, EntryDir); ok && entry.Dir.Link == "" {
+		if entry, ok := model.entry(dirPath, EntryDir); ok && entry.Dir.Link == nil {
 			add(entry.Dir.Src, parseDirSrc)
 		}
 	}

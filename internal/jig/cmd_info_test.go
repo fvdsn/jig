@@ -12,7 +12,7 @@ import (
 func TestInfoIncludesArchivedNodeWhenRequestedOrInstalled(t *testing.T) {
 	root := t.TempDir()
 	writeTestWorkspace(t, root, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "services/old": {
       "$repo": {
@@ -62,7 +62,7 @@ func TestInfoIncludesArchivedNodeWhenRequestedOrInstalled(t *testing.T) {
 func TestInfoOrdersMixedGroupEntriesByPath(t *testing.T) {
 	root := t.TempDir()
 	writeTestWorkspace(t, root, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "services": {
       "$group": { "id": "services-group", "description": "Services" },

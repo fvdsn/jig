@@ -13,15 +13,16 @@ func TestActiveSourceURLsHonorsPerSourceConditions(t *testing.T) {
 		"billing/api": testRepoEntry("billing/api", "billing-api", Repo{Git: "git@example.com:billing.git"}),
 		"AGENTS.md": testFileEntry("AGENTS.md", "agents", File{Src: SrcList{
 			{Src: "git@example.com:config.git#agents/base.md"},
-			{Src: "git@example.com:billing-docs.git#agents/billing.md", OnlyWhen: &Condition{Path: "billing"}},
+			{Src: "git@example.com:billing-docs.git#agents/billing.md", OnlyWhen: &Condition{Ref: Ref{Path: "billing/*"}}},
 		}}),
-		"bin/dev": testFileEntry("bin/dev", "dev-command", File{Link: "AGENTS.md"}),
+		"bin/dev": testFileEntry("bin/dev", "dev-command", File{Link: &Ref{Path: "AGENTS.md"}}),
 		".agents/skills": {Path: ".agents/skills", Identity: "skills", Kind: EntryDir,
 			Dir: &Dir{Src: SrcList{
 				{Src: "git@example.com:skills.git#skills"},
-				{Src: "git@example.com:billing-skills.git#skills", OnlyWhen: &Condition{Path: "billing"}},
+				{Src: "git@example.com:billing-skills.git#skills", OnlyWhen: &Condition{Ref: Ref{Path: "billing/*"}}},
 			}}},
 	}}
+	resolveLinkPaths(&model)
 	p := plan{
 		Files: []string{"AGENTS.md", "bin/dev"},
 		Dirs:  []string{".agents/skills"},
@@ -73,6 +74,7 @@ func TestPrefetchMirrorsServesLaterFetches(t *testing.T) {
 	model := Model{Entries: map[string]Entry{
 		"AGENTS.md": testFileEntry("AGENTS.md", "agents", File{Src: SrcList{{Src: source + "#agents/base.md"}}}),
 	}}
+	resolveLinkPaths(&model)
 	var out strings.Builder
 	if err := ensureFile(&out, root, &model, &state, "AGENTS.md", true, fetcher, nil, nil); err != nil {
 		t.Fatalf("ensureFile: %v", err)

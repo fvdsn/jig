@@ -10,7 +10,7 @@ import (
 
 func TestMetaInheritedFromGroupsAndFilterSelection(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform": {
       "$group": { "meta": { "team": "core", "channel": "#platform" } },
@@ -82,7 +82,7 @@ func TestMetaInheritedFromGroupsAndFilterSelection(t *testing.T) {
 
 func TestMetaValidation(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "a": { "$repo": { "git": "git@example.com:a.git", "meta": { "ok": "fine", "not ok": "x", "k=v": "x", "$reserved": "x" } } }
   }
@@ -96,7 +96,7 @@ func TestMetaValidation(t *testing.T) {
 func TestInfoShowsMeta(t *testing.T) {
 	root := t.TempDir()
 	writeTestWorkspace(t, root, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform": {
       "$group": { "meta": { "team": "core" } },
@@ -143,7 +143,7 @@ func TestInfoShowsMeta(t *testing.T) {
 func TestListFiltersByMeta(t *testing.T) {
 	root := t.TempDir()
 	writeTestWorkspace(t, root, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform/auth": {
       "$repo": {

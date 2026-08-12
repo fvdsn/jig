@@ -73,6 +73,7 @@ func flattenDefinition(def *Definition) (Model, error) {
 	if err := flattenTreeNode(root, "", inheritedGroup{}, &model); err != nil {
 		return model, err
 	}
+	resolveLinkPaths(&model)
 	return model, nil
 }
 

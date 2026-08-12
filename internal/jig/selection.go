@@ -8,6 +8,7 @@ import (
 
 type NodeQuery struct {
 	Path            string
+	Id              string // when set, selects the entry with this identity instead of a path
 	IncludeArchived bool
 	Tags            []string   // when set, only entries carrying all of these tags match
 	Meta            MetaFilter // when set, only entries carrying the meta key (and value) match
@@ -34,7 +35,13 @@ type NodeSelection struct {
 	Entries []Entry
 }
 
+// normalizeQueryPath drops a trailing "/" and the explicit subtree marker
+// "/*"; CLI paths select the node and its subtree either way.
 func normalizeQueryPath(path string) string {
+	if path == "*" {
+		return ""
+	}
+	path = strings.TrimSuffix(path, "/*")
 	return strings.TrimRight(path, "/")
 }
 
@@ -104,13 +111,37 @@ func (entry Entry) hasAllTags(tags []string) bool {
 }
 
 func (ws *Workspace) Select(query NodeQuery) (NodeSelection, error) {
-	resolved, err := ws.ResolvePath(query.Path)
+	// An id resolves to its entry's path up front and then behaves as an
+	// exact query from the workspace root: explicit ids are not scoped by
+	// the current directory and include archived entries.
+	if query.Id != "" {
+		entry, ok := ws.Model.entryByIdentity(query.Id)
+		if !ok {
+			return NodeSelection{}, fmt.Errorf("no entry has id %q", query.Id)
+		}
+		query.Path = entry.Path
+		query.Id = ""
+		query.IncludeArchived = true
+		query.Installed = ws.installedNodes()
+		return ws.Model.Select(query)
+	}
+	resolved, err := ws.ResolvePath(normalizeQueryPath(query.Path))
 	if err != nil {
 		return NodeSelection{}, err
 	}
 	query.Path = resolved
 	query.Installed = ws.installedNodes()
 	return ws.Model.Select(query)
+}
+
+// entryByIdentity returns the entry whose identity matches, of any kind.
+func (model *Model) entryByIdentity(identity string) (Entry, bool) {
+	for _, path := range sortedEntryPaths(model) {
+		if entry := model.Entries[path]; entry.Identity == identity {
+			return entry, true
+		}
+	}
+	return Entry{}, false
 }
 
 func (ws *Workspace) installedNodes() InstalledNodes {

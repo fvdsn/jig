@@ -7,7 +7,8 @@ import (
 
 type DependenciesOptions struct {
 	Path            string
-	Reverse         bool // list direct dependents instead of recursive dependencies
+	Id              string // selects one entry by identity instead of a path
+	Reverse         bool   // list direct dependents instead of recursive dependencies
 	IncludeOptional bool
 	IncludeArchived bool
 	Tags            []string
@@ -18,7 +19,7 @@ func Dependencies(options DependenciesOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Select(NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
+	selection, err := ws.Select(NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
 	if err != nil {
 		return err
 	}
@@ -62,21 +63,21 @@ func printReverseDependents(out io.Writer, ws *Workspace, targets []string, inst
 		if entry.archived() && !options.IncludeArchived && !installed.Repos[entry.Identity] {
 			continue
 		}
-		if dependsOnAny(entry, targetSet, options.IncludeOptional) {
+		if dependsOnAny(&ws.Model, entry, targetSet, options.IncludeOptional) {
 			fmt.Fprintln(out, repoPath)
 		}
 	}
 }
 
 // dependsOnAny reports whether the repository declares (or inherits) a
-// dependency edge matching any target other than itself.
-func dependsOnAny(entry Entry, targets map[string]bool, includeOptional bool) bool {
+// dependency resolving to any target other than itself.
+func dependsOnAny(model *Model, entry Entry, targets map[string]bool, includeOptional bool) bool {
 	for _, dep := range entry.Repo.DependsOn {
 		if dep.Optional && !includeOptional {
 			continue
 		}
-		for target := range targets {
-			if target != entry.Path && pathMatches(dep.Path, target) {
+		for _, match := range model.resolveRepoRef(dep.Ref) {
+			if match.Path != entry.Path && targets[match.Path] {
 				return true
 			}
 		}

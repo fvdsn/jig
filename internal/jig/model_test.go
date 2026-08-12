@@ -7,7 +7,7 @@ import (
 
 func TestFlattenDefinitionWithSlashShorthandAndFile(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform/auth": {
       "$repo": {
@@ -41,7 +41,7 @@ func TestFlattenDefinitionWithSlashShorthandAndFile(t *testing.T) {
 
 func TestFlattenDefinitionAssignsGroupIdentities(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform": {
       "$group": { "id": "platform-group" }
@@ -67,7 +67,7 @@ func TestFlattenDefinitionAssignsGroupIdentities(t *testing.T) {
 
 func TestGroupArchivedIsInheritedByReposAndFiles(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "legacy": {
       "$group": { "archived": true },
@@ -100,7 +100,7 @@ func TestGroupArchivedIsInheritedByReposAndFiles(t *testing.T) {
 
 func TestGroupInheritanceAppliesMetadataAndDependencies(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "shared/config": {
       "$repo": { "git": "git@example.com:config.git" }
@@ -146,14 +146,14 @@ func TestGroupInheritanceAppliesMetadataAndDependencies(t *testing.T) {
 
 func TestGroupOnlyWhenIsInheritedByReposAndFiles(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform/auth": {
       "$repo": { "git": "git@example.com:auth.git" }
     },
     ".agents/skills": {
       "$group": {
-        "onlyWhen": { "path": "platform" }
+        "onlyWhen": { "path": "platform/*" }
       },
       "platform": {
         "$file": {
@@ -169,7 +169,7 @@ func TestGroupOnlyWhenIsInheritedByReposAndFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	entry, _ := model.entry(".agents/skills/platform", EntryFile)
-	if len(entry.Conditions) != 1 || entry.Conditions[0].Path != "platform" {
+	if len(entry.Conditions) != 1 || entry.Conditions[0].Path != "platform/*" {
 		t.Fatalf("conditions = %#v", entry.Conditions)
 	}
 

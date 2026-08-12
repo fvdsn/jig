@@ -8,7 +8,7 @@ import (
 
 func TestScopeActivationFollowsNearbyRepos(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform/auth": {
       "$repo": { "git": "git@example.com:auth.git" }
@@ -80,7 +80,7 @@ func TestScopeActivationFollowsNearbyRepos(t *testing.T) {
 
 func TestTagConditionsActivateByEvidenceTags(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "services/api": {
       "$repo": { "git": "git@example.com:api.git", "tags": ["api", "go"] }
@@ -94,7 +94,7 @@ func TestTagConditionsActivateByEvidenceTags(t *testing.T) {
     },
     "docs/API.md": {
       "$file": { "src": "git@example.com:config.git#API.md",
-        "onlyWhen": { "path": "services", "tags": ["api", "go"] } }
+        "onlyWhen": { "tags": ["api", "go"] } }
     }
   }
 }`)
@@ -106,7 +106,7 @@ func TestTagConditionsActivateByEvidenceTags(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A frontend repo satisfies neither the tag condition nor the combined one.
+	// A frontend repo satisfies neither tag condition.
 	resolved, err := resolvePlan(&model, []string{"services/web"}, planOptions{IncludeRoots: true})
 	if err != nil {
 		t.Fatal(err)
@@ -118,7 +118,7 @@ func TestTagConditionsActivateByEvidenceTags(t *testing.T) {
 		t.Fatalf("files = %#v, want none", resolved.Files)
 	}
 
-	// The api-tagged repo activates the tag-gated repo and the path+tags file.
+	// The api-tagged repo activates the tag-gated repo and file.
 	resolved, err = resolvePlan(&model, []string{"services/api"}, planOptions{IncludeRoots: true})
 	if err != nil {
 		t.Fatal(err)
@@ -144,7 +144,7 @@ func TestTagConditionsActivateByEvidenceTags(t *testing.T) {
 
 func TestTagConditionValidation(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "services/api": {
       "$repo": { "git": "git@example.com:api.git", "tags": ["api"] }
@@ -160,9 +160,10 @@ func TestTagConditionValidation(t *testing.T) {
 	result := validateDefinition(def)
 	joined := strings.Join(result.Errors, "\n")
 	for _, want := range []string{
-		"a onlyWhen tags nonexistent does not match any repository",
-		"b has onlyWhen without a path or tags",
-		"c onlyWhen services tags frontend does not match any repository",
+		"a onlyWhen tags nonexistent do not match any repository",
+		"b onlyWhen must have exactly one of id, path, and tags",
+		// Combined path and tags selectors are no longer a condition form.
+		"c onlyWhen must have exactly one of id, path, and tags",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("errors = %#v, missing %q", result.Errors, want)

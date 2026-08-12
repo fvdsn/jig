@@ -8,6 +8,7 @@ import (
 
 type InfoOptions struct {
 	Path            string
+	Id              string // selects one entry by identity instead of a path
 	IncludeArchived bool
 	Tags            []string
 }
@@ -17,7 +18,7 @@ func Info(options InfoOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Select(NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
+	selection, err := ws.Select(NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
 	if err != nil {
 		return err
 	}
@@ -59,8 +60,8 @@ func Info(options InfoOptions, out io.Writer) error {
 		if len(file.Src) > 0 {
 			printSrcList(out, file.Src)
 		}
-		if file.Link != "" {
-			fmt.Fprintf(out, "link: %s\n", file.Link)
+		if file.Link != nil {
+			fmt.Fprintf(out, "link: %s\n", describeRef(*file.Link))
 		}
 		if file.Description != "" {
 			fmt.Fprintf(out, "description: %s\n", file.Description)
@@ -82,8 +83,8 @@ func Info(options InfoOptions, out io.Writer) error {
 		fmt.Fprintf(out, "path: %s\n", path)
 		fmt.Fprintln(out, "type: dir")
 		fmt.Fprintf(out, "identity: %s\n", entry.Identity)
-		if dir.Link != "" {
-			fmt.Fprintf(out, "link: %s\n", dir.Link)
+		if dir.Link != nil {
+			fmt.Fprintf(out, "link: %s\n", describeRef(*dir.Link))
 		} else {
 			printSrcList(out, dir.Src)
 		}
@@ -156,7 +157,7 @@ func printSrcList(out io.Writer, sources SrcList) {
 	for _, source := range sources {
 		line := "  " + source.Src
 		if source.OnlyWhen != nil {
-			line += " (onlyWhen: " + describeCondition(*source.OnlyWhen) + ")"
+			line += " (onlyWhen: " + describeRef(source.OnlyWhen.Ref) + ")"
 		}
 		fmt.Fprintln(out, line)
 	}
@@ -200,7 +201,7 @@ func printConditions(out io.Writer, label string, conditions []Condition) {
 }
 
 func describeConditionWithReason(condition Condition) string {
-	described := describeCondition(condition)
+	described := describeRef(condition.Ref)
 	if condition.Reason != "" {
 		described += ": " + condition.Reason
 	}
@@ -213,8 +214,8 @@ func printDependency(out io.Writer, dep Dependency) {
 		optional = " optional"
 	}
 	if dep.Reason == "" {
-		fmt.Fprintf(out, "  %s%s\n", dep.Path, optional)
+		fmt.Fprintf(out, "  %s%s\n", describeRef(dep.Ref), optional)
 	} else {
-		fmt.Fprintf(out, "  %s%s: %s\n", dep.Path, optional, dep.Reason)
+		fmt.Fprintf(out, "  %s%s: %s\n", describeRef(dep.Ref), optional, dep.Reason)
 	}
 }

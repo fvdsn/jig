@@ -35,7 +35,7 @@ func TestNormalizeQueryPathTrimsTrailingSlashes(t *testing.T) {
 
 func TestSelectNodesAppliesPathArchiveAndOrdering(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "services": {
       "$group": { "description": "Services" },
@@ -120,7 +120,7 @@ func TestSelectNodesRejectsUnsafePath(t *testing.T) {
 
 func TestSelectNodesIncludesInstalledArchivedNodes(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "legacy": {
       "$group": { "archived": true },
@@ -169,7 +169,7 @@ func TestSelectNodesIncludesInstalledArchivedNodes(t *testing.T) {
 
 func TestTrailingSlashPathMatchesGroup(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform/auth": {
       "$repo": { "git": "git@example.com:auth.git" }

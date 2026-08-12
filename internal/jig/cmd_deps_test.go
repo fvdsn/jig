@@ -9,7 +9,7 @@ import (
 func TestDepsReverseListsDirectDependents(t *testing.T) {
 	root := t.TempDir()
 	writeTestWorkspace(t, root, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform/auth": {
       "$repo": { "git": "git@example.com:auth.git" }
@@ -23,7 +23,7 @@ func TestDepsReverseListsDirectDependents(t *testing.T) {
     "services/checkout": {
       "$repo": {
         "git": "git@example.com:checkout.git",
-        "dependsOn": [{ "path": "platform" }]
+        "dependsOn": [{ "path": "platform/*" }]
       }
     },
     "services/frontend": {

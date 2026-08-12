@@ -85,7 +85,11 @@ func loadWorkspace(withState bool) (*Workspace, error) {
 		ws.Close()
 		return nil, err
 	}
-	if def.Version > 1 {
+	if def.Version == 1 {
+		ws.Close()
+		return nil, errors.New("the schema uses version 1, which predates structured references; update refs (see specs: References) and set version: 2")
+	}
+	if def.Version > 2 {
 		ws.Close()
 		return nil, fmt.Errorf("the schema uses version %d, which this jig does not understand; upgrade jig", def.Version)
 	}

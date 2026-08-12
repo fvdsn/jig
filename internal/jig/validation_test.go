@@ -4,7 +4,7 @@ import "testing"
 
 func TestValidateDefinitionDuplicateIdentity(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform/auth": {
       "$repo": { "id": "auth-service", "git": "git@example.com:auth.git" }
@@ -23,7 +23,7 @@ func TestValidateDefinitionDuplicateIdentity(t *testing.T) {
 
 func TestValidateDefinitionDuplicateGroupIdentity(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform": {
       "$group": { "id": "shared-group" }
@@ -42,7 +42,7 @@ func TestValidateDefinitionDuplicateGroupIdentity(t *testing.T) {
 
 func TestValidateDefinitionDependencyPathMustResolve(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "services/checkout": {
       "$repo": {
@@ -61,12 +61,12 @@ func TestValidateDefinitionDependencyPathMustResolve(t *testing.T) {
 
 func TestFileLinkRequiresDefinedTarget(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "bin/dev": {
       "$file": {
         "id": "dev-command",
-        "link": "scripts/dev.sh"
+        "link": {"path": "scripts/dev.sh"}
       }
     }
   }

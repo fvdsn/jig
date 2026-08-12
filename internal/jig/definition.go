@@ -77,8 +77,9 @@ type Repo struct {
 
 type File struct {
 	ID          string            `json:"id,omitempty"`
-	Src         SrcList           `json:"src,omitempty"` // one or more sources, concatenated in order
-	Link        string            `json:"link,omitempty"`
+	Src         SrcList           `json:"src,omitempty"`  // one or more sources, concatenated in order
+	Link        *Ref              `json:"link,omitempty"` // single-target: id or exact path of another $file
+	linkPath    string            // Link resolved to the target's tree path after flattening
 	Description string            `json:"description,omitempty"`
 	Executable  bool              `json:"executable,omitempty"`
 	Archived    bool              `json:"archived,omitempty"`
@@ -93,7 +94,8 @@ type File struct {
 type Dir struct {
 	ID          string            `json:"id,omitempty"`
 	Src         SrcList           `json:"src,omitempty"`  // one or more sources, merged in order; first wins on conflicts
-	Link        string            `json:"link,omitempty"` // symlink to another $dir entry instead of materializing
+	Link        *Ref              `json:"link,omitempty"` // single-target: id or exact path of another $dir to symlink to
+	linkPath    string            // Link resolved to the target's tree path after flattening
 	Description string            `json:"description,omitempty"`
 	Archived    bool              `json:"archived,omitempty"`
 	Tags        []string          `json:"tags,omitempty"`
@@ -116,32 +118,69 @@ type Group struct {
 	OnlyWhen    *Condition        `json:"onlyWhen,omitempty"`
 }
 
+// Ref is a schema reference: exactly one of ID, Path, and Tags selects the
+// target entries. Path is exact, or the recursive subtree strictly below it
+// with a trailing "/*". Tags select every repository carrying all of them.
+type Ref struct {
+	ID   string   `json:"id,omitempty"`
+	Path string   `json:"path,omitempty"`
+	Tags []string `json:"tags,omitempty"`
+}
+
+// selectorCount reports how many selector fields are set; valid refs have
+// exactly one.
+func (ref Ref) selectorCount() int {
+	count := 0
+	if ref.ID != "" {
+		count++
+	}
+	if ref.Path != "" {
+		count++
+	}
+	if len(ref.Tags) > 0 {
+		count++
+	}
+	return count
+}
+
+// subtreePath splits the "/*" subtree marker off a path selector: "a/*"
+// yields ("a", true) and bare "*" yields ("", true), meaning the whole tree.
+func subtreePath(path string) (string, bool) {
+	if path == "*" {
+		return "", true
+	}
+	if base, ok := strings.CutSuffix(path, "/*"); ok {
+		return base, true
+	}
+	return path, false
+}
+
+// describeRef renders a reference for messages and info output, e.g.
+// "id auth-service", "platform/*", or "tags api,go".
+func describeRef(ref Ref) string {
+	switch {
+	case ref.ID != "":
+		return "id " + ref.ID
+	case ref.Path != "":
+		return ref.Path
+	case len(ref.Tags) > 0:
+		return "tags " + strings.Join(ref.Tags, ",")
+	default:
+		return "(empty reference)"
+	}
+}
+
 type Dependency struct {
-	Path     string `json:"path"`
+	Ref
 	Optional bool   `json:"optional,omitempty"`
 	Reason   string `json:"reason,omitempty"`
 }
 
-// Condition holds when some active or installed repository matches the path
-// (when given) and carries all the tags (when given). At least one of the
-// two selectors is required.
+// Condition holds when some active or installed repository is selected by
+// its reference.
 type Condition struct {
-	Path   string   `json:"path,omitempty"`
-	Tags   []string `json:"tags,omitempty"`
-	Reason string   `json:"reason,omitempty"`
-}
-
-// describeCondition renders a condition's selectors for messages and info
-// output, e.g. "services" or "tags api,go" or "services tags api".
-func describeCondition(condition Condition) string {
-	parts := []string{}
-	if condition.Path != "" {
-		parts = append(parts, condition.Path)
-	}
-	if len(condition.Tags) > 0 {
-		parts = append(parts, "tags "+strings.Join(condition.Tags, ","))
-	}
-	return strings.Join(parts, " ")
+	Ref
+	Reason string `json:"reason,omitempty"`
 }
 
 func loadDefinition(path string) (*Definition, error) {

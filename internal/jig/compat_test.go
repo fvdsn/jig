@@ -12,7 +12,7 @@ import (
 // stripping fields this jig does not know about on rewrite).
 func TestNewerVersionsAreRefused(t *testing.T) {
 	root := t.TempDir()
-	writeTestWorkspace(t, root, `{"version": 1, "tree": {}}`)
+	writeTestWorkspace(t, root, `{"version": 2, "tree": {}}`)
 
 	if err := os.WriteFile(filepath.Join(root, stateFile), []byte(`{"version": 2, "repos": {}, "files": {}}`), 0o644); err != nil {
 		t.Fatal(err)
@@ -30,7 +30,7 @@ func TestNewerVersionsAreRefused(t *testing.T) {
 
 	// Schema guard goes through loadWorkspace.
 	root2 := t.TempDir()
-	writeTestWorkspace(t, root2, `{"version": 2, "tree": {}}`)
+	writeTestWorkspace(t, root2, `{"version": 3, "tree": {}}`)
 	oldWd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -45,5 +45,16 @@ func TestNewerVersionsAreRefused(t *testing.T) {
 	}()
 	if _, err := loadWorkspace(false); err == nil || !strings.Contains(err.Error(), "upgrade jig") {
 		t.Fatalf("schema guard: %v", err)
+	}
+
+	// Version 1 predates structured references and is refused with a
+	// migration hint rather than an upgrade hint.
+	root3 := t.TempDir()
+	writeTestWorkspace(t, root3, `{"version": 1, "tree": {}}`)
+	if err := os.Chdir(root3); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadWorkspace(false); err == nil || !strings.Contains(err.Error(), "structured references") {
+		t.Fatalf("schema v1 guard: %v", err)
 	}
 }

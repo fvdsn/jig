@@ -81,7 +81,7 @@ The definition uses a top-level `tree`.
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform/auth": {
       "$repo": {
@@ -156,9 +156,18 @@ Important fields:
 
 If `id` is omitted, the repository path is used as the identity.
 
-## Dependencies
+## References
 
-Dependencies use workspace paths.
+`dependsOn`, `onlyWhen` (including per-source conditions), and `link` share one structured reference form: an object with **exactly one** of three selector fields.
+
+- `{"id": "auth-service"}` — one entry by its stable identity; survives path moves. Ids are globally unique across all entry kinds.
+- `{"path": "platform/auth"}` — one declared entry, exact match. A path naming nothing (or naming a group without `/*`) is a validation error, so renames fail loudly.
+- `{"path": "platform/*"}` — every repository strictly below `platform`. The trailing `/*` is the only wildcard; bare `*` means the whole tree.
+- `{"tags": ["api", "go"]}` — every repository carrying all the tags (inherited group tags included).
+
+`link` is single-target: only `id` or an exact `path`, resolving to one entry of the same kind.
+
+## Dependencies
 
 ```json
 {
@@ -168,7 +177,7 @@ Dependencies use workspace paths.
         "git": "git@github.com:acme/checkout.git",
         "dependsOn": [
           {
-            "path": "platform",
+            "path": "platform/*",
             "reason": "checkout uses platform services"
           }
         ]
@@ -178,7 +187,7 @@ Dependencies use workspace paths.
 }
 ```
 
-The dependency path `platform` matches all repositories under `platform/`, such as:
+The subtree selector `platform/*` matches all repositories under `platform/`, such as:
 
 ```text
 platform/auth
@@ -290,7 +299,7 @@ Such a URL is treated as the repository's https clone URL plus the in-repo path;
     "src": [
       "git@github.com:acme/workspace-config.git#agents/base.md",
       { "src": "git@github.com:acme/workspace-config.git#agents/billing.md",
-        "onlyWhen": { "path": "billing" } }
+        "onlyWhen": { "path": "billing/*" } }
     ]
   }
 }
@@ -317,7 +326,7 @@ Files can also be symbolic links to other files in the same schema.
     "bin/dev": {
       "$file": {
         "id": "dev-command",
-        "link": "scripts/dev.sh",
+        "link": {"id": "dev-script"},
         "description": "Shortcut to the dev script"
       }
     }
@@ -328,7 +337,7 @@ Files can also be symbolic links to other files in the same schema.
 Rules for links:
 
 - A `$file` defines exactly one of `src` or `link`.
-- `link` points to another `$file` path in the same schema.
+- `link` is a reference object (`{"id": ...}` or exact `{"path": ...}`) naming another `$file` in the same schema.
 - Jig creates relative symlinks.
 - Link files are active only when their target file is active.
 - Jig skips existing non-symlink paths instead of overwriting them.
@@ -359,7 +368,7 @@ Declare whole subtrees with `$dir`. The subtree of the source repository is mate
     "src": [
       "git@github.com:acme/ez-skills.git#skills",
       { "src": "git@github.com:acme/billing-skills.git#skills",
-        "onlyWhen": { "path": "billing" } }
+        "onlyWhen": { "path": "billing/*" } }
     ]
   }
 }
@@ -371,8 +380,8 @@ A `$dir` can instead declare `link` to become a relative symlink to another `$di
 {
   "tree": {
     ".agents/skills":   { "$dir": { "id": "agent-skills", "src": ["git@github.com:acme/skills.git#skills"] } },
-    ".opencode/skills": { "$dir": { "id": "opencode-skills", "link": ".agents/skills" } },
-    ".claude/skills":   { "$dir": { "id": "claude-skills", "link": ".agents/skills" } }
+    ".opencode/skills": { "$dir": { "id": "opencode-skills", "link": {"path": ".agents/skills"} } },
+    ".claude/skills":   { "$dir": { "id": "claude-skills", "link": {"path": ".agents/skills"} } }
   }
 }
 ```
@@ -387,11 +396,12 @@ Rules:
 
 ## Conditional Nodes
 
-Use `onlyWhen` to make a repo, file, or dir active only when some active or installed repository satisfies it. A condition selects by `path` (a repository under that path), by `tags` (a repository carrying all listed tags, inherited group tags included), or both combined:
+Use `onlyWhen` to make a repo, file, or dir active only when some active or installed repository is selected by its reference — exactly one of `id`, `path`, or `tags` (see References), plus an optional `reason`:
 
 ```json
 { "onlyWhen": { "tags": ["api"], "reason": "API tooling for any API service" } }
-{ "onlyWhen": { "path": "services", "tags": ["frontend"] } }
+{ "onlyWhen": { "id": "auth-service" } }
+{ "onlyWhen": { "path": "services/*" } }
 ```
 
 Tag conditions make support artifacts follow capabilities instead of locations: an API skill gated on `tags: ["api"]` materializes whenever any api-tagged repository is installed, with no schema edits as the catalog grows.
@@ -402,7 +412,7 @@ Tag conditions make support artifacts follow capabilities instead of locations: 
     ".agents/skills": {
       "$group": {
         "onlyWhen": {
-          "path": "platform",
+          "path": "platform/*",
           "reason": "only useful when platform repos are installed"
         }
       },
@@ -506,6 +516,15 @@ jig list --tags backend
 jig clone services --tags backend,go
 jig status --tags frontend
 ```
+
+Select one entry by its stable id with `--id` on the same commands (plus the lifecycle verbs and `push`). It mirrors the schema's `{"id": ...}` selector: position-independent, includes archived entries, and cannot be combined with a path or `--tags`:
+
+```sh
+jig info --id auth-service
+jig pull --id checkout-service
+```
+
+Path arguments select the node and everything under it; the explicit subtree form `services/*` is also accepted and equivalent.
 
 Filter by custom metadata on `list`: `--meta key` keeps entries whose meta carries the key, `--meta key=value` additionally requires the exact value:
 

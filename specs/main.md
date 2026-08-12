@@ -16,7 +16,7 @@ Initial schema:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform/auth": {
       "$repo": {
@@ -33,7 +33,7 @@ Initial schema:
         "description": "Checkout service",
         "dependsOn": [
           {
-            "path": "platform",
+            "path": "platform/*",
             "reason": "checkout uses shared platform services"
           }
         ]
@@ -43,7 +43,7 @@ Initial schema:
       "$group": {
         "description": "Developer tools",
         "onlyWhen": {
-          "path": "platform",
+          "path": "platform/*",
           "reason": "Only useful when platform repositories are installed"
         }
       },
@@ -60,7 +60,7 @@ Initial schema:
         "src": "git@github.com:org/workspace-config.git#agents/skills/platform.md",
         "description": "Agent skill for platform repositories",
         "onlyWhen": {
-          "path": "platform",
+          "path": "platform/*",
           "reason": "Only useful when platform repositories are installed"
         }
       }
@@ -77,7 +77,7 @@ Required integer.
 
 Identifies the schema version used by the definition file.
 
-Initial supported version: `1`.
+Current version: `2`. Version 2 introduced structured references (see References); version 1 schemas are refused with an error pointing at the reference format change.
 
 ### `source`
 
@@ -140,8 +140,7 @@ This applies to:
 - Expanded tree paths.
 - Repository paths.
 - File destination paths.
-- `dependsOn.path`.
-- `onlyWhen.path`.
+- Reference `path` selectors (before their optional trailing `/*`; see References).
 - CLI path arguments.
 - Paths stored in `.jig/state.json`.
 
@@ -169,6 +168,27 @@ foo//bar
 ```
 
 Source repo file paths use the same safety rules, but are interpreted relative to the source Git repository.
+
+## References
+
+Schema entries reference each other in `dependsOn`, `onlyWhen` (including per-source conditions), and `link`. Every reference is a structured object carrying **exactly one** selector field; there are no string reference forms in the schema. The selector fields are:
+
+- `id`: the identity of one entry, stable across path changes. Ids are globally unique across all entry kinds, so an `id` selector is never ambiguous.
+- `path`: an exact expanded tree path that must name a declared entry — or, with a trailing `/*`, the subtree strictly below it.
+- `tags`: a list of tags; selects every repository carrying all of them (declared or inherited). Multiple tags are conjunctive, matching the `--tags` CLI flag.
+
+Path selectors are exact: `{"path": "platform/auth"}` names the entry declared at `platform/auth` and nothing else. A path that names no declared entry is a validation error, so renames and typos fail loudly instead of silently matching less.
+
+The subtree marker `/*` is the only wildcard. It may appear only as the entire final segment (`platform/*`, or bare `*` for the whole tree), it always means the full recursive subtree strictly below the path (not the node itself), and there is no other glob syntax. A subtree selector that matches nothing is a validation error.
+
+A path selector naming a `$group` entry exactly is a validation error with a hint to use `path + "/*"`; groups are containers, and referencing their contents must be explicit.
+
+Reference sites have one of two arities, enforced by validation:
+
+- **Selector sites** (`dependsOn` entries, `onlyWhen` conditions) accept any of the three selector fields and may resolve to zero or more repositories, plus site-specific extras (`optional`, `reason`).
+- **Single-target sites** (`$file.link`, `$dir.link`) accept only `id` or `path`, forbid `/*`, and must resolve to exactly one entry of the required kind.
+
+The CLI mirrors the three selectors: the path positional, `--id`, and `--tags`. As a human interface the CLI keeps its filesystem feel — a bare path positional selects the node *and* its subtree, position-aware relative to the current directory — and also accepts an explicit trailing `/*`, which selects the same set. `--id` selects exactly one entry and cannot be combined with a path positional or `--tags`.
 
 ## Position-Relative CLI Paths
 
@@ -234,7 +254,7 @@ Optional string.
 
 Stable group identity. If omitted, the group path is used as its identity.
 
-Group identities must be unique among groups.
+Identities are globally unique across all entry kinds; see the identity rules under `$repo.id`.
 
 ### `$group.description`
 
@@ -358,7 +378,7 @@ The tree path is the current logical path and local path of the repository. The 
 
 If `id` is omitted, the repository path is used as the identity.
 
-Repository identities must be unique after applying this rule. Two repositories cannot resolve to the same identity.
+Identities are globally unique across all entry kinds after applying this rule: no two entries — repositories, files, dirs, or groups — may resolve to the same identity. This is what makes an `id` reference selector unambiguous (see References).
 
 ### `$repo.git`
 
@@ -410,7 +430,7 @@ See [Custom Metadata](#custom-metadata).
 
 Optional array.
 
-Lists dependencies for this repository. Each dependency points to either a specific repository or a group of repositories.
+Lists dependencies for this repository. Each dependency is a reference selector — one repository by `id` or exact `path`, a subtree with `path` ending in `/*`, or every repository carrying `tags` — with optional `optional` and `reason` fields. See Dependency Fields.
 
 If omitted, the repository has no declared dependencies.
 
@@ -444,7 +464,7 @@ Example:
     "bin/dev": {
       "$file": {
         "id": "dev-command",
-        "link": "scripts/dev.sh",
+        "link": {"id": "dev-script"},
         "description": "Shortcut to the dev script"
       }
     }
@@ -460,7 +480,7 @@ Stable file identity.
 
 If omitted, the file destination path is used as the identity.
 
-File identities must be unique after applying this rule. Two files cannot resolve to the same identity.
+Identities are globally unique across all entry kinds; see the identity rules under `$repo.id`.
 
 ### `$file.src`
 
@@ -505,7 +525,7 @@ This assembles e.g. one `AGENTS.md` from a base section plus sections that follo
     "src": [
       "git@github.com:org/workspace-config.git#agents/base.md",
       { "src": "git@github.com:org/workspace-config.git#agents/billing.md",
-        "onlyWhen": { "path": "billing" } }
+        "onlyWhen": { "path": "billing/*" } }
     ]
   }
 }
@@ -513,9 +533,9 @@ This assembles e.g. one `AGENTS.md` from a base section plus sections that follo
 
 ### `$file.link`
 
-Optional string.
+Optional reference object.
 
-Declares the file node as a symbolic link to another `$file` node in the same schema.
+Declares the file node as a symbolic link to another `$file` node in the same schema. The reference is a single-target selector (see References): exactly one of `id` and `path`, where `path` is exact — no `/*`, no `tags`.
 
 Example:
 
@@ -531,7 +551,7 @@ Example:
     "bin/dev": {
       "$file": {
         "id": "dev-command",
-        "link": "scripts/dev.sh"
+        "link": {"id": "dev-script"}
       }
     }
   }
@@ -541,8 +561,7 @@ Example:
 Rules:
 
 - A `$file` must define exactly one of `src` or `link`.
-- `link` must be a safe workspace path.
-- `link` must resolve to another `$file` node in the same `.jig.json`.
+- `link` must resolve to exactly one other `$file` node in the same schema; referencing any other kind, or the link's own node, is a validation error.
 - Link files are active only when their own conditions match and their target file is active.
 - Jig creates relative symlinks so workspaces remain movable.
 - `executable` applies only to `src` files.
@@ -610,7 +629,7 @@ Directory nodes are declared with `$dir` and materialize a whole subtree of a so
 }
 ```
 
-Fields: `id` (optional identity, defaults to the path), `src` (required, `<repo-url>[#<subtree-path>]` or a list of such sources; without a path the whole repository tree is materialized), `description`, `archived`, `tags`, `meta`, and `onlyWhen` behave as for `$file`. There is no `executable` field (modes come from the git tree). A directory node may declare `link` instead of `src`: it becomes a relative symlink to another `$dir` entry. Exactly one of `src` and `link` is required; link dirs are active only when their target dir is active, targets are materialized before links, link cycles are validation errors, and removing a link dir removes only the symlink.
+Fields: `id` (optional identity, defaults to the path), `src` (required, `<repo-url>[#<subtree-path>]` or a list of such sources; without a path the whole repository tree is materialized), `description`, `archived`, `tags`, `meta`, and `onlyWhen` behave as for `$file`. There is no `executable` field (modes come from the git tree). A directory node may declare `link` instead of `src`: a single-target reference (`{"id": ...}` or exact `{"path": ...}`, as for `$file.link`) making the node a relative symlink to another `$dir` entry. Exactly one of `src` and `link` is required; link dirs are active only when their target dir is active, targets are materialized before links, link cycles are validation errors, and removing a link dir removes only the symlink.
 
 State records the source tree id and a manifest mapping each written file to its content hash. Rules:
 
@@ -625,13 +644,23 @@ State records the source tree id and a manifest mapping each written file to its
 
 ## Dependency Fields
 
+Each `dependsOn` entry is a reference selector (see References) plus the extras below. Exactly one of `id`, `path`, and `tags` is required.
+
+### `id`
+
+Selects one repository by identity, stable across path changes:
+
+```json
+{
+  "id": "auth-service"
+}
+```
+
+The id must belong to a repository; an id naming a file, dir, or group is a validation error.
+
 ### `path`
 
-Required string.
-
-Identifies the dependency target.
-
-The path may refer to a specific repository:
+Selects one repository by exact path, or a subtree of repositories with a trailing `/*`:
 
 ```json
 {
@@ -639,43 +668,26 @@ The path may refer to a specific repository:
 }
 ```
 
-Or it may refer to a group of repositories:
-
 ```json
 {
-  "path": "platform"
+  "path": "platform/*",
+  "reason": "everything under platform"
 }
 ```
 
-Dependency paths are safe workspace paths.
+An exact path must name a declared repository — a path matching nothing, or naming a group without `/*`, is a validation error. A subtree selector takes every repository strictly below the path and must match at least one (archived included).
 
-Group paths are resolved by matching repository paths on `/` segment boundaries.
+### `tags`
 
-A dependency path matches a repository path when either:
+Selects every repository carrying all the listed tags (declared or inherited):
 
-```text
-repoPath == path
+```json
+{
+  "tags": ["base"]
+}
 ```
 
-or:
-
-```text
-repoPath starts with path + "/"
-```
-
-For example, `platform` matches:
-
-```text
-platform/auth
-platform/billing
-platform/events
-```
-
-But it does not match:
-
-```text
-platforming/api
-```
+At least one repository in the schema must carry all the tags (archived included), which catches misspelled tags.
 
 ### `optional`
 
@@ -756,20 +768,21 @@ Meta never affects planning, dependency resolution, or activation. External tool
 
 Use `onlyWhen` to make a repo, file, or dir active only when some active or installed repository satisfies the condition.
 
-A condition has two selectors, of which at least one is required:
+A condition is a reference selector (see References): exactly one of `id`, `path`, and `tags`, plus an optional `reason` documenting it. The condition holds when some active or installed repository is selected by it:
 
-- `path`: a safe workspace path; a repository at or under it satisfies the condition.
-- `tags`: a list of tags; a repository carrying all of them (declared or inherited from groups) satisfies the condition. Multiple tags are conjunctive, matching the `--tags` CLI flag.
-
-When both selectors are given, one repository must satisfy both. An optional `reason` documents the condition.
+- `id`: that repository is active or installed.
+- `path` (exact): the repository at that path is active or installed.
+- `path` with `/*`: some repository strictly below the path is active or installed.
+- `tags`: some active or installed repository carries all the tags.
 
 ```json
-{ "onlyWhen": { "path": "platform" } }
+{ "onlyWhen": { "id": "auth-service" } }
+{ "onlyWhen": { "path": "platform/auth" } }
+{ "onlyWhen": { "path": "platform/*", "reason": "platform tooling" } }
 { "onlyWhen": { "tags": ["api"] } }
-{ "onlyWhen": { "path": "services", "tags": ["frontend"], "reason": "frontend tooling" } }
 ```
 
-Validation requires each condition to be satisfiable by at least one repository in the schema (archived included), which catches path typos and misspelled tags.
+Validation requires each condition to be satisfiable by at least one repository in the schema (archived included), which catches path typos and misspelled tags; exact paths and ids must additionally name a declared repository.
 
 Inherited `onlyWhen` conditions are additive. All inherited and local conditions must match.
 
@@ -787,7 +800,7 @@ Explicitly selecting a file or dir path with `clone` or `sync` always materializ
 
 ## Dependency Resolution
 
-When resolving dependencies for a repository, Jig expands every dependency path to matching repository paths.
+When resolving dependencies for a repository, Jig expands every dependency selector to its repository paths: the one repository of an `id` or exact `path` selector, every repository strictly below a `path` ending in `/*`, or every repository carrying all the `tags` of a tag selector.
 
 Non-optional dependencies are included by default. Optional dependencies are included when explicitly requested.
 
@@ -937,7 +950,9 @@ Rules:
 
 ## Compatibility
 
-The schema, workspace config, and state files each carry a `version` field. Version 1 is the current version of all three. When jig encounters a version newer than it understands, it must fail with an error telling the user to upgrade jig; it must never guess at newer formats or rewrite a newer state file (which would silently strip unknown fields). Future format changes bump the corresponding version.
+The schema, workspace config, and state files each carry a `version` field. The current schema version is 2 (structured references); workspace config and state are at version 1. When jig encounters a version newer than it understands, it must fail with an error telling the user to upgrade jig; it must never guess at newer formats or rewrite a newer state file (which would silently strip unknown fields). Future format changes bump the corresponding version.
+
+Schema version 1 (string `link` values, prefix-matching dependency paths, combined path-and-tags conditions) is refused with an error pointing at the reference format change; there is no in-tool migration.
 
 ## Operation Rules
 
@@ -1073,13 +1088,14 @@ Validation should catch:
 - Invalid `$repo` objects.
 - Invalid `$file` objects.
 - Invalid meta keys.
-- Duplicate repository identities.
-- Duplicate file identities.
-- Duplicate group identities.
-- Dependency paths that do not resolve to any repository.
-- `onlyWhen.path` values that do not resolve to any repository.
+- Duplicate identities across all entry kinds.
+- References carrying zero or more than one selector field.
+- `id` selectors naming no entry, or an entry of the wrong kind.
+- Exact `path` selectors naming no declared entry, or naming a group (with a hint to append `/*`).
+- Subtree and tag selectors matching no repository.
+- `/*` anywhere but as the entire final segment, or in a single-target reference.
 - Invalid file `src` values.
-- Invalid file `link` values.
+- Invalid `link` references (wrong kind, self-reference, wrong arity).
 
 Dependency cycles should be detected and reported, but they do not necessarily make the file invalid.
 

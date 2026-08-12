@@ -9,33 +9,35 @@ import (
 
 type PullOptions struct {
 	Path            string
+	Id              string // selects one entry by identity instead of a path
 	IncludeArchived bool
 	Tags            []string
 }
 
 func Pull(options PullOptions, out io.Writer) error {
-	return runGitInInstalled(out, options.Path, options.IncludeArchived, options.Tags, "pulled", "pull", "--ff-only")
+	return runGitInInstalled(out, NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags}, "pulled", "pull", "--ff-only")
 }
 
 type FetchOptions struct {
 	Path            string
+	Id              string // selects one entry by identity instead of a path
 	IncludeArchived bool
 	Tags            []string
 }
 
 func Fetch(options FetchOptions, out io.Writer) error {
-	return runGitInInstalled(out, options.Path, options.IncludeArchived, options.Tags, "fetched", "fetch")
+	return runGitInInstalled(out, NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags}, "fetched", "fetch")
 }
 
 // runGitInInstalled runs a git command across the installed repositories
 // matching the query, in parallel, printing one <verb>: line per success as
 // it completes and a skipped group for failures.
-func runGitInInstalled(out io.Writer, path string, includeArchived bool, tags []string, verb string, gitArgs ...string) error {
+func runGitInInstalled(out io.Writer, query NodeQuery, verb string, gitArgs ...string) error {
 	ws, err := loadWorkspace(false)
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Select(NodeQuery{Path: path, IncludeArchived: includeArchived, Tags: tags})
+	selection, err := ws.Select(query)
 	if err != nil {
 		return err
 	}

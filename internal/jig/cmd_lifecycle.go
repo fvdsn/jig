@@ -17,6 +17,7 @@ import (
 
 type LifecycleOptions struct {
 	Path            string
+	Id              string // selects one entry by identity instead of a path
 	IncludeArchived bool
 	Tags            []string
 }
@@ -59,7 +60,7 @@ func runLifecycle(verb string, options LifecycleOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Select(NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
+	selection, err := ws.Select(NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
 	if err != nil {
 		return err
 	}
@@ -160,11 +161,7 @@ func dependencyOrder(model *Model, repoPaths []string) []string {
 			return
 		}
 		for _, dep := range entry.Repo.DependsOn {
-			selection, err := model.Select(NodeQuery{Path: dep.Path, IncludeArchived: true})
-			if err != nil {
-				continue
-			}
-			for _, match := range selection.ofKind(EntryRepo) {
+			for _, match := range model.resolveRepoRef(dep.Ref) {
 				if inSet[match.Path] {
 					visit(match.Path)
 				}

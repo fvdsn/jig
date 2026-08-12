@@ -13,7 +13,9 @@ type validationResult struct {
 
 func validateDefinition(def *Definition) validationResult {
 	var result validationResult
-	if def.Version != 1 {
+	if def.Version == 1 {
+		result.Errors = append(result.Errors, "schema version 1 predates structured references; update refs (see specs: References) and set version: 2")
+	} else if def.Version != 2 {
 		result.Errors = append(result.Errors, "unsupported or missing version")
 	}
 	if def.Tree == nil {
@@ -39,17 +41,16 @@ func validateDefinition(def *Definition) validationResult {
 		return result
 	}
 
-	identities := map[EntryKind]map[string]string{}
+	// Identities are globally unique across kinds so id references are
+	// never ambiguous.
+	identities := map[string]string{}
 	for _, path := range sortedEntryPaths(&model) {
 		entry := model.Entries[path]
 		kind := string(entry.Kind)
-		if identities[entry.Kind] == nil {
-			identities[entry.Kind] = map[string]string{}
-		}
-		if prev, ok := identities[entry.Kind][entry.Identity]; ok {
-			result.Errors = append(result.Errors, fmt.Sprintf("duplicate %s identity %s: %s and %s", kind, entry.Identity, prev, path))
+		if prev, ok := identities[entry.Identity]; ok {
+			result.Errors = append(result.Errors, fmt.Sprintf("duplicate identity %s: %s and %s", entry.Identity, prev, path))
 		} else {
-			identities[entry.Kind][entry.Identity] = path
+			identities[entry.Identity] = path
 		}
 		for _, condition := range entry.Conditions {
 			validateCondition(&result, model, path, condition)
@@ -65,14 +66,7 @@ func validateDefinition(def *Definition) validationResult {
 			}
 		}
 		for _, dep := range entry.dependsOn() {
-			if err := validateSafePath(dep.Path); err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("%s %s has invalid dependency path %q: %s", kind, path, dep.Path, err))
-				continue
-			}
-			matches, _ := model.Select(NodeQuery{Path: dep.Path, IncludeArchived: true})
-			if len(matches.ofKind(EntryRepo)) == 0 {
-				result.Errors = append(result.Errors, fmt.Sprintf("%s %s dependency %s does not resolve to any repository", kind, path, dep.Path))
-			}
+			validateRepoSelector(&result, model, kind+" "+path, "dependency", dep.Ref)
 		}
 		switch entry.Kind {
 		case EntryRepo:
@@ -82,7 +76,7 @@ func validateDefinition(def *Definition) validationResult {
 		case EntryFile:
 			validateFileEntry(&result, model, path, entry.File)
 		case EntryDir:
-			if (len(entry.Dir.Src) == 0) == (entry.Dir.Link == "") {
+			if (len(entry.Dir.Src) == 0) == (entry.Dir.Link == nil) {
 				result.Errors = append(result.Errors, fmt.Sprintf("dir %s must define exactly one of src or link", path))
 			}
 			for _, source := range entry.Dir.Src {
@@ -93,14 +87,8 @@ func validateDefinition(def *Definition) validationResult {
 					validateCondition(&result, model, path, *source.OnlyWhen)
 				}
 			}
-			if link := entry.Dir.Link; link != "" {
-				if err := validateSafePath(link); err != nil {
-					result.Errors = append(result.Errors, fmt.Sprintf("dir %s invalid link: %s", path, err))
-				} else if _, ok := model.entry(link, EntryDir); !ok {
-					result.Errors = append(result.Errors, fmt.Sprintf("dir %s link %s does not resolve to any dir", path, link))
-				} else if link == path {
-					result.Errors = append(result.Errors, fmt.Sprintf("dir %s cannot link to itself", path))
-				}
+			if entry.Dir.Link != nil {
+				validateLinkRef(&result, model, path, "dir", EntryDir, *entry.Dir.Link)
 			}
 		}
 	}
@@ -118,7 +106,7 @@ func validateDefinition(def *Definition) validationResult {
 }
 
 func validateFileEntry(result *validationResult, model Model, path string, file *File) {
-	if (len(file.Src) == 0) == (file.Link == "") {
+	if (len(file.Src) == 0) == (file.Link == nil) {
 		result.Errors = append(result.Errors, fmt.Sprintf("file %s must define exactly one of src or link", path))
 	}
 	for _, source := range file.Src {
@@ -129,46 +117,111 @@ func validateFileEntry(result *validationResult, model Model, path string, file 
 			validateCondition(result, model, path, *source.OnlyWhen)
 		}
 	}
-	if file.Link != "" {
-		if err := validateSafePath(file.Link); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("file %s invalid link: %s", path, err))
-		} else if _, ok := model.entry(file.Link, EntryFile); !ok {
-			result.Errors = append(result.Errors, fmt.Sprintf("file %s link %s does not resolve to any file", path, file.Link))
-		} else if file.Link == path {
-			result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot link to itself", path))
-		}
+	if file.Link != nil {
+		validateLinkRef(result, model, path, "file", EntryFile, *file.Link)
 	}
-	if file.Executable && file.Link != "" {
+	if file.Executable && file.Link != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot use executable with link", path))
 	}
 }
 
 func validateCondition(result *validationResult, model Model, ownerPath string, condition Condition) {
-	if condition.Path == "" && len(condition.Tags) == 0 {
-		result.Errors = append(result.Errors, fmt.Sprintf("%s has onlyWhen without a path or tags", ownerPath))
+	validateRepoSelector(result, model, ownerPath, "onlyWhen", condition.Ref)
+}
+
+// validateRefSyntax checks the shape shared by all references: exactly one
+// selector field, a safe path (before any trailing subtree marker), and
+// valid tags. It reports whether the shape is usable at all.
+func validateRefSyntax(result *validationResult, owner string, site string, ref Ref) bool {
+	if ref.selectorCount() != 1 {
+		result.Errors = append(result.Errors, fmt.Sprintf("%s %s must have exactly one of id, path, and tags", owner, site))
+		return false
+	}
+	if ref.Path != "" && ref.Path != "*" {
+		base, _ := subtreePath(ref.Path)
+		if err := validateSafePath(base); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s has invalid %s path %q: %s", owner, site, ref.Path, err))
+			return false
+		}
+		if strings.Contains(base, "*") {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s has invalid %s path %q: \"*\" may only appear as the entire final segment", owner, site, ref.Path))
+			return false
+		}
+	}
+	for _, tag := range ref.Tags {
+		if tag == "" || strings.ContainsAny(tag, ", \t") {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s has invalid %s tag %q: tags must be non-empty without spaces or commas", owner, site, tag))
+			return false
+		}
+	}
+	return true
+}
+
+// validateRepoSelector checks a dependency or condition reference, whose
+// target domain is repositories: an id or exact path must name a declared
+// repository, and a subtree or tag selector must match at least one
+// (archived included).
+func validateRepoSelector(result *validationResult, model Model, owner string, site string, ref Ref) {
+	if !validateRefSyntax(result, owner, site, ref) {
 		return
 	}
-	if condition.Path != "" {
-		if err := validateSafePath(condition.Path); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("%s has invalid onlyWhen path %q: %s", ownerPath, condition.Path, err))
+	switch {
+	case ref.ID != "":
+		entries := model.resolveRef(ref)
+		if len(entries) == 0 {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s %s id %s does not name any entry", owner, site, ref.ID))
+		} else if entries[0].Kind != EntryRepo {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s %s id %s names a %s, not a repository", owner, site, ref.ID, entries[0].Kind))
+		}
+	case ref.Path != "":
+		if _, subtree := subtreePath(ref.Path); subtree {
+			if len(model.resolveRepoRef(ref)) == 0 {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s %s %s does not match any repository", owner, site, ref.Path))
+			}
 			return
 		}
-	}
-	for _, tag := range condition.Tags {
-		if tag == "" || strings.ContainsAny(tag, ", \t") {
-			result.Errors = append(result.Errors, fmt.Sprintf("%s has invalid onlyWhen tag %q: tags must be non-empty without spaces or commas", ownerPath, tag))
-			return
+		entry, ok := model.Entries[ref.Path]
+		switch {
+		case !ok && len(model.resolveRepoRef(Ref{Path: ref.Path + "/*"})) > 0:
+			result.Errors = append(result.Errors, fmt.Sprintf("%s %s %s does not name a declared entry; use %q for the subtree below it", owner, site, ref.Path, ref.Path+"/*"))
+		case !ok:
+			result.Errors = append(result.Errors, fmt.Sprintf("%s %s %s does not name any entry", owner, site, ref.Path))
+		case entry.Kind == EntryGroup:
+			result.Errors = append(result.Errors, fmt.Sprintf("%s %s %s names a group; use %q for its members", owner, site, ref.Path, ref.Path+"/*"))
+		case entry.Kind != EntryRepo:
+			result.Errors = append(result.Errors, fmt.Sprintf("%s %s %s names a %s, not a repository", owner, site, ref.Path, entry.Kind))
+		}
+	default:
+		if len(model.resolveRepoRef(ref)) == 0 {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s %s tags %s do not match any repository", owner, site, strings.Join(ref.Tags, ",")))
 		}
 	}
-	// The condition must be satisfiable by some repository in the schema,
-	// which catches path typos and misspelled tags.
-	matches, _ := model.Select(NodeQuery{Path: condition.Path, IncludeArchived: true})
-	for _, match := range matches.ofKind(EntryRepo) {
-		if match.hasAllTags(condition.Tags) {
-			return
-		}
+}
+
+// validateLinkRef checks a single-target link reference: id or exact path,
+// resolving to exactly one other entry of the same kind.
+func validateLinkRef(result *validationResult, model Model, path string, kindLabel string, kind EntryKind, ref Ref) {
+	owner := kindLabel + " " + path
+	if !validateRefSyntax(result, owner, "link", ref) {
+		return
 	}
-	result.Errors = append(result.Errors, fmt.Sprintf("%s onlyWhen %s does not match any repository", ownerPath, describeCondition(condition)))
+	if len(ref.Tags) > 0 {
+		result.Errors = append(result.Errors, fmt.Sprintf("%s link cannot use tags; it must name exactly one %s by id or path", owner, kindLabel))
+		return
+	}
+	if _, subtree := subtreePath(ref.Path); ref.Path != "" && subtree {
+		result.Errors = append(result.Errors, fmt.Sprintf("%s link %s cannot use \"/*\"; it must name exactly one %s", owner, ref.Path, kindLabel))
+		return
+	}
+	entries := model.resolveRef(ref)
+	switch {
+	case len(entries) == 0:
+		result.Errors = append(result.Errors, fmt.Sprintf("%s link %s does not resolve to any %s", owner, describeRef(ref), kindLabel))
+	case entries[0].Kind != kind:
+		result.Errors = append(result.Errors, fmt.Sprintf("%s link %s names a %s, not a %s", owner, describeRef(ref), entries[0].Kind, kindLabel))
+	case entries[0].Path == path:
+		result.Errors = append(result.Errors, fmt.Sprintf("%s cannot link to itself", owner))
+	}
 }
 
 func (v validationResult) asError(prefix string) error {
@@ -227,11 +280,7 @@ func repoDependencyPaths(model *Model) func(string) []string {
 		entry, _ := model.entry(repoPath, EntryRepo)
 		var paths []string
 		for _, dep := range entry.Repo.DependsOn {
-			selection, err := model.Select(NodeQuery{Path: dep.Path, IncludeArchived: true})
-			if err != nil {
-				continue
-			}
-			paths = append(paths, entryPaths(selection.ofKind(EntryRepo))...)
+			paths = append(paths, entryPaths(model.resolveRepoRef(dep.Ref))...)
 		}
 		return paths
 	}
@@ -239,8 +288,8 @@ func repoDependencyPaths(model *Model) func(string) []string {
 
 func dirLinkPaths(model *Model) func(string) []string {
 	return func(dirPath string) []string {
-		if entry, ok := model.entry(dirPath, EntryDir); ok && entry.Dir.Link != "" {
-			return []string{entry.Dir.Link}
+		if entry, ok := model.entry(dirPath, EntryDir); ok && entry.Dir.linkPath != "" {
+			return []string{entry.Dir.linkPath}
 		}
 		return nil
 	}
@@ -248,8 +297,8 @@ func dirLinkPaths(model *Model) func(string) []string {
 
 func fileLinkPaths(model *Model) func(string) []string {
 	return func(filePath string) []string {
-		if entry, ok := model.entry(filePath, EntryFile); ok && entry.File.Link != "" {
-			return []string{entry.File.Link}
+		if entry, ok := model.entry(filePath, EntryFile); ok && entry.File.linkPath != "" {
+			return []string{entry.File.linkPath}
 		}
 		return nil
 	}

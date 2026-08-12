@@ -210,61 +210,61 @@ var commandDocs = []commandDoc{
 		[]string{"validate [schema-file]"},
 		[]string{"Validate the current workspace schema, or a schema file given by path."}},
 	{"list",
-		[]string{"list [path] [--archived] [--tags a,b] [--meta key[=value]]"},
+		[]string{"list [path] [--archived] [--tags a,b] [--meta key[=value]] [--id x]"},
 		[]string{"List groups, repositories, and files defined in the schema."}},
 	{"tags",
 		[]string{"tags [path] [--archived]"},
 		[]string{"List the tags carried by entries matching a path, with entry counts."}},
 	{"info",
-		[]string{"info <path> [--archived] [--tags a,b]"},
+		[]string{"info <path|--id x> [--archived] [--tags a,b]"},
 		[]string{"Show repository, file, or group metadata."}},
 	{"deps",
-		[]string{"deps <path> [--reverse] [--with-optional-deps] [--archived] [--tags a,b]"},
+		[]string{"deps <path|--id x> [--reverse] [--with-optional-deps] [--archived] [--tags a,b]"},
 		[]string{"Show expanded recursive dependencies for repositories matching a path; --reverse shows the direct dependents instead."}},
 	{"graph",
 		[]string{"graph [path] [--archived]"},
 		[]string{"Print the repository dependency graph as a Mermaid flowchart; group dependencies point at subgraphs, optional edges are dashed."}},
 	{"clone",
-		[]string{"clone [path] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]"},
+		[]string{"clone [path] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b] [--id x]"},
 		[]string{"Clone/materialize all entries, or repositories/files matching a path. --no-deps skips dependencies."}},
 	{"sync",
-		[]string{"sync [path] [--no-deps] [--with-optional-deps] [--archived] [--prune] [--tags a,b]"},
+		[]string{"sync [path] [--no-deps] [--with-optional-deps] [--archived] [--prune] [--tags a,b] [--id x]"},
 		[]string{
 			"Clone missing repos, move renamed repos/files, update origins/files, and refresh local state.",
 			"--prune deletes entries removed from the schema; dirty/unpushed repos and modified files are kept.",
 		}},
 	{"setup",
-		[]string{"setup [path] [--archived] [--tags a,b]"},
+		[]string{"setup [path] [--archived] [--tags a,b] [--id x]"},
 		[]string{"Run each repository's schema-declared setup command in dependency order, making fresh checkouts usable."}},
 	{"fmt",
-		[]string{"fmt [path] [--archived] [--tags a,b]"},
+		[]string{"fmt [path] [--archived] [--tags a,b] [--id x]"},
 		[]string{"Run each repository's schema-declared fmt command in installed repositories, in parallel."}},
 	{"lint",
-		[]string{"lint [path] [--archived] [--tags a,b]"},
+		[]string{"lint [path] [--archived] [--tags a,b] [--id x]"},
 		[]string{"Run each repository's schema-declared lint command in installed repositories, in parallel."}},
 	{"test",
-		[]string{"test [path] [--archived] [--tags a,b]"},
+		[]string{"test [path] [--archived] [--tags a,b] [--id x]"},
 		[]string{"Run each repository's schema-declared test command in installed repositories, in parallel."}},
 	{"pull",
-		[]string{"pull [path] [--archived] [--tags a,b]"},
+		[]string{"pull [path] [--archived] [--tags a,b] [--id x]"},
 		[]string{"Run git pull --ff-only in installed repositories matching a path or group."}},
 	{"fetch",
-		[]string{"fetch [path] [--archived] [--tags a,b]"},
+		[]string{"fetch [path] [--archived] [--tags a,b] [--id x]"},
 		[]string{"Run git fetch in installed repositories matching a path or group."}},
 	{"push",
-		[]string{"push [-u] [path] [--archived] [--tags a,b]"},
+		[]string{"push [-u] [path] [--archived] [--tags a,b] [--id x]"},
 		[]string{"Run git push (never forced) in installed repositories matching a path or group; -u sets the upstream on branches that have none."}},
 	{"checkout",
 		[]string{
-			"checkout [-b] <branch> [path] [--archived] [--tags a,b]",
-			"checkout --default [path] [--archived] [--tags a,b]",
+			"checkout [-b] <branch> [path] [--archived] [--tags a,b] [--id x]",
+			"checkout --default [path] [--archived] [--tags a,b] [--id x]",
 		},
 		[]string{"Switch installed repositories to a branch; -b creates it, --default switches each repo to its remote's default branch. Repos where the switch would lose local changes are skipped."}},
 	{"rm",
 		[]string{"rm <path>... [-r|--recursive] [-f|--force]"},
 		[]string{"Uninstall repositories or files: delete the checkout and stop tracking it. -r removes groups, -f overrides dirty/unpushed checks."}},
 	{"status",
-		[]string{"status [path] [--all] [--archived] [--tags a,b]"},
+		[]string{"status [path] [--all] [--archived] [--tags a,b] [--id x]"},
 		[]string{"Show the state of installed entries; repos never installed are only counted unless --all is given."}},
 	{"update",
 		[]string{
@@ -408,15 +408,19 @@ func cmdValidate(args []string, out io.Writer) error {
 }
 
 func cmdList(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag, "--meta": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag, "--meta": valueFlag, "--id": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
 		return usageError("list")
 	}
+	if err := checkIdSelector("list", parsed, len(parsed.Positionals)); err != nil {
+		return err
+	}
 	return jig.List(jig.ListOptions{
 		Path:            optionalPath(parsed.Positionals),
+		Id:              parsed.Values["--id"],
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),
 		Meta:            parseMetaFilter(parsed.Values["--meta"]),
@@ -438,30 +442,38 @@ func cmdTags(args []string, out io.Writer) error {
 }
 
 func cmdInfo(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag, "--id": valueFlag})
 	if err != nil {
 		return err
 	}
-	if len(parsed.Positionals) != 1 {
+	if len(parsed.Positionals) > 1 || (len(parsed.Positionals) == 0 && parsed.Values["--id"] == "") {
 		return usageError("info")
 	}
+	if err := checkIdSelector("info", parsed, len(parsed.Positionals)); err != nil {
+		return err
+	}
 	return jig.Info(jig.InfoOptions{
-		Path:            parsed.Positionals[0],
+		Path:            optionalPath(parsed.Positionals),
+		Id:              parsed.Values["--id"],
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
 }
 
 func cmdDeps(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--reverse": boolFlag, "--with-optional-deps": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--reverse": boolFlag, "--with-optional-deps": boolFlag, "--archived": boolFlag, "--tags": valueFlag, "--id": valueFlag})
 	if err != nil {
 		return err
 	}
-	if len(parsed.Positionals) != 1 {
+	if len(parsed.Positionals) > 1 || (len(parsed.Positionals) == 0 && parsed.Values["--id"] == "") {
 		return usageError("deps")
 	}
+	if err := checkIdSelector("deps", parsed, len(parsed.Positionals)); err != nil {
+		return err
+	}
 	return jig.Dependencies(jig.DependenciesOptions{
-		Path:            parsed.Positionals[0],
+		Path:            optionalPath(parsed.Positionals),
+		Id:              parsed.Values["--id"],
 		Reverse:         parsed.Flags["--reverse"],
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
@@ -484,18 +496,22 @@ func cmdGraph(args []string, out io.Writer) error {
 }
 
 func cmdClone(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--archived": boolFlag, "--tags": valueFlag, "--id": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
 		return usageError("clone")
 	}
+	if err := checkIdSelector("clone", parsed, len(parsed.Positionals)); err != nil {
+		return err
+	}
 	if err := checkDepsFlags(parsed); err != nil {
 		return err
 	}
 	return jig.Clone(jig.CloneOptions{
 		Path:            optionalPath(parsed.Positionals),
+		Id:              parsed.Values["--id"],
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
 		SkipDeps:        parsed.Flags["--no-deps"],
@@ -504,7 +520,7 @@ func cmdClone(args []string, out io.Writer) error {
 }
 
 func cmdSync(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--prune": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--prune": boolFlag, "--archived": boolFlag, "--tags": valueFlag, "--id": valueFlag})
 	if err != nil {
 		return err
 	}
@@ -517,8 +533,12 @@ func cmdSync(args []string, out io.Writer) error {
 	if err := checkPruneScope(parsed); err != nil {
 		return err
 	}
+	if err := checkIdSelector("sync", parsed, len(parsed.Positionals)); err != nil {
+		return err
+	}
 	return jig.Sync(jig.SyncOptions{
 		Path:            optionalPath(parsed.Positionals),
+		Id:              parsed.Values["--id"],
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
 		SkipDeps:        parsed.Flags["--no-deps"],
@@ -528,15 +548,19 @@ func cmdSync(args []string, out io.Writer) error {
 }
 
 func cmdPull(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag, "--id": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
 		return usageError("pull")
 	}
+	if err := checkIdSelector("pull", parsed, len(parsed.Positionals)); err != nil {
+		return err
+	}
 	return jig.Pull(jig.PullOptions{
 		Path:            optionalPath(parsed.Positionals),
+		Id:              parsed.Values["--id"],
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
@@ -567,15 +591,19 @@ func cmdCache(args []string, out io.Writer) error {
 }
 
 func cmdFetch(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag, "--id": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
 		return usageError("fetch")
 	}
+	if err := checkIdSelector("fetch", parsed, len(parsed.Positionals)); err != nil {
+		return err
+	}
 	return jig.Fetch(jig.FetchOptions{
 		Path:            optionalPath(parsed.Positionals),
+		Id:              parsed.Values["--id"],
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
@@ -584,30 +612,38 @@ func cmdFetch(args []string, out io.Writer) error {
 // cmdLifecycle parses the shared argument shape of the lifecycle verbs
 // (setup, fmt, lint, test) and dispatches to the given runner.
 func cmdLifecycle(name string, run func(jig.LifecycleOptions, io.Writer) error, args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--tags": valueFlag, "--id": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
 		return usageError(name)
 	}
+	if err := checkIdSelector(name, parsed, len(parsed.Positionals)); err != nil {
+		return err
+	}
 	return run(jig.LifecycleOptions{
 		Path:            optionalPath(parsed.Positionals),
+		Id:              parsed.Values["--id"],
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
 }
 
 func cmdPush(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"-u": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"-u": boolFlag, "--archived": boolFlag, "--tags": valueFlag, "--id": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
 		return usageError("push")
 	}
+	if err := checkIdSelector("push", parsed, len(parsed.Positionals)); err != nil {
+		return err
+	}
 	return jig.Push(jig.PushOptions{
 		Path:            optionalPath(parsed.Positionals),
+		Id:              parsed.Values["--id"],
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),
 		SetUpstream:     parsed.Flags["-u"],
@@ -615,7 +651,7 @@ func cmdPush(args []string, out io.Writer) error {
 }
 
 func cmdCheckout(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"-b": boolFlag, "--default": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"-b": boolFlag, "--default": boolFlag, "--archived": boolFlag, "--tags": valueFlag, "--id": valueFlag})
 	if err != nil {
 		return err
 	}
@@ -632,10 +668,14 @@ func cmdCheckout(args []string, out io.Writer) error {
 		}
 		branch, positionals = positionals[0], positionals[1:]
 	}
+	if err := checkIdSelector("checkout", parsed, len(positionals)); err != nil {
+		return err
+	}
 	return jig.Checkout(jig.CheckoutOptions{
 		Branch:          branch,
 		Default:         parsed.Flags["--default"],
 		Path:            optionalPath(positionals),
+		Id:              parsed.Values["--id"],
 		Create:          parsed.Flags["-b"],
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),
@@ -661,15 +701,19 @@ func cmdRemove(args []string, out io.Writer) error {
 }
 
 func cmdStatus(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--all": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--archived": boolFlag, "--all": boolFlag, "--tags": valueFlag, "--id": valueFlag})
 	if err != nil {
 		return err
 	}
 	if len(parsed.Positionals) > 1 {
 		return usageError("status")
 	}
+	if err := checkIdSelector("status", parsed, len(parsed.Positionals)); err != nil {
+		return err
+	}
 	return jig.Status(jig.StatusOptions{
 		Path:            optionalPath(parsed.Positionals),
+		Id:              parsed.Values["--id"],
 		IncludeArchived: parsed.Flags["--archived"],
 		All:             parsed.Flags["--all"],
 		Tags:            parseTags(parsed.Values["--tags"]),
@@ -709,6 +753,16 @@ func optionalPath(positionals []string) string {
 		return ""
 	}
 	return positionals[0]
+}
+
+// checkIdSelector enforces the CLI selector exclusivity: --id selects one
+// entry by identity and cannot be combined with a path positional or --tags.
+// pathPositionals counts the path arguments only, not other positionals.
+func checkIdSelector(name string, parsed parsedArgs, pathPositionals int) error {
+	if parsed.Values["--id"] != "" && (pathPositionals > 0 || parsed.Values["--tags"] != "") {
+		return usageError(name)
+	}
+	return nil
 }
 
 func parseTags(value string) []string {

@@ -11,6 +11,7 @@ import (
 
 type StatusOptions struct {
 	Path            string
+	Id              string // selects one entry by identity instead of a path
 	IncludeArchived bool
 	All             bool // also list defined repos that are not installed
 	Tags            []string
@@ -42,7 +43,7 @@ func Status(options StatusOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	query := NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived, Tags: options.Tags}
+	query := NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags}
 	selection, err := ws.Select(query)
 	if err != nil {
 		return err
@@ -192,8 +193,8 @@ func fileStatusLine(ws *Workspace, entry Entry, activeFiles map[string]bool) (st
 	if !hasState {
 		return statusLine{glyphConflict, filePath, "", "untracked"}, true
 	}
-	if entry.File.Link != "" {
-		targetEntry, _ := ws.Model.entry(entry.File.Link, EntryFile)
+	if entry.File.Link != nil {
+		targetEntry, _ := ws.Model.entry(entry.File.linkPath, EntryFile)
 		return symlinkStatusLine(entry.Path, targetEntry.Path, expectedAbs), true
 	}
 	currentHash, err := fileSHA256(expectedAbs)
@@ -247,8 +248,8 @@ func dirStatusLine(ws *Workspace, entry Entry, activeDirs map[string]bool) (stat
 	if !hasState {
 		return statusLine{glyphConflict, dirPath, "", "untracked"}, true
 	}
-	if entry.Dir.Link != "" {
-		targetEntry, _ := ws.Model.entry(entry.Dir.Link, EntryDir)
+	if entry.Dir.Link != nil {
+		targetEntry, _ := ws.Model.entry(entry.Dir.linkPath, EntryDir)
 		return symlinkStatusLine(entry.Path, targetEntry.Path, expectedAbs), true
 	}
 	modified := 0

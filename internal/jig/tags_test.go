@@ -7,7 +7,7 @@ import (
 
 func TestTagsInheritedFromGroupsAndFilterSelection(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform": {
       "$group": { "tags": ["backend"] },
@@ -63,7 +63,7 @@ func TestTagsInheritedFromGroupsAndFilterSelection(t *testing.T) {
 
 func TestTagsValidation(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "a": { "$repo": { "git": "git@example.com:a.git", "tags": ["ok", "not ok"] } }
   }

@@ -12,7 +12,7 @@ import (
 
 func TestFileLinkValidationAndOrdering(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "scripts/dev.sh": {
       "$file": {
@@ -23,7 +23,7 @@ func TestFileLinkValidationAndOrdering(t *testing.T) {
     "bin/dev": {
       "$file": {
         "id": "dev-command",
-        "link": "scripts/dev.sh"
+        "link": {"path": "scripts/dev.sh"}
       }
     }
   }
@@ -61,8 +61,9 @@ func TestEnsureLinkFileCreatesRelativeSymlink(t *testing.T) {
 	state := emptyState()
 	model := Model{Entries: map[string]Entry{
 		"scripts/dev.sh": testFileEntry("scripts/dev.sh", "dev-script", File{Src: SrcList{{Src: "git:git@example.com:config.git#scripts/dev.sh"}}}),
-		"bin/dev":        testFileEntry("bin/dev", "dev-command", File{Link: "scripts/dev.sh"}),
+		"bin/dev":        testFileEntry("bin/dev", "dev-command", File{Link: &Ref{Path: "scripts/dev.sh"}}),
 	}}
+	resolveLinkPaths(&model)
 
 	if err := ensureFile(ioDiscard{}, root, &model, &state, "bin/dev", true, newFileFetcher(), nil, nil); err != nil {
 		t.Fatal(err)
@@ -94,6 +95,7 @@ func TestEnsureFilePreservesLocalModification(t *testing.T) {
 	model := Model{Entries: map[string]Entry{
 		"scripts/dev.sh": testFileEntry("scripts/dev.sh", "dev-script", File{Src: SrcList{{Src: "git:git@example.com:config.git#scripts/dev.sh"}}}),
 	}}
+	resolveLinkPaths(&model)
 
 	err := ensureFile(ioDiscard{}, root, &model, &state, "scripts/dev.sh", true, newFileFetcher(), nil, nil)
 	if err == nil || err.Error() != "locally modified" {
@@ -112,6 +114,7 @@ func TestEnsureFilePicksUpSourceChanges(t *testing.T) {
 	model := Model{Entries: map[string]Entry{
 		"docs/readme.md": testFileEntry("docs/readme.md", "readme", File{Src: SrcList{{Src: src}}}),
 	}}
+	resolveLinkPaths(&model)
 	ensure := func() string {
 		var out bytes.Buffer
 		if err := ensureFile(&out, root, &model, &state, "docs/readme.md", true, newFileFetcher(), nil, nil); err != nil {
@@ -192,6 +195,7 @@ func TestEnsureFileConcatenatesMultipleSources(t *testing.T) {
 			{Src: source + "#agents/extra.md"},
 		}}),
 	}}
+	resolveLinkPaths(&model)
 	ensure := func() string {
 		var out bytes.Buffer
 		if err := ensureFile(&out, root, &model, &state, "AGENTS.md", true, newFileFetcher(), nil, nil); err != nil {
@@ -241,9 +245,10 @@ func TestFileSourcesGatedByOnlyWhen(t *testing.T) {
 		"billing/api": testRepoEntry("billing/api", "billing-api", Repo{Git: "git@example.com:billing.git"}),
 		"AGENTS.md": testFileEntry("AGENTS.md", "agents", File{Src: SrcList{
 			{Src: source + "#agents/base.md"},
-			{Src: source + "#agents/billing.md", OnlyWhen: &Condition{Path: "billing"}},
+			{Src: source + "#agents/billing.md", OnlyWhen: &Condition{Ref: Ref{Path: "billing/*"}}},
 		}}),
 	}}
+	resolveLinkPaths(&model)
 	ensure := func(activeRepos map[string]bool) string {
 		var out bytes.Buffer
 		if err := ensureFile(&out, root, &model, &state, "AGENTS.md", true, newFileFetcher(), activeRepos, nil); err != nil {
@@ -290,9 +295,10 @@ func TestFileWithoutActiveSourcesIsNotGenerated(t *testing.T) {
 	model := Model{Entries: map[string]Entry{
 		"billing/api": testRepoEntry("billing/api", "billing-api", Repo{Git: "git@example.com:billing.git"}),
 		"AGENTS.md": testFileEntry("AGENTS.md", "agents", File{Src: SrcList{
-			{Src: source + "#agents/billing.md", OnlyWhen: &Condition{Path: "billing"}},
+			{Src: source + "#agents/billing.md", OnlyWhen: &Condition{Ref: Ref{Path: "billing/*"}}},
 		}}),
 	}}
+	resolveLinkPaths(&model)
 	ensure := func(activeRepos map[string]bool) string {
 		var out bytes.Buffer
 		if err := ensureFile(&out, root, &model, &state, "AGENTS.md", true, newFileFetcher(), activeRepos, nil); err != nil {
@@ -342,7 +348,7 @@ func TestFileWithoutActiveSourcesIsNotGenerated(t *testing.T) {
 
 func TestFileSrcListValidation(t *testing.T) {
 	good := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "billing/api": { "$repo": { "git": "git@example.com:billing.git" } },
     "AGENTS.md": {
@@ -350,7 +356,7 @@ func TestFileSrcListValidation(t *testing.T) {
         "src": [
           "git@example.com:config.git#agents/base.md",
           { "src": "git@example.com:config.git#agents/billing.md",
-            "onlyWhen": { "path": "billing" } }
+            "onlyWhen": { "path": "billing/*" } }
         ]
       }
     }
@@ -361,7 +367,7 @@ func TestFileSrcListValidation(t *testing.T) {
 	}
 
 	bad := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "billing/api": { "$repo": { "git": "git@example.com:billing.git" } },
     "AGENTS.md": {
@@ -382,7 +388,7 @@ func TestFileSrcListValidation(t *testing.T) {
 	if !strings.Contains(result.Errors[0], "invalid src") {
 		t.Fatalf("first error = %q, want invalid src", result.Errors[0])
 	}
-	if !strings.Contains(result.Errors[1], "does not match any repository") {
+	if !strings.Contains(result.Errors[1], "does not name any entry") {
 		t.Fatalf("second error = %q, want unsatisfiable onlyWhen", result.Errors[1])
 	}
 }

@@ -153,13 +153,9 @@ func (p *planner) solve(roots []string) error {
 func (p *planner) expandDependencies(repoPath string) error {
 	entry, _ := p.model.entry(repoPath, EntryRepo)
 	for _, dep := range entry.Repo.DependsOn {
-		selection, err := p.model.Select(NodeQuery{Path: dep.Path, IncludeArchived: true})
-		if err != nil {
-			return fmt.Errorf("invalid dependency %s for %s: %w", dep.Path, repoPath, err)
-		}
-		matches := selection.ofKind(EntryRepo)
+		matches := p.model.resolveRepoRef(dep.Ref)
 		if len(matches) == 0 {
-			return fmt.Errorf("dependency %s for %s does not resolve to any repository", dep.Path, repoPath)
+			return fmt.Errorf("dependency %s for %s does not resolve to any repository", describeRef(dep.Ref), repoPath)
 		}
 		for _, match := range matches {
 			if archivedExcluded(match, p.opts.Installed, p.opts.IncludeArchived) {
@@ -231,23 +227,38 @@ func conditionsMetIn(model *Model, evidence map[string]bool, conditions []Condit
 	return true
 }
 
-// conditionMetIn reports whether some repository in the evidence satisfies
-// the condition: under its path (when given) and carrying all its tags
-// (when given).
+// conditionMetIn reports whether some repository in the evidence is
+// selected by the condition's reference: the identified repository for id,
+// the repository at the path for an exact path, some repository strictly
+// below it for a subtree path, or some repository carrying all the tags.
 func conditionMetIn(model *Model, evidence map[string]bool, condition Condition) bool {
-	for repoPath := range evidence {
-		if condition.Path != "" && !pathMatches(condition.Path, repoPath) {
-			continue
-		}
-		if len(condition.Tags) > 0 {
-			entry, ok := model.entry(repoPath, EntryRepo)
-			if !ok || !entry.hasAllTags(condition.Tags) {
-				continue
+	switch {
+	case condition.ID != "":
+		for repoPath := range evidence {
+			if entry, ok := model.entry(repoPath, EntryRepo); ok && entry.Identity == condition.ID {
+				return true
 			}
 		}
-		return true
+		return false
+	case condition.Path != "":
+		base, subtree := subtreePath(condition.Path)
+		if !subtree {
+			return evidence[condition.Path]
+		}
+		for repoPath := range evidence {
+			if base == "" || strings.HasPrefix(repoPath, base+"/") {
+				return true
+			}
+		}
+		return false
+	default:
+		for repoPath := range evidence {
+			if entry, ok := model.entry(repoPath, EntryRepo); ok && entry.hasAllTags(condition.Tags) {
+				return true
+			}
+		}
+		return false
 	}
-	return false
 }
 
 // conditionMatches reports whether a single condition holds against active
@@ -264,9 +275,9 @@ func artifactsActive(model *Model, kind EntryKind, evidence map[string]bool, ins
 	repoPaths := sortedRepoPaths(model)
 	linkOf := func(entry Entry) string {
 		if kind == EntryFile {
-			return entry.File.Link
+			return entry.File.linkPath
 		}
-		return entry.Dir.Link
+		return entry.Dir.linkPath
 	}
 
 	const (
@@ -327,7 +338,9 @@ func artifactBaseActive(model *Model, repoPaths []string, entry Entry, evidence 
 	if scope == "" {
 		return len(evidence) > 0
 	}
-	return conditionMetIn(model, evidence, Condition{Path: scope})
+	// A repo node cannot have children, so "repo in scope" is exactly the
+	// subtree strictly below the scope path.
+	return conditionMetIn(model, evidence, Condition{Ref: Ref{Path: scope + "/*"}})
 }
 
 // entryScope returns the nearest ancestor path of entryPath containing at
@@ -371,7 +384,7 @@ func archivedExcluded(entry Entry, installed map[string]bool, includeArchived bo
 func orderFilesForApply(model *Model, active map[string]bool) []string {
 	return orderLinkedForApply(active, func(path string) string {
 		if entry, ok := model.entry(path, EntryFile); ok {
-			return entry.File.Link
+			return entry.File.linkPath
 		}
 		return ""
 	})
@@ -380,7 +393,7 @@ func orderFilesForApply(model *Model, active map[string]bool) []string {
 func orderDirsForApply(model *Model, active map[string]bool) []string {
 	return orderLinkedForApply(active, func(path string) string {
 		if entry, ok := model.entry(path, EntryDir); ok {
-			return entry.Dir.Link
+			return entry.Dir.linkPath
 		}
 		return ""
 	})

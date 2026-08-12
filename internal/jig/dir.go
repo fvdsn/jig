@@ -17,7 +17,7 @@ import (
 func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath string, allowMove bool, fetcher *fileFetcher, activeRepos map[string]bool, installedRepos map[string]bool) error {
 	entry, _ := model.entry(dirPath, EntryDir)
 	dir := entry.Dir
-	if dir.Link != "" {
+	if dir.Link != nil {
 		return ensureLinkDir(out, root, model, state, dirPath, allowMove)
 	}
 	stateDir, hasState := state.Dirs[entry.Identity]
@@ -147,9 +147,9 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 func ensureLinkDir(out io.Writer, root string, model *Model, state *State, dirPath string, allowMove bool) error {
 	entry, _ := model.entry(dirPath, EntryDir)
 	dir := entry.Dir
-	targetEntry, ok := model.entry(dir.Link, EntryDir)
+	targetEntry, ok := model.entry(dir.linkPath, EntryDir)
 	if !ok {
-		return fmt.Errorf("link target is not defined: %s", dir.Link)
+		return fmt.Errorf("link target is not defined: %s", describeRef(*dir.Link))
 	}
 	if !pathExists(filepath.Join(root, targetEntry.Path)) {
 		return fmt.Errorf("link target is missing: %s", targetEntry.Path)
@@ -193,7 +193,7 @@ func ensureLinkDir(out io.Writer, root string, model *Model, state *State, dirPa
 			return err
 		}
 		if currentTarget == expectedTarget {
-			state.Dirs[entry.Identity] = StateDir{Path: expectedRel, Link: dir.Link}
+			state.Dirs[entry.Identity] = StateDir{Path: expectedRel, Link: dir.linkPath}
 			fmt.Fprintf(out, "present-dir: %s\n", dirPath)
 			return nil
 		}
@@ -211,7 +211,7 @@ func ensureLinkDir(out io.Writer, root string, model *Model, state *State, dirPa
 	if err := os.Symlink(expectedTarget, expectedAbs); err != nil {
 		return err
 	}
-	state.Dirs[entry.Identity] = StateDir{Path: expectedRel, Link: dir.Link}
+	state.Dirs[entry.Identity] = StateDir{Path: expectedRel, Link: dir.linkPath}
 	fmt.Fprintf(out, "linked-dir: %s\n", dirPath)
 	return nil
 }

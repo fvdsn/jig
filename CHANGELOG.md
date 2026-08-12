@@ -1,5 +1,29 @@
 # Changelog
 
+## v2.0.0 — 2026-08-12
+
+- **Structured references** (schema version 2, breaking). Every schema
+  reference — `dependsOn`, `onlyWhen` (including per-source conditions),
+  and `link` — is now a structured object with exactly one selector:
+  `{"id": ...}` (one entry, stable across moves), `{"path": ...}` (one
+  declared entry, exact match), or `{"tags": [...]}` (every repository
+  carrying all the tags). A trailing `/*` on a path selects the recursive
+  subtree strictly below it — the only wildcard. Implicit prefix matching
+  is gone: a path ref that names nothing, or names a group without `/*`,
+  is a validation error with a hint, so moves and typos fail loudly
+  instead of silently changing what a reference matches.
+- `dependsOn` gains `id` and `tags` selectors; `link` becomes an object
+  (`{"id": ...}` or `{"path": ...}`) and may target by id. Combined
+  path-and-tags conditions are replaced by the exactly-one-selector rule.
+- Identities are now globally unique across entry kinds, making id
+  references unambiguous.
+- CLI: every selection command accepts `--id <id>` alongside the existing
+  `--tags`, mirroring the schema's three selectors. `--id` picks exactly
+  one entry by identity, position-independent and including archived
+  entries. Path positionals also accept an explicit `services/*` form.
+- Version 1 schemas are refused with a migration hint; there is no
+  in-tool migration (update refs, then set `"version": 2`).
+
 ## v1.12.0 — 2026-08-12
 
 - `jig checkout --default` switches each installed repository to its own

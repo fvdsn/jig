@@ -10,6 +10,7 @@ import (
 
 type PushOptions struct {
 	Path            string
+	Id              string // selects one entry by identity instead of a path
 	IncludeArchived bool
 	Tags            []string
 	SetUpstream     bool // create the upstream (git push -u) when the branch has none
@@ -25,7 +26,7 @@ func Push(options PushOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Select(NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
+	selection, err := ws.Select(NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
 	if err != nil {
 		return err
 	}

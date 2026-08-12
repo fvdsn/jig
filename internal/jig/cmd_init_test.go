@@ -13,7 +13,7 @@ func TestInitFromLocalFileCreatesSourceCheckout(t *testing.T) {
 	sourcePath := filepath.Join(root, "source.jig.json")
 	workspacePath := filepath.Join(root, "workspace")
 	if err := os.WriteFile(sourcePath, []byte(`{
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform/auth": {
       "$repo": { "id": "auth-service", "git": "git@example.com:auth.git" }

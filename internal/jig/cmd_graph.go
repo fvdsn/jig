@@ -49,16 +49,37 @@ func Graph(options GraphOptions, out io.Writer) error {
 	for _, path := range selected {
 		entry := ws.Model.Entries[path]
 		for _, dep := range entry.Repo.DependsOn {
-			if _, isRepo := ws.Model.entry(dep.Path, EntryRepo); isRepo {
-				nodes[dep.Path] = true
-			} else {
-				groupTargets[dep.Path] = true
+			// Single-repo refs become repository nodes; subtree and tag
+			// refs are drawn as one collective target.
+			var to string
+			switch {
+			case dep.ID != "":
+				matches := ws.Model.resolveRepoRef(dep.Ref)
+				if len(matches) == 0 {
+					continue
+				}
+				to = matches[0].Path
+				nodes[to] = true
+			case dep.Path != "":
+				if base, subtree := subtreePath(dep.Path); subtree {
+					if base == "" {
+						base = "*"
+					}
+					to = base
+					groupTargets[base] = true
+				} else {
+					to = dep.Path
+					nodes[to] = true
+				}
+			default:
+				to = "tags: " + strings.Join(dep.Tags, ",")
+				groupTargets[to] = true
 			}
-			key := path + "\x00" + dep.Path
+			key := path + "\x00" + to
 			if prev, ok := edges[key]; ok && !prev.optional {
 				continue
 			}
-			edges[key] = edge{from: path, to: dep.Path, optional: dep.Optional}
+			edges[key] = edge{from: path, to: to, optional: dep.Optional}
 		}
 	}
 

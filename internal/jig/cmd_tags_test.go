@@ -10,7 +10,7 @@ import (
 func TestTagsListsTagVocabulary(t *testing.T) {
 	root := t.TempDir()
 	writeTestWorkspace(t, root, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "platform": {
       "$group": { "tags": ["backend"], "meta": { "team": "core" } },

@@ -60,6 +60,26 @@ func TestUpdateSelectionFlagsRequireSync(t *testing.T) {
 	}
 }
 
+func TestIdSelectorExcludesPathAndTags(t *testing.T) {
+	// --id resolves one entry by identity; combining it with a path
+	// positional or --tags is a usage error.
+	for _, args := range [][]string{
+		{"--id", "auth", "services"},
+		{"--id", "auth", "--tags", "go"},
+	} {
+		if err := cmdPull(args, io.Discard); err == nil || !strings.Contains(err.Error(), "usage:") {
+			t.Fatalf("cmdPull(%v) = %v, want usage error", args, err)
+		}
+	}
+	// info and deps require either a path or --id.
+	if err := cmdInfo([]string{}, io.Discard); err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("cmdInfo() = nil error, want usage error")
+	}
+	if err := cmdDeps([]string{}, io.Discard); err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("cmdDeps() = nil error, want usage error")
+	}
+}
+
 func TestCheckoutDefaultExcludesBranchAndCreate(t *testing.T) {
 	// --default resolves the branch per repository, so a branch positional
 	// or -b alongside it is a usage error.

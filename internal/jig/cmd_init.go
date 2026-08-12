@@ -24,7 +24,7 @@ type InitOptions struct {
 // pulls the official jig skill, so coding agents in the fresh workspace
 // already know how to drive and evolve it.
 const sampleSchema = `{
-  "version": 1,
+  "version": 2,
   "tree": {
     ".agents/skills": {
       "$dir": {

@@ -44,6 +44,7 @@ func TestEnsureDirLifecycle(t *testing.T) {
 		"tools/scripts": {Path: "tools/scripts", Identity: "scripts", Kind: EntryDir,
 			Dir: &Dir{Src: SrcList{{Src: remote + "#scripts"}}}},
 	}}
+	resolveLinkPaths(&model)
 	ensure := func() string {
 		var out bytes.Buffer
 		if err := ensureDir(&out, root, &model, &state, "tools/scripts", true, newFileFetcher(), nil, nil); err != nil {
@@ -100,7 +101,7 @@ func TestEnsureDirLifecycle(t *testing.T) {
 
 func TestDirValidationAndWholeRepoSrc(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
     "tools/config": {
       "$dir": { "id": "config", "src": "git:git@example.com:config.git" }
@@ -151,6 +152,7 @@ func TestEnsureDirMergesMultipleSources(t *testing.T) {
 		".agents/skills": {Path: ".agents/skills", Identity: "skills", Kind: EntryDir,
 			Dir: &Dir{Src: SrcList{{Src: ez + "#skills"}, {Src: awesome + "#skills"}}}},
 	}}
+	resolveLinkPaths(&model)
 	ensure := func() string {
 		var out bytes.Buffer
 		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, newFileFetcher(), nil, nil); err != nil {
@@ -215,6 +217,7 @@ func TestEnsureDirKeepsForeignSymlinks(t *testing.T) {
 		".agents/skills": {Path: ".agents/skills", Identity: "skills", Kind: EntryDir,
 			Dir: &Dir{Src: SrcList{{Src: source + "#skills"}}}},
 	}}
+	resolveLinkPaths(&model)
 	ensure := func() string {
 		var out bytes.Buffer
 		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, newFileFetcher(), nil, nil); err != nil {
@@ -288,9 +291,10 @@ func TestDirSourcesGatedByOnlyWhen(t *testing.T) {
 		".agents/skills": {Path: ".agents/skills", Identity: "skills", Kind: EntryDir,
 			Dir: &Dir{Src: SrcList{
 				{Src: base + "#skills"},
-				{Src: billing + "#skills", OnlyWhen: &Condition{Path: "billing"}},
+				{Src: billing + "#skills", OnlyWhen: &Condition{Ref: Ref{Path: "billing/*"}}},
 			}}},
 	}}
+	resolveLinkPaths(&model)
 	ensure := func(activeRepos map[string]bool) string {
 		var out bytes.Buffer
 		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, newFileFetcher(), activeRepos, nil); err != nil {
@@ -346,8 +350,9 @@ func TestDirLinksCreateSymlinksToTargetDir(t *testing.T) {
 		".agents/skills": {Path: ".agents/skills", Identity: "skills", Kind: EntryDir,
 			Dir: &Dir{Src: SrcList{{Src: remote + "#skills"}}}},
 		".opencode/skills": {Path: ".opencode/skills", Identity: "opencode-skills", Kind: EntryDir,
-			Dir: &Dir{Link: ".agents/skills"}},
+			Dir: &Dir{Link: &Ref{Path: ".agents/skills"}}},
 	}}
+	resolveLinkPaths(&model)
 	fetcher := newFileFetcher()
 	if err := ensureDir(ioDiscard{}, root, &model, &state, ".agents/skills", true, fetcher, nil, nil); err != nil {
 		t.Fatal(err)
@@ -393,12 +398,12 @@ func TestDirLinksCreateSymlinksToTargetDir(t *testing.T) {
 
 func TestDirLinkValidation(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 1,
+  "version": 2,
   "tree": {
-    "a": { "$dir": { "id": "a", "link": "b" } },
-    "b": { "$dir": { "id": "b", "link": "a" } },
-    "c": { "$dir": { "id": "c", "src": "git@example.com:x.git#s", "link": "a" } },
-    "d": { "$dir": { "id": "d", "link": "missing" } }
+    "a": { "$dir": { "id": "a", "link": {"path": "b"} } },
+    "b": { "$dir": { "id": "b", "link": {"path": "a"} } },
+    "c": { "$dir": { "id": "c", "src": "git@example.com:x.git#s", "link": {"path": "a"} } },
+    "d": { "$dir": { "id": "d", "link": {"path": "missing"} } }
   }
 }`)
 	result := validateDefinition(def)

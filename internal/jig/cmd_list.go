@@ -11,6 +11,7 @@ import (
 
 type ListOptions struct {
 	Path            string
+	Id              string // selects one entry by identity instead of a path
 	IncludeArchived bool
 	Tags            []string
 	Meta            MetaFilter
@@ -22,7 +23,7 @@ func List(options ListOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	query := NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived, Tags: options.Tags, Meta: options.Meta}
+	query := NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags, Meta: options.Meta}
 	selection, err := ws.Select(query)
 	if err != nil {
 		return err

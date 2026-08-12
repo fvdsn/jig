@@ -13,7 +13,7 @@ import (
 func ensureFile(out io.Writer, root string, model *Model, state *State, filePath string, allowMove bool, fetcher *fileFetcher, activeRepos map[string]bool, installedRepos map[string]bool) error {
 	entry, _ := model.entry(filePath, EntryFile)
 	file := entry.File
-	if file.Link != "" {
+	if file.Link != nil {
 		return ensureLinkFile(out, root, model, state, filePath, allowMove)
 	}
 	stateFile, hasState := state.Files[entry.Identity]
@@ -232,9 +232,9 @@ func ensureFileMode(path string, info os.FileInfo, executable bool) error {
 func ensureLinkFile(out io.Writer, root string, model *Model, state *State, filePath string, allowMove bool) error {
 	entry, _ := model.entry(filePath, EntryFile)
 	file := entry.File
-	targetEntry, ok := model.entry(file.Link, EntryFile)
+	targetEntry, ok := model.entry(file.linkPath, EntryFile)
 	if !ok {
-		return fmt.Errorf("link target is not defined: %s", file.Link)
+		return fmt.Errorf("link target is not defined: %s", describeRef(*file.Link))
 	}
 	if !pathExists(filepath.Join(root, targetEntry.Path)) {
 		return fmt.Errorf("link target is missing: %s", targetEntry.Path)
@@ -279,7 +279,7 @@ func ensureLinkFile(out io.Writer, root string, model *Model, state *State, file
 			return err
 		}
 		if currentTarget == expectedTarget {
-			state.Files[entry.Identity] = StateFile{Path: expectedRel, Link: file.Link}
+			state.Files[entry.Identity] = StateFile{Path: expectedRel, Link: file.linkPath}
 			fmt.Fprintf(out, "present-file: %s\n", filePath)
 			return nil
 		}
@@ -297,7 +297,7 @@ func ensureLinkFile(out io.Writer, root string, model *Model, state *State, file
 	if err := os.Symlink(expectedTarget, expectedAbs); err != nil {
 		return err
 	}
-	state.Files[entry.Identity] = StateFile{Path: expectedRel, Link: file.Link}
+	state.Files[entry.Identity] = StateFile{Path: expectedRel, Link: file.linkPath}
 	fmt.Fprintf(out, "linked-file: %s\n", filePath)
 	return nil
 }

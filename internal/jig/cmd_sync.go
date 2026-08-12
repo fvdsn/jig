@@ -7,6 +7,7 @@ import (
 
 type SyncOptions struct {
 	Path            string
+	Id              string // selects one entry by identity instead of a path
 	IncludeOptional bool
 	IncludeArchived bool
 	SkipDeps        bool // sync only the selected repos, without their dependencies
@@ -36,7 +37,7 @@ func syncWorkspace(out io.Writer, ws *Workspace, options SyncOptions) error {
 	var explicitFiles []string
 	var explicitDirs []string
 	if options.Path != "" {
-		selection, err := ws.Select(NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
+		selection, err := ws.Select(NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
 		if err != nil {
 			return err
 		}
