@@ -50,6 +50,7 @@ jig pull                        # fast-forward everything installed
 jig checkout -b fix-x           # branch across repos, edit away…
 jig fmt && jig lint && jig test # …then check every repo, each with its own tooling
 jig push -u                     # publish across repos
+jig checkout --default          # …and back to each repo's own default branch
 jig rm services/checkout        # uninstall
 ```
 
@@ -70,6 +71,7 @@ jig rm services/checkout        # uninstall
 | `fetch [path]` | `git fetch` across installed repos, in parallel |
 | `push [-u] [path]` | `git push` (never forced) across installed repos, in parallel; `-u` sets missing upstreams |
 | `checkout [-b] <branch> [path]` | Switch installed repos to a branch (`-b` creates it); never discards local changes |
+| `checkout --default [path]` | Switch each installed repo to its own remote default branch (main, master, …) |
 | `status [path]` | One line per installed entry, plus a summary |
 | `rm <path>...` | Uninstall: delete the checkout and stop tracking it |
 | `update [--sync]` | Fast-forward the schema from its remote (then sync) |

@@ -1305,6 +1305,15 @@ Switches installed repositories matching `path` (all installed repositories when
 - Checkouts are never forced: a repository where git refuses the switch (for example uncommitted changes that would be overwritten) is reported under `skipped` and left untouched.
 - The branch name is validated up front; an invalid name fails before touching any repository.
 
+### `jig checkout --default [path]`
+
+Switches each matching repository to its own remote default branch. This exists because default branches differ across repositories (`main`, `master`, `staging`, …), so no single branch name can express "go back to the mainline everywhere".
+
+- The default branch is resolved per repository from `origin/HEAD`, which git records at clone time, so resolution is normally offline. When the ref is missing (an old clone, a hand-added remote), the remote is asked directly with `ls-remote --symref origin HEAD` and the answer is recorded via `git remote set-head`, making later runs offline again.
+- Since the target branch differs per repository, report lines name it: `switched: services/api (main)`.
+- Repositories whose default branch cannot be resolved (no `origin`, remote unreachable) are reported under `skipped`; switching rules and safety are otherwise identical to the branch form.
+- `--default` replaces the `<branch>` positional and is incompatible with `-b`; combining them is a usage error.
+
 ### `jig rm <path>...`
 
 Uninstalls repositories and files: deletes the checkout or file and drops it from `.jig/state.json`, so sync stops restoring it. Ergonomics follow `rm`:

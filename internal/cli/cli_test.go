@@ -60,6 +60,20 @@ func TestUpdateSelectionFlagsRequireSync(t *testing.T) {
 	}
 }
 
+func TestCheckoutDefaultExcludesBranchAndCreate(t *testing.T) {
+	// --default resolves the branch per repository, so a branch positional
+	// or -b alongside it is a usage error.
+	for _, args := range [][]string{
+		{"--default", "-b"},
+		{"--default", "feature", "services/a"},
+	} {
+		err := cmdCheckout(args, io.Discard)
+		if err == nil || !strings.Contains(err.Error(), "usage:") {
+			t.Fatalf("cmdCheckout(%v) = %v, want usage error", args, err)
+		}
+	}
+}
+
 func TestPerCommandHelp(t *testing.T) {
 	var out bytes.Buffer
 	if err := Run([]string{"clone", "--help"}, &out, io.Discard); err != nil {

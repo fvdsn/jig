@@ -11,6 +11,7 @@ type CheckoutOptions struct {
 	Branch          string
 	Path            string
 	Create          bool // create the branch (git checkout -b) when it does not exist
+	Default         bool // switch each repository to its remote's default branch
 	IncludeArchived bool
 	Tags            []string
 }
@@ -22,8 +23,12 @@ type CheckoutOptions struct {
 func Checkout(options CheckoutOptions, out io.Writer) error {
 	// --branch applies the stricter branch-name rules (e.g. no leading
 	// dash), which also keeps the name from being parsed as a git option.
-	if _, err := git("", "check-ref-format", "--branch", options.Branch); err != nil {
-		return fmt.Errorf("invalid branch name %q", options.Branch)
+	// With Default there is no name to validate: each repository resolves
+	// its own.
+	if !options.Default {
+		if _, err := git("", "check-ref-format", "--branch", options.Branch); err != nil {
+			return fmt.Errorf("invalid branch name %q", options.Branch)
+		}
 	}
 	ws, err := loadWorkspace(false)
 	if err != nil {
@@ -48,7 +53,18 @@ func Checkout(options CheckoutOptions, out io.Writer) error {
 	var mu sync.Mutex
 	var skipped []string
 	forEachParallel(len(candidates), func(i int) {
-		verb, err := checkoutRepo(candidates[i].local, options.Branch, options.Create)
+		branch, suffix := options.Branch, ""
+		var err error
+		if options.Default {
+			// The target differs per repository, so the report names it.
+			if branch, err = defaultBranch(candidates[i].local); err == nil {
+				suffix = " (" + branch + ")"
+			}
+		}
+		var verb string
+		if err == nil {
+			verb, err = checkoutRepo(candidates[i].local, branch, options.Create)
+		}
 		mu.Lock()
 		defer mu.Unlock()
 		if err != nil {
@@ -56,7 +72,7 @@ func Checkout(options CheckoutOptions, out io.Writer) error {
 			skipped = append(skipped, fmt.Sprintf("%s: %s", candidates[i].repoPath, msg))
 			return
 		}
-		fmt.Fprintf(out, "%s: %s\n", verb, candidates[i].repoPath)
+		fmt.Fprintf(out, "%s: %s%s\n", verb, candidates[i].repoPath, suffix)
 	})
 	printGroup(out, "skipped", skipped)
 	if len(skipped) > 0 {
@@ -82,6 +98,31 @@ func checkoutRepo(local string, branch string, create bool) (string, error) {
 		return "", err
 	}
 	return "switched", nil
+}
+
+// defaultBranch resolves the default branch of one repository's origin.
+// origin/HEAD answers offline and is set at clone time; when it is missing
+// the remote is asked directly, and the answer recorded with set-head so the
+// next call is offline again.
+func defaultBranch(local string) (string, error) {
+	if out, err := git(local, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil {
+		return strings.TrimPrefix(strings.TrimSpace(out), "origin/"), nil
+	}
+	out, err := git(local, "ls-remote", "--symref", "origin", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("could not resolve the default branch: %s", shortError(err))
+	}
+	for _, line := range strings.Split(out, "\n") {
+		// The symref line reads "ref: refs/heads/<branch>\tHEAD".
+		fields := strings.Fields(line)
+		if len(fields) == 3 && fields[0] == "ref:" && fields[2] == "HEAD" {
+			if branch, ok := strings.CutPrefix(fields[1], "refs/heads/"); ok {
+				_, _ = git(local, "remote", "set-head", "origin", branch)
+				return branch, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("origin did not report a default branch")
 }
 
 func localBranchExists(local string, branch string) bool {

@@ -255,8 +255,11 @@ var commandDocs = []commandDoc{
 		[]string{"push [-u] [path] [--archived] [--tags a,b]"},
 		[]string{"Run git push (never forced) in installed repositories matching a path or group; -u sets the upstream on branches that have none."}},
 	{"checkout",
-		[]string{"checkout [-b] <branch> [path] [--archived] [--tags a,b]"},
-		[]string{"Switch installed repositories to a branch; -b creates it. Repos where the switch would lose local changes are skipped."}},
+		[]string{
+			"checkout [-b] <branch> [path] [--archived] [--tags a,b]",
+			"checkout --default [path] [--archived] [--tags a,b]",
+		},
+		[]string{"Switch installed repositories to a branch; -b creates it, --default switches each repo to its remote's default branch. Repos where the switch would lose local changes are skipped."}},
 	{"rm",
 		[]string{"rm <path>... [-r|--recursive] [-f|--force]"},
 		[]string{"Uninstall repositories or files: delete the checkout and stop tracking it. -r removes groups, -f overrides dirty/unpushed checks."}},
@@ -612,16 +615,27 @@ func cmdPush(args []string, out io.Writer) error {
 }
 
 func cmdCheckout(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"-b": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"-b": boolFlag, "--default": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
 	if err != nil {
 		return err
 	}
-	if len(parsed.Positionals) < 1 || len(parsed.Positionals) > 2 {
-		return usageError("checkout")
+	// With --default there is no branch positional (and nothing to create),
+	// so only the optional path remains.
+	branch, positionals := "", parsed.Positionals
+	if parsed.Flags["--default"] {
+		if parsed.Flags["-b"] || len(positionals) > 1 {
+			return usageError("checkout")
+		}
+	} else {
+		if len(positionals) < 1 || len(positionals) > 2 {
+			return usageError("checkout")
+		}
+		branch, positionals = positionals[0], positionals[1:]
 	}
 	return jig.Checkout(jig.CheckoutOptions{
-		Branch:          parsed.Positionals[0],
-		Path:            optionalPath(parsed.Positionals[1:]),
+		Branch:          branch,
+		Default:         parsed.Flags["--default"],
+		Path:            optionalPath(positionals),
 		Create:          parsed.Flags["-b"],
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),

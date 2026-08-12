@@ -102,3 +102,70 @@ func TestCheckoutAcrossInstalledRepos(t *testing.T) {
 		t.Fatal("expected invalid branch name error")
 	}
 }
+
+func TestCheckoutDefaultBranch(t *testing.T) {
+	root := t.TempDir()
+	remoteA := filepath.Join(root, "remote-a")
+	remoteB := filepath.Join(root, "remote-b")
+	testRemoteRepo(t, remoteA)
+	testRemoteRepo(t, remoteB)
+	// Different default branches per remote is the scenario --default
+	// exists for.
+	gitIn(t, remoteB, "branch", "-m", "trunk")
+	writeTestWorkspace(t, root, fmt.Sprintf(`{
+  "version": 1,
+  "tree": {
+    "services/a": { "$repo": { "git": %q } },
+    "services/b": { "$repo": { "git": %q } }
+  }
+}`, remoteA, remoteB))
+	localA := filepath.Join(root, "services", "a")
+	localB := filepath.Join(root, "services", "b")
+	gitIn(t, root, "clone", "-q", remoteA, localA)
+	gitIn(t, root, "clone", "-q", remoteB, localB)
+	defaultA := gitBranch(localA)
+
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := os.Chdir(oldWd); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	checkout := func(options CheckoutOptions) string {
+		t.Helper()
+		var out bytes.Buffer
+		if err := Checkout(options, &out); err != nil {
+			t.Fatalf("checkout: %v\n%s", err, out.String())
+		}
+		return out.String()
+	}
+
+	checkout(CheckoutOptions{Branch: "feature", Create: true})
+	// Dropping origin/HEAD in b exercises the ls-remote fallback.
+	gitIn(t, localB, "symbolic-ref", "--delete", "refs/remotes/origin/HEAD")
+
+	got := checkout(CheckoutOptions{Default: true})
+	if !strings.Contains(got, fmt.Sprintf("switched: services/a (%s)", defaultA)) ||
+		!strings.Contains(got, "switched: services/b (trunk)") {
+		t.Fatalf("default run = %q, want both repos switched to their own default", got)
+	}
+	if branch := gitBranch(localB); branch != "trunk" {
+		t.Fatalf("b is on %q, want trunk", branch)
+	}
+	// The fallback cached the answer, so the next resolution is offline.
+	if _, err := git(localB, "symbolic-ref", "refs/remotes/origin/HEAD"); err != nil {
+		t.Fatalf("expected origin/HEAD to be recorded after the fallback: %v", err)
+	}
+
+	got = checkout(CheckoutOptions{Default: true})
+	if strings.Count(got, "present: ") != 2 {
+		t.Fatalf("repeat run = %q, want 2 present", got)
+	}
+}

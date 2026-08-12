@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.12.0 — 2026-08-12
+
+- `jig checkout --default` switches each installed repository to its own
+  remote default branch — the way back to the mainline when repositories
+  disagree on what it is called (`main`, `master`, `staging`, …). The
+  branch is resolved per repo from `origin/HEAD` (offline for normal
+  clones); when that ref is missing, the remote is asked once and the
+  answer recorded so later runs are offline again. Report lines name the
+  branch each repo landed on, e.g. `switched: services/api (main)`.
+
 ## v1.11.0 — 2026-08-06
 
 - Repositories declare lifecycle commands in the schema — `setup`, `fmt`,
