@@ -161,8 +161,12 @@ func isGitRepo(path string) bool {
 	return pathExists(filepath.Join(path, ".git"))
 }
 
+// gitOrigin returns the configured origin URL. It reads the config value
+// rather than `remote get-url`, which reports the URL after applying any
+// url.<base>.insteadOf rewrites: comparisons against schema URLs must see
+// the stored URL, not a machine-local rewrite of it.
 func gitOrigin(path string) (string, error) {
-	out, err := git(path, "remote", "get-url", "origin")
+	out, err := git(path, "config", "--get", "remote.origin.url")
 	return strings.TrimSpace(out), err
 }
 

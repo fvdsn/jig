@@ -25,3 +25,20 @@ func TestInstalledRepoIdentitySetUsesGitRepos(t *testing.T) {
 		t.Fatalf("expected tracing-service to be installed: %#v", got)
 	}
 }
+
+func TestGitOriginIgnoresInsteadOfRewrites(t *testing.T) {
+	root := t.TempDir()
+	gitIn(t, root, "init", "-q")
+	gitIn(t, root, "remote", "add", "origin", "git@example.com:org/repo.git")
+	// A machine-local URL rewrite must not leak into origin comparisons:
+	// the schema URL is the stored one, not its rewritten form.
+	gitIn(t, root, "config", "url.git@alias:org/.insteadOf", "git@example.com:org/")
+
+	origin, err := gitOrigin(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if origin != "git@example.com:org/repo.git" {
+		t.Fatalf("origin = %q, want the configured URL, not the rewrite", origin)
+	}
+}

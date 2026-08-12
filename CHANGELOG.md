@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.0.3 — 2026-08-13
+
+- Fixed: repositories on machines using git `url.<base>.insteadOf`
+  rewrites were flagged `remote-changed` even though their configured
+  origin matched the schema. Origin comparisons now read the stored
+  `remote.origin.url` instead of `git remote get-url`, which reports the
+  rewritten form.
+
 ## v2.0.2 — 2026-08-13
 
 - Changed: `jig sync` now moves repositories with uncommitted changes. A
