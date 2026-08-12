@@ -1244,7 +1244,7 @@ Archived repositories and files are skipped unless they are already installed or
 Sync may perform these actions:
 
 - Clone missing repositories in the sync set.
-- Move a local repository when `.jig/state.json` records a path different from the current expected path.
+- Move a local repository when `.jig/state.json` records a path different from the current expected path. A move is a plain rename and carries uncommitted changes and unpushed commits along untouched, so dirty repositories move like clean ones. Skip messages for moves name both the recorded and the expected path.
 - Update a repository's `origin` remote URL when the current definition Git URL differs from the local repository's `origin` remote URL.
 - Write missing active files.
 - Update active files that Jig previously wrote and that have not been locally modified. State records the source blob id of each written file; sync freshens each source repository's cache mirror once per run, compares blob ids, and rewrites only files whose source changed. When the source cannot be reached the file is reported as present but unchecked.

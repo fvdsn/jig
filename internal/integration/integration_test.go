@@ -312,27 +312,17 @@ func TestSafetyRefusals(t *testing.T) {
 	}
 	w.assertContains(out, "unpushed")
 
-	// sync refuses to move a checkout with uncommitted changes.
+	// sync moves a dirty checkout: a move is a plain rename, so uncommitted
+	// changes travel with it untouched.
 	w.writeFiles(appDir, map[string]string{"WIP2.txt": "wip\n"})
 	schemaMoved := fmt.Sprintf(`{
   "version": 2,
   "tree": { "svc/renamed": { "$repo": { "id": "app", "git": "%s" } } }
 }`, app)
 	w.commitRemote(schemaRemote, map[string]string{"jig.json": schemaMoved}, "rename")
-	out, err = w.jig(ws, "update", "--sync")
-	if err == nil {
-		t.Fatalf("expected update --sync to fail on the skipped move:\n%s", out)
-	}
-	w.assertContains(out, "uncommitted changes")
-	if !w.exists("ws", "svc", "app", "WIP2.txt") || w.exists("ws", "svc", "renamed") {
-		t.Fatal("expected dirty checkout left in place")
-	}
-	// Once clean, the same sync performs the move.
-	w.git(appDir, "add", "-A")
-	w.git(appDir, "commit", "-qm", "wip2")
-	w.assertContains(w.mustJig(ws, "sync"), "moved: svc/renamed")
-	if !w.exists("ws", "svc", "renamed", "WIP2.txt") {
-		t.Fatal("expected checkout moved with local commits intact")
+	w.assertContains(w.mustJig(ws, "update", "--sync"), "moved: svc/renamed")
+	if !w.exists("ws", "svc", "renamed", "WIP2.txt") || w.exists("ws", "svc", "app") {
+		t.Fatal("expected dirty checkout moved with uncommitted changes intact")
 	}
 
 	// An invalid upstream schema is rejected before touching the checkout.

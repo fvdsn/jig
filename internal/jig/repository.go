@@ -34,13 +34,13 @@ func ensureRepo(root string, entry Entry, stateRepo StateRepo, hasState bool, al
 				result.Err = fmt.Errorf("already installed at %s; run jig sync to move it", stateRepo.Path)
 				return result
 			}
-			if isDirty(oldAbs) {
-				result.Err = fmt.Errorf("repository has uncommitted changes and would need to be moved")
-				return result
-			}
+			// A move is a plain rename: uncommitted changes travel with the
+			// checkout untouched, so dirty repositories move like clean ones.
 			message, err := moveInstalledPath(root, entry.Path, stateRepo.Path, expectedRel, "moved")
 			if err != nil {
-				result.Err = err
+				// The skip line names the schema path; the checkout lives at
+				// the recorded path, so failures must say where that is.
+				result.Err = fmt.Errorf("moving from %s: %w", stateRepo.Path, err)
 				return result
 			}
 			result.Messages = append(result.Messages, message)

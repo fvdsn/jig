@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.0.2 — 2026-08-13
+
+- Changed: `jig sync` now moves repositories with uncommitted changes. A
+  move is a plain rename that carries the working tree along untouched,
+  so there was nothing to protect; the guard predated that insight.
+  Destructive operations (`jig rm`, `sync --prune`) keep their dirty
+  checks.
+- Move failures now name the recorded on-disk path as well as the schema
+  path ("moving from <old>: ..."), so a skip is traceable to the actual
+  checkout location.
+
 ## v2.0.1 — 2026-08-13
 
 - Fixed: a path move that only changes letter case (e.g.
