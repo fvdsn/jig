@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.0.1 — 2026-08-13
+
+- Fixed: a path move that only changes letter case (e.g.
+  `codabox/Infrastructure` → `codabox/infrastructure`) was refused with
+  "target path already exists" on case-insensitive filesystems (macOS
+  default). Such a move now renames through a temporary name so the case
+  change sticks; genuinely conflicting targets still refuse.
+
 ## v2.0.0 — 2026-08-12
 
 - **Structured references** (schema version 2, breaking). Every schema

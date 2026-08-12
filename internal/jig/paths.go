@@ -49,18 +49,40 @@ func relativeSymlinkTarget(linkPath string, targetPath string) (string, error) {
 // newRel under root, pruning parent directories left empty by the move.
 // It returns the message describing the move.
 func moveInstalledPath(root string, entryPath string, oldRel string, newRel string, label string) (string, error) {
+	oldAbs := filepath.Join(root, oldRel)
 	newAbs := filepath.Join(root, newRel)
 	if pathExists(newAbs) {
-		return "", fmt.Errorf("target path already exists: %s", newRel)
+		// On a case-insensitive filesystem a move that only changes letter
+		// case sees itself at the target; that is a rename, not a conflict.
+		// Renaming through a temporary name makes the case change stick.
+		if !samePath(oldAbs, newAbs) {
+			return "", fmt.Errorf("target path already exists: %s", newRel)
+		}
+		tmp := newAbs + ".jig-move"
+		if pathEntryExists(tmp) {
+			return "", fmt.Errorf("temporary move path already exists: %s", tmp)
+		}
+		if err := os.Rename(oldAbs, tmp); err != nil {
+			return "", err
+		}
+		oldAbs = tmp
 	}
 	if err := os.MkdirAll(filepath.Dir(newAbs), 0o755); err != nil {
 		return "", err
 	}
-	if err := os.Rename(filepath.Join(root, oldRel), newAbs); err != nil {
+	if err := os.Rename(oldAbs, newAbs); err != nil {
 		return "", err
 	}
 	pruneEmptyParents(root, filepath.Dir(oldRel))
 	return fmt.Sprintf("%s: %s: %s -> %s", label, entryPath, oldRel, newRel), nil
+}
+
+// samePath reports whether two paths name the same file or directory, as on
+// a case-insensitive filesystem when they differ only by letter case.
+func samePath(a string, b string) bool {
+	infoA, errA := os.Stat(a)
+	infoB, errB := os.Stat(b)
+	return errA == nil && errB == nil && os.SameFile(infoA, infoB)
 }
 
 func pruneEmptyParents(root string, relDir string) {
