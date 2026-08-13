@@ -735,7 +735,8 @@ Execution rules:
 - `jig setup` runs sequentially in dependency order: a repository's setup may rely on its dependencies being set up. `jig fmt`, `jig lint`, and `jig test` run in parallel.
 - Selection matches `jig pull`: installed repositories under the path, with `--tags` and `--archived` as usual.
 - Repositories without the verb's command are counted (`N repositories define no lint command`), not failed — the org can fill the schema in incrementally.
-- One `<verb>: <path>` line per success; a failing command is reported under `skipped` with its exit status and captured output, and the run exits non-zero.
+- One line per repository as it completes: `<verb>: <path>` on success, `failed: <path>` on failure — failures surface live, not only at the end. After the run, the `failed` group repeats each failure with its exit status and captured output, and the run exits non-zero.
+- While repositories run, a transient status line on stderr shows the done counter and the entries in flight; it renders only when stderr is a terminal, so piped output stays clean.
 
 ## Custom Metadata
 

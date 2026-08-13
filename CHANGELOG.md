@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.0.5 — 2026-08-13
+
+- Lifecycle commands print `failed: <repo>` immediately when a
+  repository's command fails, mirroring the success lines — failures no
+  longer silently vanish from the progress line until the end summary.
+  That summary group is now labeled `failed` instead of `skipped`, since
+  the commands ran and failed rather than being skipped.
+
 ## v2.0.4 — 2026-08-13
 
 - The lifecycle commands (setup, fmt, lint, test) show a transient

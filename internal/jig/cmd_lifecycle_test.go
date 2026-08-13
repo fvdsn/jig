@@ -100,15 +100,16 @@ func TestLifecycleRunsCommandsAcrossRepos(t *testing.T) {
 		}
 	}
 
-	// A failing command is reported with its output and fails the run;
-	// other repos are unaffected.
+	// A failing command surfaces as a live failed line, is detailed in the
+	// failed group with its output, and fails the run; other repos are
+	// unaffected.
 	out.Reset()
 	if err := Test(LifecycleOptions{}, &out); err == nil {
 		t.Fatalf("expected test failure:\n%s", out.String())
 	}
 	got = out.String()
-	if !strings.Contains(got, "skipped:") || !strings.Contains(got, "services/a") || !strings.Contains(got, "boom") {
-		t.Fatalf("test output = %q, want services/a skipped with its output", got)
+	if !strings.Contains(got, "failed: services/a") || !strings.Contains(got, "failed:\n") || !strings.Contains(got, "boom") {
+		t.Fatalf("test output = %q, want a live failed line and the failed group with output", got)
 	}
 
 	// A path scopes the run like every other command.

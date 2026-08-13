@@ -86,7 +86,7 @@ func runLifecycle(verb string, options LifecycleOptions, out io.Writer) error {
 	}
 
 	var mu sync.Mutex
-	var skipped []string
+	var failed []string
 	tracker := newProgress(len(candidates))
 	run := func(i int) {
 		tracker.start(candidates[i].repoPath)
@@ -100,7 +100,10 @@ func runLifecycle(verb string, options LifecycleOptions, out io.Writer) error {
 				msg += "\n" + output
 			}
 			msg = strings.ReplaceAll(strings.TrimSpace(msg), "\n", "\n  ")
-			skipped = append(skipped, fmt.Sprintf("%s: %s", candidates[i].repoPath, msg))
+			failed = append(failed, fmt.Sprintf("%s: %s", candidates[i].repoPath, msg))
+			// Failures surface immediately like successes do; the detailed
+			// output follows in the failed group once everything finished.
+			tracker.println(out, "failed: "+candidates[i].repoPath)
 			return
 		}
 		tracker.println(out, fmt.Sprintf("%s: %s", verb, candidates[i].repoPath))
@@ -127,9 +130,9 @@ func runLifecycle(verb string, options LifecycleOptions, out io.Writer) error {
 	if withoutCommand > 0 {
 		fmt.Fprintf(out, "%d repositories define no %s command\n", withoutCommand, verb)
 	}
-	printGroup(out, "skipped", skipped)
-	if len(skipped) > 0 {
-		return fmt.Errorf("%s failed in %d repositories", verb, len(skipped))
+	printGroup(out, "failed", failed)
+	if len(failed) > 0 {
+		return fmt.Errorf("%s failed in %d repositories", verb, len(failed))
 	}
 	return nil
 }
