@@ -3,7 +3,10 @@ package jig
 import (
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 )
@@ -140,10 +143,34 @@ func runLifecycle(verb string, options LifecycleOptions, out io.Writer) error {
 // runRepoCommand runs a schema-declared lifecycle command in the checkout
 // through the shell, capturing combined output for failure reports.
 func runRepoCommand(dir string, command string) (string, error) {
-	cmd := exec.Command("sh", "-c", command)
+	cmd := exec.Command(shellPath(), "-c", command)
 	cmd.Dir = dir
 	output, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(output)), err
+}
+
+// shellPath locates the sh that runs lifecycle commands. Schemas declare
+// commands in sh syntax on every platform; Windows has no sh on PATH outside
+// git bash, but Git for Windows ships one next to the git executable.
+func shellPath() string {
+	if runtime.GOOS != "windows" {
+		return "sh"
+	}
+	if path, err := exec.LookPath("sh"); err == nil {
+		return path
+	}
+	if gitPath, err := exec.LookPath("git"); err == nil {
+		root := filepath.Dir(filepath.Dir(gitPath))
+		for _, candidate := range []string{
+			filepath.Join(root, "bin", "sh.exe"),
+			filepath.Join(root, "usr", "bin", "sh.exe"),
+		} {
+			if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+				return candidate
+			}
+		}
+	}
+	return "sh"
 }
 
 // dependencyOrder orders the given repositories so dependencies come before
