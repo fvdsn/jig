@@ -129,8 +129,11 @@ func setUpSource(sourceArg string, schemaPath string, sourceAbs string) (string,
 		}
 		return seedSource(sourceAbs, []byte(sampleSchema))
 	}
-	info, err := os.Stat(sourceArg)
-	if err == nil && !info.IsDir() {
+	// Only a successful stat of a regular file means a local schema file; any
+	// stat error falls through to cloning. Remote URLs are not valid paths on
+	// Windows (the colon in user@host:path yields ERROR_INVALID_NAME, not
+	// ErrNotExist), and git reports bad sources better than we can.
+	if info, err := os.Stat(sourceArg); err == nil && !info.IsDir() {
 		if schemaPath != "" {
 			return "", errors.New("--path can only be used with Git sources")
 		}
@@ -139,9 +142,6 @@ func setUpSource(sourceArg string, schemaPath string, sourceAbs string) (string,
 			return "", err
 		}
 		return seedSource(sourceAbs, data)
-	}
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", err
 	}
 
 	if err := cloneRepo(sourceArg, sourceAbs); err != nil {

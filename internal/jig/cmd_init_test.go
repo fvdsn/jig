@@ -2,6 +2,8 @@ package jig
 
 import (
 	"bytes"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,6 +92,31 @@ func TestInitBareCreatesStarterWorkspace(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "next steps:") {
 		t.Fatalf("expected next-steps guidance, got:\n%s", out.String())
+	}
+}
+
+func TestInitTreatsUnstatableSourceAsGitURL(t *testing.T) {
+	// On Windows, statting an scp-style URL (git@host:path) fails with
+	// ERROR_INVALID_NAME rather than ErrNotExist, so any stat failure must
+	// fall through to git clone instead of surfacing the stat error. A path
+	// whose parent is a regular file reproduces a non-ErrNotExist stat error
+	// on every platform.
+	root := t.TempDir()
+	blocker := filepath.Join(root, "blocker")
+	if err := os.WriteFile(blocker, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := Init(InitOptions{
+		SourceArg:    filepath.Join(blocker, "meta.git"),
+		WorkspaceDir: filepath.Join(root, "workspace"),
+	}, ioDiscard{})
+	if err == nil {
+		t.Fatal("expected the clone of a nonexistent repository to fail")
+	}
+	var pathErr *fs.PathError
+	if errors.As(err, &pathErr) {
+		t.Fatalf("expected a git clone error, got a stat error: %v", err)
 	}
 }
 
