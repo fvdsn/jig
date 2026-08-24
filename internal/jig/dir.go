@@ -208,7 +208,7 @@ func ensureLinkDir(out io.Writer, root string, model *Model, state *State, dirPa
 	if err := os.MkdirAll(filepath.Dir(expectedAbs), 0o755); err != nil {
 		return err
 	}
-	if err := os.Symlink(expectedTarget, expectedAbs); err != nil {
+	if err := makeSymlink(expectedTarget, expectedAbs); err != nil {
 		return err
 	}
 	state.Dirs[entry.Identity] = StateDir{Path: expectedRel, Link: dir.linkPath}

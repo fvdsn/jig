@@ -294,7 +294,7 @@ func ensureLinkFile(out io.Writer, root string, model *Model, state *State, file
 	if err := os.MkdirAll(filepath.Dir(expectedAbs), 0o755); err != nil {
 		return err
 	}
-	if err := os.Symlink(expectedTarget, expectedAbs); err != nil {
+	if err := makeSymlink(expectedTarget, expectedAbs); err != nil {
 		return err
 	}
 	state.Files[entry.Identity] = StateFile{Path: expectedRel, Link: file.linkPath}
