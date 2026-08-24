@@ -1,5 +1,20 @@
 # Changelog
 
+## v2.0.6 — 2026-08-24
+
+- Fixed: on Windows, `jig init` with an scp-style URL
+  (`git@host:path.git`) failed with a `CreateFile ... syntax is
+  incorrect` error instead of cloning. Any source argument that does not
+  stat as a local file is now handed to git clone.
+- The lifecycle commands (setup, fmt, lint, test) work from cmd and
+  PowerShell: when `sh` is not on PATH, jig runs commands through the
+  `sh.exe` that Git for Windows ships next to the git executable.
+  Schemas keep declaring commands in sh syntax on every platform.
+- Symlink creation failures caused by missing Windows privileges now
+  explain the remedy (enable Developer Mode or use an administrator
+  shell) instead of a bare "required privilege is not held".
+- Releases include windows/amd64 and windows/arm64 binaries.
+
 ## v2.0.5 — 2026-08-13
 
 - Lifecycle commands print `failed: <repo>` immediately when a
