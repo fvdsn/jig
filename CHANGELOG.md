@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.0.7 — 2026-09-01
+
+- Fixed: when a `$dir` entry merges multiple sources and one of them
+  fails to resolve (bad spec, unreachable repository, missing subtree),
+  the error now names the failing source instead of only the entry
+  path.
+
 ## v2.0.6 — 2026-08-24
 
 - Fixed: on Windows, `jig init` with an scp-style URL
