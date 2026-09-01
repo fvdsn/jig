@@ -228,10 +228,10 @@ var commandDocs = []commandDoc{
 		[]string{"clone [path] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b] [--id x]"},
 		[]string{"Clone/materialize all entries, or repositories/files matching a path. --no-deps skips dependencies."}},
 	{"sync",
-		[]string{"sync [path] [--no-deps] [--with-optional-deps] [--archived] [--prune] [--tags a,b] [--id x]"},
+		[]string{"sync [path] [--no-update] [--no-deps] [--with-optional-deps] [--archived] [--prune] [--tags a,b] [--id x]"},
 		[]string{
-			"Clone missing repos, move renamed repos/files, update origins/files, and refresh local state.",
-			"--prune deletes entries removed from the schema; dirty/unpushed repos and modified files are kept.",
+			"Update the schema, then clone missing repos, move renamed repos/files, update origins/files, and refresh local state.",
+			"--no-update applies the current schema without fetching; --prune deletes entries removed from the schema (dirty/unpushed repos and modified files are kept).",
 		}},
 	{"setup",
 		[]string{"setup [path] [--archived] [--tags a,b] [--id x]"},
@@ -267,13 +267,10 @@ var commandDocs = []commandDoc{
 		[]string{"status [path] [--all] [--archived] [--tags a,b] [--id x]"},
 		[]string{"Show the state of installed entries; repos never installed are only counted unless --all is given."}},
 	{"update",
-		[]string{
-			"update",
-			"update --sync [path] [--no-deps] [--with-optional-deps] [--archived] [--prune] [--tags a,b]",
-		},
+		[]string{"update"},
 		[]string{
 			"Fast-forward the schema checkout (.jig/source) from its remote without changing local checkouts.",
-			"With --sync, then sync the workspace.",
+			"Review the reported changes, then apply them with jig sync.",
 		}},
 	{"cache",
 		[]string{
@@ -520,7 +517,7 @@ func cmdClone(args []string, out io.Writer) error {
 }
 
 func cmdSync(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, map[string]flagKind{"--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--prune": boolFlag, "--archived": boolFlag, "--tags": valueFlag, "--id": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--no-update": boolFlag, "--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--prune": boolFlag, "--archived": boolFlag, "--tags": valueFlag, "--id": valueFlag})
 	if err != nil {
 		return err
 	}
@@ -542,6 +539,7 @@ func cmdSync(args []string, out io.Writer) error {
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		IncludeArchived: parsed.Flags["--archived"],
 		SkipDeps:        parsed.Flags["--no-deps"],
+		SkipUpdate:      parsed.Flags["--no-update"],
 		Prune:           parsed.Flags["--prune"],
 		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
@@ -721,6 +719,8 @@ func cmdStatus(args []string, out io.Writer) error {
 }
 
 func cmdUpdate(args []string, out io.Writer) error {
+	// --sync is a legacy alias for jig sync, which now updates the schema
+	// itself before applying it; the flag keeps working undocumented.
 	parsed, err := parseArgs(args, map[string]flagKind{"--sync": boolFlag, "--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--prune": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
 	if err != nil {
 		return err

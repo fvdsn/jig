@@ -917,10 +917,11 @@ Updating the definition and updating repository contents are separate operations
 
 ```text
 jig update        fast-forwards .jig/source from its remote
-jig update --sync updates the schema, then syncs the workspace
 jig pull [path]   pulls existing local Git repositories
-jig sync [path]   applies the current schema to the local checkout shape
+jig sync [path]   updates the schema, then applies it to the local checkout shape
 ```
+
+`jig sync --no-update` applies the current schema without fetching, for offline use or for testing local schema edits before pushing them.
 
 `jig update` should fetch from the checkout's upstream, validate the upstream schema, and fast-forward the checkout only if validation succeeds. If the checkout has diverged from upstream or local edits conflict, `jig update` should fail and direct the user to resolve with Git in `.jig/source/`.
 
@@ -1003,9 +1004,8 @@ jig checkout [-b] <branch> [path]
 jig status [path]
 jig status [path] --archived
 jig update
-jig update --sync
-jig update --sync [path]
 jig sync [path]
+jig sync [path] --no-update
 jig clone [path] --no-deps
 jig clone [path] --with-optional-deps
 jig sync [path] --no-deps
@@ -1227,7 +1227,7 @@ Clones uninstalled archived repositories and files in addition to the default se
 
 ### `jig sync [path]`
 
-Applies the current `.jig.json` to the local checkout shape.
+Updates the schema as `jig update` does, then applies it to the local checkout shape. A schema update that fails (unreachable remote, invalid or diverged upstream) is reported on a `schema not updated:` line and the current schema is applied instead, so sync still converges offline. `--no-update` skips the update step: the current `.jig.json` is applied without fetching.
 
 If `path` is provided, Jig syncs repositories and files matching that path. Matching repositories include non-optional dependencies. Matching files are materialized directly.
 
@@ -1405,23 +1405,7 @@ Uncommitted local schema edits that do not conflict with upstream are preserved 
 
 The command should not change local repository checkouts, write files, or update `.jig/state.json`.
 
-`--no-deps`, `--with-optional-deps`, `--archived`, and a node path are valid only when `--sync` is present.
-
-### `jig update --sync [path]`
-
-Updates the schema, then applies the updated definition with the same behavior as `jig sync`.
-
-If `path` is provided, only matching nodes are included in the sync step. The schema update itself is always global.
-
-The sync step should run only after the schema has been fetched, validated, and fast-forwarded successfully.
-
-`jig update --sync --with-optional-deps` includes optional dependencies during the sync step.
-
-`jig update --sync --no-deps` restricts the sync step to the selected entries, as in `jig sync --no-deps`.
-
-`jig update --sync --prune` prunes entries removed from the schema during the sync step, as in `jig sync --prune`.
-
-`jig update --sync --archived` includes uninstalled archived repositories and files during the sync step.
+`jig update --sync` remains as an undocumented compatibility alias from before sync updated the schema itself: it updates the schema and then syncs, but unlike `jig sync` it fails outright when the schema update fails. The sync-step flags (`--no-deps`, `--with-optional-deps`, `--archived`, `--prune`, a node path) are valid only with `--sync`.
 
 ## Open Questions
 

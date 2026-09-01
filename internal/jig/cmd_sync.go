@@ -11,16 +11,26 @@ type SyncOptions struct {
 	IncludeOptional bool
 	IncludeArchived bool
 	SkipDeps        bool // sync only the selected repos, without their dependencies
+	SkipUpdate      bool // apply the current schema without updating it first
 	Prune           bool // delete entries removed from the schema (jig rm safety rules apply)
 	Tags            []string
 }
 
+// Sync updates the schema checkout, then applies it. A schema update that
+// fails (unreachable remote, invalid or diverged upstream) is reported and
+// the current schema is applied instead, so sync still converges offline;
+// --no-update skips the update step deliberately.
 func Sync(options SyncOptions, out io.Writer) error {
 	ws, err := loadWorkspace(true)
 	if err != nil {
 		return err
 	}
 	defer ws.Close()
+	if !options.SkipUpdate {
+		if err := updateSchema(ws, out); err != nil {
+			fmt.Fprintf(out, "schema not updated: %s\n", shortError(err))
+		}
+	}
 	return syncWorkspace(out, ws, options)
 }
 

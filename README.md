@@ -160,7 +160,7 @@ Everything jig manages lives under `.jig/` at the workspace root:
 ```
 
 - **State records intent.** Deleting a checkout by hand doesn't uninstall it — `jig sync` restores it. `jig rm` is the uninstall verb, with `rm`-like ergonomics (`-r` for groups, `-f` to override the dirty/unpushed safety checks). `jig sync --prune` batch-deletes entries that were removed from the schema, with the same safety checks — anything dirty, unpushed, or locally modified is kept and reported.
-- **The schema is a working copy.** Edit `.jig/source/<schema>`, test immediately with `jig sync`, then commit and push it like any repo. Teammates pick it up with `jig update --sync`. Conflicts are plain Git conflicts.
+- **The schema is a working copy.** Edit `.jig/source/<schema>`, test immediately with `jig sync --no-update`, then commit and push it like any repo. Teammates pick it up with their next `jig sync`. Conflicts are plain Git conflicts.
 - **Clone cache.** Jig keeps a bare mirror per remote in the user cache directory; clones hardlink from it, so history transfers over the network once per machine. Checkouts stay fully independent — deleting the cache is always safe. `JIG_CACHE_DIR` relocates it (empty disables), `jig cache clean --unused 30` prunes it.
 - **Terminal-aware output.** `list` and `status` align and truncate on a terminal; piped output stays full and tab-separated for scripts.
 

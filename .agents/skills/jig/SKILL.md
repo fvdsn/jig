@@ -509,7 +509,7 @@ jig tags services
 jig tags --archived
 ```
 
-Filter by tags. `--tags a,b` keeps only entries carrying all the listed tags and works on `list`, `info`, `deps`, `clone`, `sync`, `pull`, `fetch`, `checkout`, `status`, and `update --sync`. Dependencies of a selected repository are always included, tagged or not:
+Filter by tags. `--tags a,b` keeps only entries carrying all the listed tags and works on `list`, `info`, `deps`, `clone`, `sync`, `pull`, `fetch`, `checkout`, and `status`. Dependencies of a selected repository are always included, tagged or not:
 
 ```sh
 jig list --tags backend
@@ -612,13 +612,13 @@ Sync a specific path:
 jig sync platform
 ```
 
-Sync without pulling in dependencies (`--no-deps` also works on `clone`, `init --clone`, and `update --sync`):
+Sync without pulling in dependencies (`--no-deps` also works on `clone` and `init --clone`):
 
 ```sh
 jig sync platform --no-deps
 ```
 
-Sync and delete entries that were removed from the schema (also on `update --sync`; whole workspace only, cannot be combined with a path or `--tags`):
+Sync and delete entries that were removed from the schema (whole workspace only, cannot be combined with a path or `--tags`):
 
 ```sh
 jig sync --prune
@@ -701,18 +701,13 @@ jig status --archived
 
 Status reports installed entries only; repos never installed are counted in the summary (pass `--all` to list them). Each line shows a glyph, path, branch, and notes. Repositories with an upstream report ahead/behind commit counts (computed locally; run `jig fetch` first for fresh counts). `jig fetch && jig status` gives an overview of what changed across the workspace.
 
-Update the schema checkout from its Git remote (fast-forward only):
+Update the schema checkout from its Git remote (fast-forward only), without touching the workspace:
 
 ```sh
 jig update
 ```
 
-Update the schema and immediately sync the workspace:
-
-```sh
-jig update --sync
-jig update --sync services
-```
+`jig sync` updates the schema itself before applying it, so a separate `jig update` is only needed to review incoming changes before syncing.
 
 ## Editing The Schema
 
@@ -721,7 +716,7 @@ The schema in `.jig/source/` is a normal Git working copy. To change the shared 
 ```sh
 $EDITOR .jig/source/.jig.json      # edit the schema
 jig validate                       # check it
-jig sync                           # test it: jig reads the live file
+jig sync --no-update               # test it without fetching: jig reads the live file
 git -C .jig/source commit -am "describe the change"
 git -C .jig/source push            # publish to the team
 ```
@@ -730,11 +725,11 @@ If local schema edits conflict with upstream, `jig update` refuses to fast-forwa
 
 ## Update And Sync Model
 
-Use `jig update` to update the schema from its remote.
+Use `jig sync` to update the schema and apply it — the everyday command. When the schema cannot be updated (offline, broken upstream), sync reports it and applies the current schema instead.
 
-Use `jig update --sync` to update the schema and then apply the updated map in one command.
+Use `jig update` to update the schema alone, review the reported changes, then apply them with `jig sync`.
 
-Use `jig sync` to apply the current definition to the local workspace.
+Use `jig sync --no-update` to apply the current definition without fetching — offline, or when testing local schema edits.
 
 Use `jig pull` to update Git contents in already-installed repositories.
 

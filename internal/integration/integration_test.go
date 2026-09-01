@@ -123,6 +123,50 @@ func TestSchemaEvolution(t *testing.T) {
 	w.assertNotContains(w.mustJig(ws, "status"), "stale")
 }
 
+// TestSyncUpdatesSchemaFirst covers sync's default update step: sync applies
+// the latest upstream schema, --no-update applies the current one, and a
+// broken upstream is reported while the current schema still converges.
+func TestSyncUpdatesSchemaFirst(t *testing.T) {
+	w := newWorld(t)
+	svc := w.newRemote("svc", map[string]string{"README.md": "svc\n"})
+	extra := w.newRemote("extra", map[string]string{"README.md": "extra\n"})
+	schemaV1 := fmt.Sprintf(`{
+  "version": 2,
+  "tree": {
+    "services/checkout": { "$repo": { "id": "checkout", "git": "%s" } }
+  }
+}`, svc)
+	schemaRemote := w.newRemote("schema", map[string]string{"jig.json": schemaV1})
+
+	w.mustJig(w.root, "init", schemaRemote, "ws", "--clone")
+	ws := w.path("ws")
+
+	schemaV2 := fmt.Sprintf(`{
+  "version": 2,
+  "tree": {
+    "services/checkout": { "$repo": { "id": "checkout", "git": "%s" } },
+    "services/extra": { "$repo": { "id": "extra", "git": "%s" } }
+  }
+}`, svc, extra)
+	w.commitRemote(schemaRemote, map[string]string{"jig.json": schemaV2}, "add extra")
+
+	// --no-update applies the current schema: the upstream addition is not
+	// fetched, so nothing new is reported.
+	w.assertNotContains(w.mustJig(ws, "sync", "--no-update"), "repo-added")
+
+	// Plain sync updates the schema first, reporting the upstream addition;
+	// a path selection then materializes it.
+	w.assertContains(w.mustJig(ws, "sync"), "repo-added:", "services/extra")
+	w.mustJig(ws, "sync", ".")
+	if !w.exists("ws", "services", "extra", ".git") {
+		t.Fatal("expected sync to apply the updated schema")
+	}
+
+	// A broken upstream schema is reported; the current schema still syncs.
+	w.commitRemote(schemaRemote, map[string]string{"jig.json": "{ not json"}, "break schema")
+	w.assertContains(w.mustJig(ws, "sync"), "schema not updated", "present: services/extra")
+}
+
 // TestFilesDirsAndLinks covers generated support artifacts end to end: a
 // $file that updates when its source changes but never clobbers local edits,
 // a multi-source $dir merge, and a harness symlink via dir link.
