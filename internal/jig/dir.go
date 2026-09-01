@@ -43,8 +43,11 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 		}
 	}
 
-	// Resolve every source before touching the workspace, so a partial
-	// materialization cannot happen when a later source is broken.
+	// Resolve every source before touching the workspace. A source that
+	// fails to resolve (unreachable repository, subtree missing upstream)
+	// is excluded from this run's merge and reported, so one broken
+	// source does not block the whole directory. A malformed source spec
+	// stays fatal: it is a definition bug, not an availability problem.
 	type resolvedSource struct {
 		mirror string
 		tree   string
@@ -52,6 +55,7 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 	var sources []resolvedSource
 	var treeOIDs []string
 	var activeSrcs []string
+	var unavailable []string
 	for _, dirSource := range dir.Src {
 		// A per-source onlyWhen gates just this source's tree in the merge.
 		if dirSource.OnlyWhen != nil && !conditionMatches(*dirSource.OnlyWhen, activeRepos, installedRepos, model) {
@@ -63,11 +67,8 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 		}
 		mirror, err := fetcher.mirror(parsed.GitURL)
 		if err != nil {
-			if hasState && pathExists(expectedAbs) {
-				fmt.Fprintf(out, "present-dir: %s (source %s not checked: %s)\n", dirPath, dirSource.Src, shortError(err))
-				return nil
-			}
-			return fmt.Errorf("source %s: %s", dirSource.Src, shortError(err))
+			unavailable = append(unavailable, fmt.Sprintf("source %s unavailable: %s", dirSource.Src, shortError(err)))
+			continue
 		}
 		srcPath, err := resolveSrcPath(mirror, parsed)
 		if err != nil {
@@ -79,11 +80,13 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 		}
 		treeOut, err := git(mirror, "rev-parse", treeRef)
 		if err != nil {
-			return fmt.Errorf("source %s: subtree not found: %s", dirSource.Src, shortError(err))
+			unavailable = append(unavailable, fmt.Sprintf("source %s unavailable: subtree not found: %s", dirSource.Src, shortError(err)))
+			continue
 		}
 		treeOID := strings.TrimSpace(treeOut)
 		if objType, err := git(mirror, "cat-file", "-t", treeOID); err != nil || strings.TrimSpace(objType) != "tree" {
-			return fmt.Errorf("source %s: %s is not a directory in the source repository", dirSource.Src, srcPath)
+			unavailable = append(unavailable, fmt.Sprintf("source %s unavailable: %s is not a directory in the source repository", dirSource.Src, srcPath))
+			continue
 		}
 		sources = append(sources, resolvedSource{mirror, treeOID})
 		treeOIDs = append(treeOIDs, treeOID)
@@ -91,9 +94,23 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 	}
 	srcKey := strings.Join(activeSrcs, " ")
 	combinedTree := strings.Join(treeOIDs, "+")
+	note := ""
+	if len(unavailable) > 0 {
+		note = " (" + strings.Join(unavailable, "; ") + ")"
+	}
+
+	// With no source resolvable there is nothing to materialize: an
+	// already-written directory is left as is, a missing one is an error.
+	if len(sources) == 0 && len(unavailable) > 0 {
+		if hasState && pathExists(expectedAbs) {
+			fmt.Fprintf(out, "present-dir: %s%s\n", dirPath, note)
+			return nil
+		}
+		return fmt.Errorf("%s", strings.Join(unavailable, "; "))
+	}
 
 	if hasState && stateDir.Src == srcKey && stateDir.Tree == combinedTree && manifestClean(expectedAbs, stateDir.Files) {
-		fmt.Fprintf(out, "present-dir: %s\n", dirPath)
+		fmt.Fprintf(out, "present-dir: %s%s\n", dirPath, note)
 		return nil
 	}
 
@@ -112,9 +129,16 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 		}
 	}
 
-	// Files that disappeared upstream: delete only untouched ones.
+	// Files that disappeared upstream: delete only untouched ones. While
+	// any source is unavailable its files cannot be told apart from truly
+	// deleted ones, so nothing is deleted and vanished entries stay
+	// tracked until every source resolves again.
 	for rel, oldHash := range oldManifest {
 		if _, stillThere := newManifest[rel]; stillThere {
+			continue
+		}
+		if len(unavailable) > 0 {
+			newManifest[rel] = oldHash
 			continue
 		}
 		target := filepath.Join(expectedAbs, filepath.FromSlash(rel))
@@ -138,7 +162,7 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 	}
 
 	state.Dirs[entry.Identity] = StateDir{Path: expectedRel, Src: srcKey, Tree: combinedTree, Files: newManifest}
-	fmt.Fprintln(out, dirMessage(dirPath, hasState, counts))
+	fmt.Fprintln(out, dirMessage(dirPath, hasState, counts)+note)
 	return nil
 }
 

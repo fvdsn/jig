@@ -192,7 +192,96 @@ func TestEnsureDirMergesMultipleSources(t *testing.T) {
 	}
 }
 
-func TestEnsureDirNamesFailingSource(t *testing.T) {
+func TestEnsureDirSkipsUnavailableSources(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+
+	makeSource := func(name string, files map[string]string) string {
+		dir := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Join(dir, "skills"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for rel, content := range files {
+			path := filepath.Join(dir, "skills", rel)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		gitIn(t, dir, "init", "-q")
+		gitIn(t, dir, "add", ".")
+		gitIn(t, dir, "commit", "-qm", "init")
+		return dir
+	}
+	base := makeSource("base-skills", map[string]string{"A/SKILL.md": "skill A\n"})
+	extra := makeSource("extra-skills", map[string]string{"B/SKILL.md": "skill B\n"})
+	restoreExtra := func(content string) {
+		if err := os.MkdirAll(filepath.Join(extra, "skills", "B"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(extra, "skills", "B", "SKILL.md"), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		gitIn(t, extra, "add", ".")
+		gitIn(t, extra, "commit", "-qm", "restore skills")
+	}
+
+	state := emptyState()
+	model := Model{Entries: map[string]Entry{
+		".agents/skills": {Path: ".agents/skills", Identity: "skills", Kind: EntryDir,
+			Dir: &Dir{Src: SrcList{{Src: base + "#skills"}, {Src: extra + "#skills"}}}},
+	}}
+	resolveLinkPaths(&model)
+	ensure := func() string {
+		var out bytes.Buffer
+		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, newFileFetcher(), nil, nil); err != nil {
+			t.Fatalf("ensureDir: %v", err)
+		}
+		return out.String()
+	}
+
+	// Initial materialization with one source's subtree missing upstream
+	// still writes the available sources and names the broken one.
+	gitIn(t, extra, "rm", "-rq", "skills")
+	gitIn(t, extra, "commit", "-qm", "drop skills")
+	got := ensure()
+	if !strings.Contains(got, "wrote-dir") || !strings.Contains(got, extra+"#skills unavailable") {
+		t.Fatalf("first run = %q, want wrote-dir with unavailable note", got)
+	}
+	if !pathExists(filepath.Join(root, ".agents", "skills", "A", "SKILL.md")) {
+		t.Fatal("expected available source materialized")
+	}
+
+	// The subtree appearing upstream flows into the merge.
+	restoreExtra("skill B\n")
+	if got := ensure(); !strings.Contains(got, "1 added") {
+		t.Fatalf("recovery run = %q, want 1 added", got)
+	}
+
+	// While a source is unavailable its files are kept, not deleted.
+	gitIn(t, extra, "rm", "-rq", "skills")
+	gitIn(t, extra, "commit", "-qm", "drop skills again")
+	if got := ensure(); strings.Contains(got, "deleted") || !strings.Contains(got, "unavailable") {
+		t.Fatalf("unavailable run = %q, want kept files and unavailable note", got)
+	}
+	if !pathExists(filepath.Join(root, ".agents", "skills", "B", "SKILL.md")) {
+		t.Fatal("expected unavailable source's files kept")
+	}
+
+	// The kept files stayed tracked: once the source resolves again, an
+	// untouched file that changed upstream is overwritten, not left stale.
+	restoreExtra("skill B v2\n")
+	if got := ensure(); !strings.Contains(got, "1 updated") {
+		t.Fatalf("restore run = %q, want 1 updated", got)
+	}
+	if data, _ := os.ReadFile(filepath.Join(root, ".agents", "skills", "B", "SKILL.md")); string(data) != "skill B v2\n" {
+		t.Fatalf("B = %q, want v2", data)
+	}
+}
+
+func TestEnsureDirErrorsWhenNoSourceResolves(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
 
@@ -211,7 +300,7 @@ func TestEnsureDirNamesFailingSource(t *testing.T) {
 	state := emptyState()
 	model := Model{Entries: map[string]Entry{
 		".agents/skills": {Path: ".agents/skills", Identity: "skills", Kind: EntryDir,
-			Dir: &Dir{Src: SrcList{{Src: good + "#skills"}, {Src: badSrc}}}},
+			Dir: &Dir{Src: SrcList{{Src: badSrc}}}},
 	}}
 	resolveLinkPaths(&model)
 
@@ -220,9 +309,8 @@ func TestEnsureDirNamesFailingSource(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), badSrc) {
 		t.Fatalf("err = %v, want mention of failing source %s", err, badSrc)
 	}
-	// Resolution fails before anything is written: the merge stays atomic.
 	if pathExists(filepath.Join(root, ".agents", "skills")) {
-		t.Fatalf("directory materialized despite a broken source")
+		t.Fatalf("directory materialized despite no resolvable source")
 	}
 }
 

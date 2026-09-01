@@ -635,6 +635,7 @@ State records the source tree id and a manifest mapping each written file to its
 
 - The subtree is extracted from the source repository's cache mirror without a checkout.
 - With multiple sources, trees are merged in order into the same directory; when two sources provide the same file path, the last source wins and the shadowed file is reported, so a source list reads as base layers first and overrides after. All active sources are resolved before any file is written.
+- A source that fails to resolve (unreachable repository, subtree missing upstream) is excluded from that run's merge and reported on the status line; the remaining sources still materialize. While any source is unavailable nothing is deleted, and files that vanished from the merge stay tracked so they update normally once the source resolves again. When no source resolves, an already-written directory is left untouched and reported present; a directory that was never written is an error. A malformed source spec is always an error.
 - A list entry may be an object `{"src": ..., "onlyWhen": ...}`; the per-source condition gates just that source's tree within the merge, evaluated against active and installed repositories. Files of a source whose condition stops matching are removed on the next sync when untouched.
 - Updates overwrite only files whose local content matches the manifest; locally modified files are kept and reported.
 - Files that disappear upstream are deleted locally only when their content matches the manifest; modified ones are left behind as untracked.
