@@ -59,19 +59,19 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 		}
 		parsed, err := parseDirSrc(dirSource.Src)
 		if err != nil {
-			return err
+			return fmt.Errorf("source %s: %s", dirSource.Src, shortError(err))
 		}
 		mirror, err := fetcher.mirror(parsed.GitURL)
 		if err != nil {
 			if hasState && pathExists(expectedAbs) {
-				fmt.Fprintf(out, "present-dir: %s (source not checked: %s)\n", dirPath, shortError(err))
+				fmt.Fprintf(out, "present-dir: %s (source %s not checked: %s)\n", dirPath, dirSource.Src, shortError(err))
 				return nil
 			}
-			return err
+			return fmt.Errorf("source %s: %s", dirSource.Src, shortError(err))
 		}
 		srcPath, err := resolveSrcPath(mirror, parsed)
 		if err != nil {
-			return err
+			return fmt.Errorf("source %s: %s", dirSource.Src, shortError(err))
 		}
 		treeRef := "HEAD^{tree}"
 		if srcPath != "" {
@@ -79,11 +79,11 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 		}
 		treeOut, err := git(mirror, "rev-parse", treeRef)
 		if err != nil {
-			return fmt.Errorf("source subtree not found: %s", shortError(err))
+			return fmt.Errorf("source %s: subtree not found: %s", dirSource.Src, shortError(err))
 		}
 		treeOID := strings.TrimSpace(treeOut)
 		if objType, err := git(mirror, "cat-file", "-t", treeOID); err != nil || strings.TrimSpace(objType) != "tree" {
-			return fmt.Errorf("source path %s is not a directory in the source repository", srcPath)
+			return fmt.Errorf("source %s: %s is not a directory in the source repository", dirSource.Src, srcPath)
 		}
 		sources = append(sources, resolvedSource{mirror, treeOID})
 		treeOIDs = append(treeOIDs, treeOID)

@@ -192,6 +192,40 @@ func TestEnsureDirMergesMultipleSources(t *testing.T) {
 	}
 }
 
+func TestEnsureDirNamesFailingSource(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+
+	good := filepath.Join(root, "good-skills")
+	if err := os.MkdirAll(filepath.Join(good, "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(good, "skills", "SKILL.md"), []byte("skill\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, good, "init", "-q")
+	gitIn(t, good, "add", ".")
+	gitIn(t, good, "commit", "-qm", "init")
+
+	badSrc := good + "#no-such-subtree"
+	state := emptyState()
+	model := Model{Entries: map[string]Entry{
+		".agents/skills": {Path: ".agents/skills", Identity: "skills", Kind: EntryDir,
+			Dir: &Dir{Src: SrcList{{Src: good + "#skills"}, {Src: badSrc}}}},
+	}}
+	resolveLinkPaths(&model)
+
+	var out bytes.Buffer
+	err := ensureDir(&out, root, &model, &state, ".agents/skills", true, newFileFetcher(), nil, nil)
+	if err == nil || !strings.Contains(err.Error(), badSrc) {
+		t.Fatalf("err = %v, want mention of failing source %s", err, badSrc)
+	}
+	// Resolution fails before anything is written: the merge stays atomic.
+	if pathExists(filepath.Join(root, ".agents", "skills")) {
+		t.Fatalf("directory materialized despite a broken source")
+	}
+}
+
 func TestEnsureDirKeepsForeignSymlinks(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
