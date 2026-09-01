@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.0.8 — 2026-09-01
+
+- Fixed: a `$dir` source that fails to resolve (unreachable
+  repository, subtree missing upstream) no longer blocks the whole
+  directory — the remaining sources still materialize and the broken
+  source is reported on the status line. While any source is
+  unavailable nothing is deleted, and its files stay tracked so they
+  update normally once the source resolves again. On `jig init` this
+  also unblocks links targeting the directory.
+
 ## v2.0.7 — 2026-09-01
 
 - Fixed: when a `$dir` entry merges multiple sources and one of them
