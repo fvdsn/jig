@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.1.0 — 2026-09-01
+
+- `jig sync` now updates the schema before applying it, making it the
+  single everyday command; `jig update` remains the schema-only step
+  for reviewing incoming changes first. `jig sync --no-update` applies
+  the current schema without fetching (offline, or testing local
+  schema edits). When the schema cannot be updated (unreachable
+  remote, invalid or diverged upstream), sync reports `schema not
+  updated:` and applies the current schema instead. `jig update
+  --sync` keeps working as an undocumented compatibility alias.
+
 ## v2.0.8 — 2026-09-01
 
 - Fixed: a `$dir` source that fails to resolve (unreachable
