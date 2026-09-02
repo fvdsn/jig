@@ -1,5 +1,18 @@
 # Changelog
 
+## v2.2.0 — 2026-09-02
+
+- New `jig diff [path] [--stat] [--tags a,b] [--id x]`: the
+  uncommitted changes of installed repositories as one workspace-wide
+  unified diff, with the repository path folded into the `a/`/`b/`
+  prefixes so the output reads as the diff of the whole tree. Diffs
+  against `HEAD`, so staged changes appear; untracked files stay with
+  `jig status`. `--stat` prints one summary line per dirty repository
+  (files changed, +/- line totals) for triaging many dirty repos at a
+  glance.
+- `jig status` dirty notes now carry counts, e.g. `dirty (14 changed,
+  3 untracked)`.
+
 ## v2.1.2 — 2026-09-02
 
 - Rerunning `jig init` now converges instead of erroring, so a setup
