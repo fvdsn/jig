@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.2.1 — 2026-09-02
+
+- `jig diff` on a terminal now reuses the user's git diff
+  presentation: the patch is piped through the pager git diff would
+  use (`pager.diff`, then `GIT_PAGER` / `core.pager` / `PAGER`), and
+  each repository's git runs with `GIT_PAGER_IN_USE` set so the
+  user's color configuration applies — custom viewers such as delta
+  work unchanged, now over the whole workspace tree. Piped output and
+  `--stat` stay plain, matching git.
+
 ## v2.2.0 — 2026-09-02
 
 - New `jig diff [path] [--stat] [--tags a,b] [--id x]`: the
