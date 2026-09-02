@@ -74,13 +74,106 @@ func (model *Model) Select(query NodeQuery) (NodeSelection, error) {
 	return selection, nil
 }
 
-// describeQuery renders a path-and-tags query for error messages.
+// describeQuery renders a path-and-tags query for error messages. An empty
+// path with tags means the whole workspace, so only the tags are shown.
 func describeQuery(path string, tags []string) string {
-	description := fmt.Sprintf("%q", path)
-	if len(tags) > 0 {
-		description += " with tags " + strings.Join(tags, ",")
+	if len(tags) == 0 {
+		return fmt.Sprintf("%q", path)
 	}
-	return description
+	if path == "" {
+		return "tags " + strings.Join(tags, ",")
+	}
+	return fmt.Sprintf("%q with tags %s", path, strings.Join(tags, ","))
+}
+
+// noEntriesMatchError explains an empty selection. A selector that cannot
+// match anything (a typo'd tag or path) is the real mistake and is reported
+// directly; otherwise the query is described as matching nothing.
+func noEntriesMatchError(model *Model, what string, path string, tags []string) error {
+	if err := unknownSelectorError(model, path, tags); err != nil {
+		return err
+	}
+	return fmt.Errorf("no %s match %s", what, describeQuery(path, tags))
+}
+
+// unknownSelectorError reports a query selector that cannot match anything:
+// a tag no schema entry carries, or a path where no entry is defined —
+// usually typos, so the closest existing tag or path is suggested when one
+// is near. It returns nil when every selector is real and the query simply
+// selected nothing.
+func unknownSelectorError(model *Model, path string, tags []string) error {
+	known := schemaTags(model)
+	for _, tag := range tags {
+		if known[tag] {
+			continue
+		}
+		if suggestion := closestMatch(sortedKeys(known), tag); suggestion != "" {
+			return fmt.Errorf("no entries carry tag %q; did you mean %q?", tag, suggestion)
+		}
+		return fmt.Errorf("no entries carry tag %q; jig tags lists the tags in use", tag)
+	}
+	if path != "" && !pathDefined(model, path) {
+		if suggestion := closestMatch(sortedEntryPaths(model), path); suggestion != "" {
+			return fmt.Errorf("no entry is defined at %q; did you mean %q?", path, suggestion)
+		}
+		return fmt.Errorf("no entry is defined at %q", path)
+	}
+	return nil
+}
+
+// pathDefined reports whether path names a declared entry or a subtree
+// containing one.
+func pathDefined(model *Model, path string) bool {
+	for entryPath := range model.Entries {
+		if pathMatches(path, entryPath) {
+			return true
+		}
+	}
+	return false
+}
+
+// schemaTags returns every tag carried by any entry, inherited tags included.
+func schemaTags(model *Model) map[string]bool {
+	tags := map[string]bool{}
+	for _, entry := range model.Entries {
+		for _, tag := range entry.Tags {
+			tags[tag] = true
+		}
+	}
+	return tags
+}
+
+// closestMatch returns the candidate nearest to the given value, when it is
+// close enough to be a plausible typo; ties go to the first candidate, so
+// pass candidates sorted for deterministic suggestions.
+func closestMatch(candidates []string, value string) string {
+	best, bestDistance := "", 3
+	for _, candidate := range candidates {
+		if d := editDistance(value, candidate); d < bestDistance {
+			best, bestDistance = candidate, d
+		}
+	}
+	return best
+}
+
+func editDistance(a, b string) int {
+	previous := make([]int, len(b)+1)
+	current := make([]int, len(b)+1)
+	for j := range previous {
+		previous[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		current[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			current[j] = min(previous[j]+1, min(current[j-1]+1, previous[j-1]+cost))
+		}
+		previous, current = current, previous
+	}
+	return previous[len(b)]
 }
 
 func (entry Entry) matchesMeta(filter MetaFilter) bool {

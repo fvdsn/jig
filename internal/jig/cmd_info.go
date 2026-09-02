@@ -104,6 +104,9 @@ func Info(options InfoOptions, out io.Writer) error {
 
 	group, hasGroup := selection.exactGroup()
 	if len(selection.Entries) == 0 {
+		if err := unknownSelectorError(&ws.Model, path, options.Tags); err != nil {
+			return err
+		}
 		return fmt.Errorf("no repository, file, or group matches %q", path)
 	}
 	fmt.Fprintf(out, "group: %s\n", path)

@@ -55,7 +55,7 @@ func syncWorkspace(out io.Writer, ws *Workspace, options SyncOptions) error {
 		explicitFiles = selection.filePaths()
 		explicitDirs = entryPaths(selection.ofKind(EntryDir))
 		if len(roots) == 0 && len(explicitFiles) == 0 && len(explicitDirs) == 0 {
-			return fmt.Errorf("no repositories or files match %s", describeQuery(selection.Path, options.Tags))
+			return noEntriesMatchError(&ws.Model, "repositories or files", selection.Path, options.Tags)
 		}
 	} else {
 		// Pathless sync converges what is already installed — scoped to the

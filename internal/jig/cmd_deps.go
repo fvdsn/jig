@@ -25,7 +25,7 @@ func Dependencies(options DependenciesOptions, out io.Writer) error {
 	}
 	roots := selection.repoPaths()
 	if len(roots) == 0 {
-		return fmt.Errorf("no repositories match %q", selection.Path)
+		return noEntriesMatchError(&ws.Model, "repositories", selection.Path, options.Tags)
 	}
 	installed := ws.installedNodes()
 	if options.Reverse {

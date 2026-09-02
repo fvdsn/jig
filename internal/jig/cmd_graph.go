@@ -29,7 +29,7 @@ func Graph(options GraphOptions, out io.Writer) error {
 	}
 	selected := selection.repoPaths()
 	if len(selected) == 0 {
-		return fmt.Errorf("no repositories match %q", selection.Path)
+		return noEntriesMatchError(&ws.Model, "repositories", selection.Path, nil)
 	}
 
 	// Nodes are the selected repositories plus any edge targets outside the

@@ -2,7 +2,6 @@ package jig
 
 import (
 	"errors"
-	"fmt"
 	"io"
 )
 
@@ -41,7 +40,7 @@ func clonePathIntoWorkspace(out io.Writer, ws *Workspace, options CloneOptions) 
 		if selection.Path == "" && len(options.Tags) == 0 {
 			return errors.New("no repositories or files defined")
 		}
-		return fmt.Errorf("no repositories or files match %s", describeQuery(selection.Path, options.Tags))
+		return noEntriesMatchError(&ws.Model, "repositories or files", selection.Path, options.Tags)
 	}
 	return resolveAndApplyPlan(out, ws, roots, explicitFiles, explicitDirs, applyOptions{
 		IncludeOptional: options.IncludeOptional,

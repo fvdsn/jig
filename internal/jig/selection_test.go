@@ -189,3 +189,88 @@ func TestTrailingSlashPathMatchesGroup(t *testing.T) {
 		t.Fatalf("roots = %#v", roots)
 	}
 }
+
+func TestNoEntriesMatchError(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 2,
+  "tree": {
+    "sourcery/silver": {
+      "$repo": { "git": "git@example.com:silver.git", "tags": ["team:sourcery", "product:codabox"] }
+    },
+    "flowin/app": {
+      "$repo": { "git": "git@example.com:app.git", "tags": ["team:flowin"] }
+    }
+  }
+}`)
+	model, err := flattenDefinition(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A typo'd tag reports the near-miss instead of the empty selection.
+	got := noEntriesMatchError(&model, "repositories or files", "", []string{"teams:sourcery"}).Error()
+	want := `no entries carry tag "teams:sourcery"; did you mean "team:sourcery"?`
+	if got != want {
+		t.Fatalf("typo error = %q, want %q", got, want)
+	}
+
+	// A tag nothing resembles points at jig tags instead of guessing.
+	got = noEntriesMatchError(&model, "repositories or files", "", []string{"frontend"}).Error()
+	want = `no entries carry tag "frontend"; jig tags lists the tags in use`
+	if got != want {
+		t.Fatalf("unknown error = %q, want %q", got, want)
+	}
+
+	// Existing tags that match nothing in scope describe the query; the
+	// whole-workspace scope is not rendered as an empty path.
+	got = noEntriesMatchError(&model, "repositories or files", "", []string{"team:sourcery", "product:codabox"}).Error()
+	want = `no repositories or files match tags team:sourcery,product:codabox`
+	if got != want {
+		t.Fatalf("scope error = %q, want %q", got, want)
+	}
+	got = noEntriesMatchError(&model, "repositories or files", "sourcery", []string{"team:flowin"}).Error()
+	want = `no repositories or files match "sourcery" with tags team:flowin`
+	if got != want {
+		t.Fatalf("subtree error = %q, want %q", got, want)
+	}
+}
+
+func TestUnknownPathSuggestion(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 2,
+  "tree": {
+    "codabox/sourcery": {
+      "$group": {},
+      "silver": { "$repo": { "git": "git@example.com:silver.git" } }
+    },
+    "flowin/core": {
+      "$repo": { "git": "git@example.com:core.git", "tags": ["team:sourcery"] }
+    }
+  }
+}`)
+	model, err := flattenDefinition(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A typo'd path reports the near-miss entry path.
+	got := noEntriesMatchError(&model, "repositories or files", "codubox/sourcery", nil).Error()
+	want := `no entry is defined at "codubox/sourcery"; did you mean "codabox/sourcery"?`
+	if got != want {
+		t.Fatalf("typo error = %q, want %q", got, want)
+	}
+
+	// A path nothing resembles is reported as undefined, without a guess.
+	got = noEntriesMatchError(&model, "repositories or files", "frontend/app", nil).Error()
+	want = `no entry is defined at "frontend/app"`
+	if got != want {
+		t.Fatalf("unknown error = %q, want %q", got, want)
+	}
+
+	// A defined path whose selection is empty keeps the query description.
+	got = noEntriesMatchError(&model, "repositories", "codabox/sourcery", []string{"team:sourcery"}).Error()
+	want = `no repositories match "codabox/sourcery" with tags team:sourcery`
+	if got != want {
+		t.Fatalf("defined-path error = %q, want %q", got, want)
+	}
+}
