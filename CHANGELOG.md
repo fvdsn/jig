@@ -1,5 +1,25 @@
 # Changelog
 
+## v2.1.2 — 2026-09-02
+
+- Rerunning `jig init` now converges instead of erroring, so a setup
+  that failed midway is finished by running the same command again. A
+  source checkout without `.jig/config.json` is a leftover from a
+  failed init (the config is written only once the source and schema
+  are good) and is replaced. An initialized workspace targeting the
+  same source resumes: the schema is updated and the clone step runs
+  with the given flags. A different source is a conflict and refuses,
+  naming both; bare init and local schema files (no verifiable
+  identity) refuse as before.
+- Multi-source `$file` entries now tolerate unavailable sources the
+  way `$dir` does: a source that fails to resolve is excluded from
+  that run and reported on the status line instead of skipping the
+  whole file (and any links targeting it). A file not yet written is
+  generated from the available parts; an already-written untouched
+  file is left as is while any source is unavailable, so the missing
+  source's content is never dropped — the full rewrite happens once
+  every source resolves again.
+
 ## v2.1.1 — 2026-09-02
 
 - Selector typos now get did-you-mean errors. A `--tags` filter naming

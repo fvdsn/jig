@@ -512,6 +512,7 @@ Parsing rules:
 `src` may also be a list of such sources; their contents are concatenated in order into the single generated file. A list entry may be an object `{"src": ..., "onlyWhen": ...}`; the per-source condition gates just that source's content within the concatenation, evaluated against active and installed repositories — the same shape `$dir` uses, but appending instead of merging trees. Rules:
 
 - All active sources are resolved before the file is written; parts are joined in list order.
+- A source that fails to resolve (unreachable repository, file missing upstream) is excluded from that run and reported on the status line, mirroring `$dir`. A file not yet written is generated from the available parts; an already-written untouched file is left as is while any source is unavailable, since regenerating without the missing part would drop that source's content — the full rewrite happens once every source resolves. When no source resolves, an existing file is left untouched and reported present; a file never written is an error. A malformed source spec is always an error.
 - A newline is inserted between two parts when the earlier one does not end with one, so text sections never run together. Multi-source files are therefore intended for text content.
 - A condition flip changes the expected content: the file is rewritten on the next sync when untouched, and a locally modified file is reported instead of overwritten, as usual.
 - When every source is gated off, no file is generated: a previously written untouched file is removed and dropped from state; a locally modified one is kept but left untracked.
@@ -1031,7 +1032,8 @@ The command should:
 
 - Resolve the workspace directory.
 - Create the workspace directory if it does not exist.
-- Fail if `.jig/config.json` or `.jig/source/` already exists in the workspace directory.
+- Replace a `.jig/source/` checkout found without `.jig/config.json`: the config is written only once the source and schema are good, so such a checkout is a leftover from an init that failed midway.
+- When `.jig/config.json` exists and the requested Git source matches the checkout's origin, resume instead of failing: update the schema and run the clone step with the given flags. A different source fails, naming both; a bare init or local schema file (no verifiable source identity) fails as before.
 - Clone the schema repository into `.jig/source/` (a full clone, so it can be pushed from).
 - Locate the schema file: the `--path` value, or the first of `.jig.json`, `jig.json`, `schema.json` at the checkout root.
 - Validate the schema.
