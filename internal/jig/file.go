@@ -56,7 +56,6 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 		}
 		activeSrcs = append(activeSrcs, source.Src)
 	}
-	srcKey := strings.Join(activeSrcs, " ")
 	if len(activeSrcs) == 0 {
 		return ensureFileWithoutSources(out, root, state, entry, filePath, stateFile, hasState)
 	}
@@ -68,6 +67,7 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 	}
 	exists := pathExists(expectedAbs)
 	currentHash := ""
+	var fileInfo os.FileInfo
 	if exists {
 		info, err := os.Stat(expectedAbs)
 		if err != nil {
@@ -86,29 +86,80 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 		if currentHash != stateFile.SHA256 {
 			return fmt.Errorf("locally modified")
 		}
-		// The tracked content is unmodified; when the source blobs have not
-		// moved either, there is nothing to transfer.
-		if stateFile.Src == srcKey && stateFile.SrcBlob != "" {
-			blob, err := combinedSrcBlob(fetcher, activeSrcs)
-			if err != nil {
-				fmt.Fprintf(out, "present-file: %s (source not checked: %s)\n", filePath, shortError(err))
-				return nil
-			}
-			if blob == stateFile.SrcBlob {
-				if err := ensureFileMode(expectedAbs, info, file.Executable); err != nil {
-					return err
-				}
-				fmt.Fprintf(out, "present-file: %s\n", filePath)
-				return nil
-			}
-		}
+		fileInfo = info
 	} else if hasState {
 		delete(state.Files, entry.Identity)
 	}
 
-	content, blob, err := fetchConcatenated(fetcher, activeSrcs)
-	if err != nil {
-		return err
+	// Resolve every active source before touching the file. A source that
+	// fails to resolve (unreachable repository, file missing upstream) is
+	// excluded from this run and reported, so one broken source does not
+	// block the whole file. A malformed source spec stays fatal: it is a
+	// definition bug, not an availability problem.
+	var available []string
+	var parts [][]byte
+	var blobs []string
+	blobsKnown := true
+	var unavailable []string
+	for _, src := range activeSrcs {
+		if _, err := parseFileSrc(src); err != nil {
+			return fmt.Errorf("source %s: %s", src, shortError(err))
+		}
+		part, blob, err := fetcher.content(src)
+		if err != nil {
+			unavailable = append(unavailable, fmt.Sprintf("source %s unavailable: %s", src, shortError(err)))
+			continue
+		}
+		available = append(available, src)
+		parts = append(parts, part)
+		if blob == "" {
+			blobsKnown = false
+		}
+		blobs = append(blobs, blob)
+	}
+	srcKey := strings.Join(available, " ")
+	note := ""
+	if len(unavailable) > 0 {
+		note = " (" + strings.Join(unavailable, "; ") + ")"
+	}
+
+	// With no source resolvable there is nothing to generate: the
+	// already-written untouched file is left as is, a missing one is an
+	// error.
+	if len(available) == 0 {
+		if exists {
+			fmt.Fprintf(out, "present-file: %s%s\n", filePath, note)
+			return nil
+		}
+		return fmt.Errorf("%s", strings.Join(unavailable, "; "))
+	}
+
+	if exists {
+		// While any source is unavailable the written file is left as is:
+		// regenerating without the missing part would drop that source's
+		// content. The full rewrite happens once every source resolves.
+		if len(unavailable) > 0 {
+			if err := ensureFileMode(expectedAbs, fileInfo, file.Executable); err != nil {
+				return err
+			}
+			fmt.Fprintf(out, "present-file: %s%s\n", filePath, note)
+			return nil
+		}
+		// The tracked content is unmodified; when the source blobs have not
+		// moved either, there is nothing to transfer.
+		if stateFile.Src == srcKey && stateFile.SrcBlob != "" && blobsKnown && strings.Join(blobs, "+") == stateFile.SrcBlob {
+			if err := ensureFileMode(expectedAbs, fileInfo, file.Executable); err != nil {
+				return err
+			}
+			fmt.Fprintf(out, "present-file: %s\n", filePath)
+			return nil
+		}
+	}
+
+	content := concatParts(parts)
+	blob := ""
+	if blobsKnown {
+		blob = strings.Join(blobs, "+")
 	}
 	newHash := sha256Hex(content)
 	state.Files[entry.Identity] = StateFile{Path: expectedRel, Src: srcKey, SHA256: newHash, SrcBlob: blob}
@@ -139,9 +190,9 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 		_ = os.Chmod(expectedAbs, 0o755)
 	}
 	if exists {
-		fmt.Fprintf(out, "updated-file: %s\n", filePath)
+		fmt.Fprintf(out, "updated-file: %s%s\n", filePath, note)
 	} else {
-		fmt.Fprintf(out, "wrote-file: %s\n", filePath)
+		fmt.Fprintf(out, "wrote-file: %s%s\n", filePath, note)
 	}
 	return nil
 }
@@ -179,46 +230,18 @@ func ensureFileWithoutSources(out io.Writer, root string, state *State, entry En
 	return nil
 }
 
-// combinedSrcBlob joins the source blob ids of every active source with "+":
-// the multi-source analogue of a single source's blob id.
-func combinedSrcBlob(fetcher *fileFetcher, srcs []string) (string, error) {
-	blobs := make([]string, 0, len(srcs))
-	for _, src := range srcs {
-		blob, err := fetcher.srcBlob(src)
-		if err != nil {
-			return "", err
-		}
-		blobs = append(blobs, blob)
-	}
-	return strings.Join(blobs, "+"), nil
-}
-
-// fetchConcatenated fetches every active source and concatenates the parts
-// in order, inserting a newline between parts when one is missing. The
-// combined blob id is empty when any source's blob id is unknown, so the
-// next run re-fetches instead of trusting a partial key.
-func fetchConcatenated(fetcher *fileFetcher, srcs []string) ([]byte, string, error) {
+// concatParts joins source parts in order, inserting a newline between two
+// parts when the earlier one does not end with one, so text sections never
+// run together.
+func concatParts(parts [][]byte) []byte {
 	var content []byte
-	blobs := make([]string, 0, len(srcs))
-	blobsKnown := true
-	for _, src := range srcs {
-		part, blob, err := fetcher.content(src)
-		if err != nil {
-			return nil, "", err
-		}
+	for _, part := range parts {
 		if len(content) > 0 && content[len(content)-1] != '\n' {
 			content = append(content, '\n')
 		}
 		content = append(content, part...)
-		if blob == "" {
-			blobsKnown = false
-		}
-		blobs = append(blobs, blob)
 	}
-	if !blobsKnown {
-		return content, "", nil
-	}
-	return content, strings.Join(blobs, "+"), nil
+	return content
 }
 
 // ensureFileMode fixes the executable bit on an otherwise up-to-date file.

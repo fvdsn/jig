@@ -423,3 +423,85 @@ func TestInstalledFileIdentitySetRequiresTrackedExistingFile(t *testing.T) {
 		t.Fatalf("did not expect untracked file to be installed: %#v", got)
 	}
 }
+
+func TestEnsureFileSkipsUnavailableSources(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	source := filepath.Join(root, "config")
+	testFileSource(t, source, map[string]string{"agents/base.md": "base\n"})
+
+	extraSrc := source + "#agents/extra.md" // not in the repo yet
+	state := emptyState()
+	model := Model{Entries: map[string]Entry{
+		"AGENTS.md": testFileEntry("AGENTS.md", "agents", File{Src: SrcList{
+			{Src: source + "#agents/base.md"},
+			{Src: extraSrc},
+		}}),
+	}}
+	resolveLinkPaths(&model)
+	ensure := func() string {
+		var out bytes.Buffer
+		if err := ensureFile(&out, root, &model, &state, "AGENTS.md", true, newFileFetcher(), nil, nil); err != nil {
+			t.Fatalf("ensureFile: %v", err)
+		}
+		return out.String()
+	}
+	content := func() string {
+		data, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+
+	// Initial generation with one source missing upstream still writes the
+	// available parts and names the broken source.
+	got := ensure()
+	if !strings.Contains(got, "wrote-file:") || !strings.Contains(got, extraSrc+" unavailable") {
+		t.Fatalf("first run = %q, want wrote-file with unavailable note", got)
+	}
+	if content() != "base\n" {
+		t.Fatalf("content = %q, want the available part", content())
+	}
+
+	// The source appearing upstream flows into the concatenation.
+	if err := os.WriteFile(filepath.Join(source, "agents", "extra.md"), []byte("extra\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, source, "add", ".")
+	gitIn(t, source, "commit", "-qm", "add extra")
+	if got := ensure(); !strings.Contains(got, "updated-file:") {
+		t.Fatalf("recovery run = %q, want updated-file", got)
+	}
+	if content() != "base\nextra\n" {
+		t.Fatalf("content = %q, want full concatenation", content())
+	}
+
+	// While a source is unavailable the file is left as is, so the missing
+	// source's part is not dropped — even when another source changed.
+	gitIn(t, source, "rm", "-q", "agents/extra.md")
+	if err := os.WriteFile(filepath.Join(source, "agents", "base.md"), []byte("base v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, source, "add", ".")
+	gitIn(t, source, "commit", "-qm", "drop extra, change base")
+	if got := ensure(); !strings.Contains(got, "present-file:") || !strings.Contains(got, "unavailable") {
+		t.Fatalf("degraded run = %q, want present-file with unavailable note", got)
+	}
+	if content() != "base\nextra\n" {
+		t.Fatalf("content = %q, want file kept while degraded", content())
+	}
+
+	// Once every source resolves again the full rewrite happens.
+	if err := os.WriteFile(filepath.Join(source, "agents", "extra.md"), []byte("extra v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, source, "add", ".")
+	gitIn(t, source, "commit", "-qm", "restore extra")
+	if got := ensure(); !strings.Contains(got, "updated-file:") {
+		t.Fatalf("restore run = %q, want updated-file", got)
+	}
+	if content() != "base v2\nextra v2\n" {
+		t.Fatalf("content = %q, want full rewrite after recovery", content())
+	}
+}
