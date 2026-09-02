@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.4.0 — 2026-09-02
+
+- `$file` and `$dir` source lists accept local sources — `{"file":
+  "~/.codabox/MY-AGENTS.md"}` and `{"dir": "~/.codabox/skills"}`,
+  rooted at `~/` or `/` — merged like any git source, with content
+  hashes standing in for blob/tree ids so local edits flow in on the
+  next sync. Any source may declare `"optional": true`: an optional
+  source that fails to resolve is gated off silently (the artifact
+  converges without it) instead of the degraded unavailable handling,
+  enabling per-user extension points that most machines leave empty.
+
 ## v2.3.0 — 2026-09-02
 
 - `$file` and `$dir` entries accept `copy`, a single-target reference
