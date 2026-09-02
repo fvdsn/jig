@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.3.0 — 2026-09-02
+
+- `$file` and `$dir` entries accept `copy`, a single-target reference
+  materializing another entry's sources as a real file or directory
+  instead of a symlink. Copies converge on the target's sources on every
+  sync, follow link activation and ordering rules, and never chain (the
+  target must define `src`). Switching an entry between `link` and
+  `copy` converges on sync; locally modified content blocks converting
+  back to a link. Real directories side-step symlink handling gaps in
+  agent harnesses reading skill directories.
+
 ## v2.2.1 — 2026-09-02
 
 - `jig diff` on a terminal now reuses the user's git diff
