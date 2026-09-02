@@ -48,11 +48,18 @@ func Init(options InitOptions, out io.Writer) error {
 		}
 	}
 	if pathExists(filepath.Join(workspaceDir, configFile)) {
-		return errors.New("workspace already initialized: .jig/config.json exists")
+		return resumeInit(workspaceDir, options, out)
 	}
 	sourceAbs := filepath.Join(workspaceDir, sourceDir)
+	// A source checkout without config.json is a leftover from an init that
+	// failed midway: the config is written only once the source and schema
+	// are good. Replace it, so reinitializing converges instead of erroring
+	// (and picks up upstream fixes a stale leftover would hide).
 	if pathExists(sourceAbs) {
-		return fmt.Errorf("source checkout already exists: %s", sourceDir)
+		if err := os.RemoveAll(sourceAbs); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "replacing source checkout left by a failed init: %s\n", sourceDir)
 	}
 	if err := os.MkdirAll(filepath.Dir(sourceAbs), 0o755); err != nil {
 		return err
@@ -116,6 +123,63 @@ func Init(options InitOptions, out io.Writer) error {
 		fmt.Fprintln(out, "to share the workspace, push .jig/source to a Git remote; teammates run: jig init <url>")
 	}
 	return nil
+}
+
+// resumeInit finishes the setup of an already-initialized workspace: a rerun
+// of jig init that targets the same source converges — updating the schema
+// and running the clone step — instead of directing the user to separate
+// commands. A different source is a conflict and refuses; so do sources
+// without a verifiable identity (bare init, local schema files).
+func resumeInit(workspaceDir string, options InitOptions, out io.Writer) error {
+	if !isGitSource(options.SourceArg) {
+		return errors.New("workspace already initialized: .jig/config.json exists")
+	}
+	ws, err := loadWorkspaceAt(workspaceDir, "", true)
+	if err != nil {
+		return err
+	}
+	defer ws.Close()
+	origin, err := gitOrigin(filepath.Join(workspaceDir, sourceDir))
+	if err != nil {
+		return fmt.Errorf("schema checkout has no origin remote (%s): %s", sourceDir, shortError(err))
+	}
+	if origin != options.SourceArg {
+		return fmt.Errorf("workspace already initialized from a different source: %s (requested %s)", origin, options.SourceArg)
+	}
+	if options.SchemaPath != "" && options.SchemaPath != ws.Config.Schema {
+		return fmt.Errorf("workspace already uses schema %s; --path %s does not match", ws.Config.Schema, options.SchemaPath)
+	}
+
+	fmt.Fprintf(out, "workspace already initialized at %s; finishing setup\n", workspaceDir)
+	if err := updateSchema(ws, out); err != nil {
+		fmt.Fprintf(out, "schema not updated: %s\n", shortError(err))
+	}
+	if !options.Clone {
+		return nil
+	}
+	cloneErr := clonePathIntoWorkspace(out, ws, CloneOptions{
+		Path:            options.ClonePath,
+		IncludeOptional: options.IncludeOptional,
+		IncludeArchived: options.IncludeArchived,
+		SkipDeps:        options.SkipDeps,
+		Tags:            options.Tags,
+	})
+	// State accumulated before a clone error is valid and must be kept.
+	if err := saveState(workspaceDir, ws.State); err != nil {
+		return err
+	}
+	return cloneErr
+}
+
+// isGitSource reports whether sourceArg names a git repository rather than a
+// local schema file or the bare starter workspace, mirroring setUpSource's
+// dispatch: only a successful stat of a regular file means a schema file.
+func isGitSource(sourceArg string) bool {
+	if sourceArg == "" {
+		return false
+	}
+	info, err := os.Stat(sourceArg)
+	return err != nil || info.IsDir()
 }
 
 // setUpSource creates the schema source checkout: a git clone when sourceArg

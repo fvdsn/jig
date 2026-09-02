@@ -541,3 +541,58 @@ func TestSubdirScoping(t *testing.T) {
 	// Relative clone from the subtree reinstalls.
 	w.assertContains(w.mustJig(w.path("ws", "groupb"), "clone", "/groupa/app1"), "cloned: groupa/app1")
 }
+
+// TestInitRetryAfterFailure covers reinitializing after an init that failed
+// midway: a leftover source checkout (no config written yet) is replaced, an
+// initialized workspace targeting the same source resumes and finishes the
+// clone step, and a different source refuses.
+func TestInitRetryAfterFailure(t *testing.T) {
+	w := newWorld(t)
+	svc := w.newRemote("svc", map[string]string{"README.md": "svc\n"})
+	late := w.path("remotes", "late") // referenced by the schema, created later
+	schemaRemote := w.newRemote("schema", map[string]string{"jig.json": "{ not json"})
+
+	// Init fails before the config is written: the source checkout stays.
+	out, err := w.jig(w.root, "init", schemaRemote, "ws", "--clone")
+	if err == nil {
+		t.Fatalf("expected init to fail on an invalid schema:\n%s", out)
+	}
+	if !w.exists("ws", ".jig", "source") || w.exists("ws", ".jig", "config.json") {
+		t.Fatal("expected a leftover source checkout without config")
+	}
+
+	// Upstream fixes the schema; the retry replaces the leftover checkout,
+	// writes the config, then fails cloning the not-yet-existing remote.
+	schemaV1 := fmt.Sprintf(`{
+  "version": 2,
+  "tree": {
+    "services/checkout": { "$repo": { "id": "checkout", "git": "%s" } },
+    "services/late": { "$repo": { "id": "late", "git": "%s" } }
+  }
+}`, svc, late)
+	w.commitRemote(schemaRemote, map[string]string{"jig.json": schemaV1}, "fix schema")
+	out, err = w.jig(w.root, "init", schemaRemote, "ws", "--clone")
+	if err == nil {
+		t.Fatalf("expected init to fail on the missing remote:\n%s", out)
+	}
+	w.assertContains(out, "replacing source checkout left by a failed init", "initialized workspace", "cloned: services/checkout")
+	if !w.exists("ws", ".jig", "config.json") {
+		t.Fatal("expected config written before the clone step")
+	}
+
+	// The remote appears; rerunning init resumes and finishes the setup.
+	w.newRemote("late", map[string]string{"README.md": "late\n"})
+	out = w.mustJig(w.root, "init", schemaRemote, "ws", "--clone")
+	w.assertContains(out, "already initialized", "finishing setup", "cloned: services/late")
+	if !w.exists("ws", "services", "late", ".git") {
+		t.Fatal("expected resumed init to clone the missing repo")
+	}
+
+	// A different source is a conflict, not a resume.
+	other := w.newRemote("other-schema", map[string]string{"jig.json": schemaV1})
+	out, err = w.jig(w.root, "init", other, "ws", "--clone")
+	if err == nil {
+		t.Fatalf("expected init to refuse a different source:\n%s", out)
+	}
+	w.assertContains(err.Error(), "already initialized from a different source")
+}

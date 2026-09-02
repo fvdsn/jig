@@ -66,6 +66,13 @@ func loadWorkspace(withState bool) (*Workspace, error) {
 	if err != nil {
 		return nil, err
 	}
+	return loadWorkspaceAt(root, subdir, withState)
+}
+
+// loadWorkspaceAt loads the workspace rooted at root. Commands that do not
+// run inside the workspace (init resuming an initialized directory) load it
+// directly by path instead of finding the root from the current directory.
+func loadWorkspaceAt(root string, subdir string, withState bool) (*Workspace, error) {
 	config, err := loadConfig(root)
 	if err != nil {
 		return nil, err
