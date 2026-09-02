@@ -1354,6 +1354,8 @@ Shows the uncommitted changes of installed repositories matching the selection a
 
 `--stat` prints one summary line per dirty repository instead of the patch: path, changed file count, and added/deleted line totals. Clean repositories produce no output in either mode.
 
+On a terminal the patch reuses the user's git diff presentation: it is piped through the pager git diff would use (`pager.diff`, then `GIT_PAGER` / `core.pager` / `PAGER`, defaulting to less with git's `LESS=FRX` defaults), and each repository's git runs with `GIT_PAGER_IN_USE` set, so the user's color configuration applies exactly as when git itself pages — custom diff viewers such as delta work unchanged. When output is not a terminal (or with `--stat`), no pager runs and the output is plain, matching git. Quitting the pager ends the output without an error.
+
 `--tags` and `--id` scope the selection as everywhere; repositories that are defined but not installed are skipped.
 
 ### `jig status [path]`
