@@ -63,6 +63,9 @@ func Info(options InfoOptions, out io.Writer) error {
 		if file.Link != nil {
 			fmt.Fprintf(out, "link: %s\n", describeRef(*file.Link))
 		}
+		if file.Copy != nil {
+			fmt.Fprintf(out, "copy: %s\n", describeRef(*file.Copy))
+		}
 		if file.Description != "" {
 			fmt.Fprintf(out, "description: %s\n", file.Description)
 		}
@@ -83,9 +86,12 @@ func Info(options InfoOptions, out io.Writer) error {
 		fmt.Fprintf(out, "path: %s\n", path)
 		fmt.Fprintln(out, "type: dir")
 		fmt.Fprintf(out, "identity: %s\n", entry.Identity)
-		if dir.Link != nil {
+		switch {
+		case dir.Link != nil:
 			fmt.Fprintf(out, "link: %s\n", describeRef(*dir.Link))
-		} else {
+		case dir.Copy != nil:
+			fmt.Fprintf(out, "copy: %s\n", describeRef(*dir.Copy))
+		default:
 			printSrcList(out, dir.Src)
 		}
 		if dir.Description != "" {

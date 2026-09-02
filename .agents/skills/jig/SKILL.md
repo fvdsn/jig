@@ -158,14 +158,14 @@ If `id` is omitted, the repository path is used as the identity.
 
 ## References
 
-`dependsOn`, `onlyWhen` (including per-source conditions), and `link` share one structured reference form: an object with **exactly one** of three selector fields.
+`dependsOn`, `onlyWhen` (including per-source conditions), `link`, and `copy` share one structured reference form: an object with **exactly one** of three selector fields.
 
 - `{"id": "auth-service"}` — one entry by its stable identity; survives path moves. Ids are globally unique across all entry kinds.
 - `{"path": "platform/auth"}` — one declared entry, exact match. A path naming nothing (or naming a group without `/*`) is a validation error, so renames fail loudly.
 - `{"path": "platform/*"}` — every repository strictly below `platform`. The trailing `/*` is the only wildcard; bare `*` means the whole tree.
 - `{"tags": ["api", "go"]}` — every repository carrying all the tags (inherited group tags included).
 
-`link` is single-target: only `id` or an exact `path`, resolving to one entry of the same kind.
+`link` and `copy` are single-target: only `id` or an exact `path`, resolving to one entry of the same kind.
 
 ## Dependencies
 
@@ -336,11 +336,13 @@ Files can also be symbolic links to other files in the same schema.
 
 Rules for links:
 
-- A `$file` defines exactly one of `src` or `link`.
+- A `$file` defines exactly one of `src`, `link`, or `copy`.
 - `link` is a reference object (`{"id": ...}` or exact `{"path": ...}`) naming another `$file` in the same schema.
 - Jig creates relative symlinks.
 - Link files are active only when their target file is active.
 - Jig skips existing non-symlink paths instead of overwriting them.
+
+A `$file` can declare `copy` instead of `link` with the same reference shape: Jig then materializes the target's sources as a real file rather than a symlink (the executable bit follows the target; the target must define `src`). Use `copy` when a consumer of the path does not follow symlinks reliably.
 
 ## Directory Nodes
 
@@ -374,14 +376,14 @@ Declare whole subtrees with `$dir`. The subtree of the source repository is mate
 }
 ```
 
-A `$dir` can instead declare `link` to become a relative symlink to another `$dir` entry — for example one real `.agents/skills` symlinked into every harness path:
+A `$dir` can instead declare `link` to become a relative symlink to another `$dir` entry, or `copy` to materialize the target's sources as a second real directory (for consumers that do not follow symlinks reliably — some agent harnesses reading skill directories) — for example one real `.agents/skills` aliased into every harness path:
 
 ```json
 {
   "tree": {
     ".agents/skills":   { "$dir": { "id": "agent-skills", "src": ["git@github.com:acme/skills.git#skills"] } },
     ".opencode/skills": { "$dir": { "id": "opencode-skills", "link": {"path": ".agents/skills"} } },
-    ".claude/skills":   { "$dir": { "id": "claude-skills", "link": {"path": ".agents/skills"} } }
+    ".claude/skills":   { "$dir": { "id": "claude-skills", "copy": {"path": ".agents/skills"} } }
   }
 }
 ```
@@ -391,7 +393,7 @@ Rules:
 - Jig tracks a manifest of every file it wrote. Updates overwrite only untouched files; locally modified files are kept and reported.
 - Files removed upstream are deleted locally only when untouched.
 - Files the user adds inside the directory are never touched.
-- A `$dir` defines exactly one of `src` or `link`. Link dirs are active only when their target dir is active, and removing a link dir removes only the symlink.
+- A `$dir` defines exactly one of `src`, `link`, or `copy`. Link and copy dirs are active only when their target dir is active; removing a link dir removes only the symlink, and a copy converges on the target's sources on every sync.
 - `$dir` supports `description`, `archived`, `tags`, `meta`, and `onlyWhen` like `$file`, but not `executable`.
 
 ## Conditional Nodes

@@ -275,9 +275,9 @@ func artifactsActive(model *Model, kind EntryKind, evidence map[string]bool, ins
 	repoPaths := sortedRepoPaths(model)
 	linkOf := func(entry Entry) string {
 		if kind == EntryFile {
-			return entry.File.linkPath
+			return entry.File.targetPath()
 		}
-		return entry.Dir.linkPath
+		return entry.Dir.targetPath()
 	}
 
 	const (
@@ -384,7 +384,7 @@ func archivedExcluded(entry Entry, installed map[string]bool, includeArchived bo
 func orderFilesForApply(model *Model, active map[string]bool) []string {
 	return orderLinkedForApply(active, func(path string) string {
 		if entry, ok := model.entry(path, EntryFile); ok {
-			return entry.File.linkPath
+			return entry.File.targetPath()
 		}
 		return ""
 	})
@@ -393,7 +393,7 @@ func orderFilesForApply(model *Model, active map[string]bool) []string {
 func orderDirsForApply(model *Model, active map[string]bool) []string {
 	return orderLinkedForApply(active, func(path string) string {
 		if entry, ok := model.entry(path, EntryDir); ok {
-			return entry.Dir.linkPath
+			return entry.Dir.targetPath()
 		}
 		return ""
 	})

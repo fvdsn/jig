@@ -20,6 +20,17 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 	if dir.Link != nil {
 		return ensureLinkDir(out, root, model, state, dirPath, allowMove)
 	}
+	// A copy entry materializes its target's sources as a real directory, so
+	// the contents match the target's by construction without requiring the
+	// target to be installed.
+	srcs := dir.Src
+	if dir.Copy != nil {
+		target, ok := model.entry(dir.copyPath, EntryDir)
+		if !ok {
+			return fmt.Errorf("copy target is not defined: %s", describeRef(*dir.Copy))
+		}
+		srcs = target.Dir.Src
+	}
 	stateDir, hasState := state.Dirs[entry.Identity]
 	expectedRel := entry.Path
 	expectedAbs := filepath.Join(root, expectedRel)
@@ -43,6 +54,21 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 		}
 	}
 
+	// A symlink at the path is not a directory jig materialized; writing
+	// through it would land in the target. The one exception is a jig-owned
+	// link being converted to a copy: the recorded symlink is replaced by
+	// the materialized directory.
+	if isSymlink(expectedAbs) {
+		if !hasState || stateDir.Link == "" {
+			return fmt.Errorf("existing path is a symlink: %s", expectedRel)
+		}
+		if err := os.Remove(expectedAbs); err != nil {
+			return err
+		}
+		delete(state.Dirs, entry.Identity)
+		stateDir, hasState = StateDir{}, false
+	}
+
 	// Resolve every source before touching the workspace. A source that
 	// fails to resolve (unreachable repository, subtree missing upstream)
 	// is excluded from this run's merge and reported, so one broken
@@ -56,7 +82,7 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 	var treeOIDs []string
 	var activeSrcs []string
 	var unavailable []string
-	for _, dirSource := range dir.Src {
+	for _, dirSource := range srcs {
 		// A per-source onlyWhen gates just this source's tree in the merge.
 		if dirSource.OnlyWhen != nil && !conditionMatches(*dirSource.OnlyWhen, activeRepos, installedRepos, model) {
 			continue
@@ -209,23 +235,41 @@ func ensureLinkDir(out io.Writer, root string, model *Model, state *State, dirPa
 		if err != nil {
 			return err
 		}
-		if info.Mode()&os.ModeSymlink == 0 {
+		switch {
+		case info.Mode()&os.ModeSymlink != 0:
+			currentTarget, err := os.Readlink(expectedAbs)
+			if err != nil {
+				return err
+			}
+			if currentTarget == expectedTarget {
+				state.Dirs[entry.Identity] = StateDir{Path: expectedRel, Link: dir.linkPath}
+				fmt.Fprintf(out, "present-dir: %s\n", dirPath)
+				return nil
+			}
+			if !hasState || stateDir.Link == "" {
+				return fmt.Errorf("existing symlink has different target")
+			}
+			if err := os.Remove(expectedAbs); err != nil {
+				return err
+			}
+		case hasState && stateDir.Link == "" && len(stateDir.Files) > 0:
+			// Converting a copy (or src) entry to a link: a fully untouched
+			// materialization is replaced by the symlink; modified or
+			// untracked files block the conversion.
+			if !manifestClean(expectedAbs, stateDir.Files) {
+				return fmt.Errorf("locally modified files; refusing to replace with a symlink: %s", expectedRel)
+			}
+			for rel := range stateDir.Files {
+				if err := os.Remove(filepath.Join(expectedAbs, filepath.FromSlash(rel))); err != nil {
+					return err
+				}
+			}
+			removeEmptyDirTree(expectedAbs)
+			if pathEntryExists(expectedAbs) {
+				return fmt.Errorf("directory was not fully cleared (untracked files remain, or a removal failed); refusing to replace with a symlink: %s", expectedRel)
+			}
+		default:
 			return fmt.Errorf("expected symlink path exists and is not a symlink: %s", expectedRel)
-		}
-		currentTarget, err := os.Readlink(expectedAbs)
-		if err != nil {
-			return err
-		}
-		if currentTarget == expectedTarget {
-			state.Dirs[entry.Identity] = StateDir{Path: expectedRel, Link: dir.linkPath}
-			fmt.Fprintf(out, "present-dir: %s\n", dirPath)
-			return nil
-		}
-		if !hasState || stateDir.Link == "" {
-			return fmt.Errorf("existing symlink has different target")
-		}
-		if err := os.Remove(expectedAbs); err != nil {
-			return err
 		}
 	}
 
@@ -238,6 +282,22 @@ func ensureLinkDir(out io.Writer, root string, model *Model, state *State, dirPa
 	state.Dirs[entry.Identity] = StateDir{Path: expectedRel, Link: dir.linkPath}
 	fmt.Fprintf(out, "linked-dir: %s\n", dirPath)
 	return nil
+}
+
+// removeEmptyDirTree removes path and its subdirectories bottom-up as far as
+// they are empty; anything non-empty is left in place for the caller to
+// inspect.
+func removeEmptyDirTree(path string) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			removeEmptyDirTree(filepath.Join(path, entry.Name()))
+		}
+	}
+	_ = os.Remove(path)
 }
 
 type dirCounts struct {

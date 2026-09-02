@@ -76,8 +76,8 @@ func validateDefinition(def *Definition) validationResult {
 		case EntryFile:
 			validateFileEntry(&result, model, path, entry.File)
 		case EntryDir:
-			if (len(entry.Dir.Src) == 0) == (entry.Dir.Link == nil) {
-				result.Errors = append(result.Errors, fmt.Sprintf("dir %s must define exactly one of src or link", path))
+			if countVariants(len(entry.Dir.Src) > 0, entry.Dir.Link != nil, entry.Dir.Copy != nil) != 1 {
+				result.Errors = append(result.Errors, fmt.Sprintf("dir %s must define exactly one of src, link, or copy", path))
 			}
 			for _, source := range entry.Dir.Src {
 				if _, err := parseDirSrc(source.Src); err != nil {
@@ -89,6 +89,9 @@ func validateDefinition(def *Definition) validationResult {
 			}
 			if entry.Dir.Link != nil {
 				validateLinkRef(&result, model, path, "dir", EntryDir, *entry.Dir.Link)
+			}
+			if entry.Dir.Copy != nil {
+				validateCopyRef(&result, model, path, "dir", EntryDir, *entry.Dir.Copy)
 			}
 		}
 	}
@@ -106,8 +109,8 @@ func validateDefinition(def *Definition) validationResult {
 }
 
 func validateFileEntry(result *validationResult, model Model, path string, file *File) {
-	if (len(file.Src) == 0) == (file.Link == nil) {
-		result.Errors = append(result.Errors, fmt.Sprintf("file %s must define exactly one of src or link", path))
+	if countVariants(len(file.Src) > 0, file.Link != nil, file.Copy != nil) != 1 {
+		result.Errors = append(result.Errors, fmt.Sprintf("file %s must define exactly one of src, link, or copy", path))
 	}
 	for _, source := range file.Src {
 		if _, err := parseFileSrc(source.Src); err != nil {
@@ -120,9 +123,25 @@ func validateFileEntry(result *validationResult, model Model, path string, file 
 	if file.Link != nil {
 		validateLinkRef(result, model, path, "file", EntryFile, *file.Link)
 	}
+	if file.Copy != nil {
+		validateCopyRef(result, model, path, "file", EntryFile, *file.Copy)
+	}
 	if file.Executable && file.Link != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot use executable with link", path))
 	}
+	if file.Executable && file.Copy != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot use executable with copy; the bit follows the copy target", path))
+	}
+}
+
+func countVariants(set ...bool) int {
+	n := 0
+	for _, isSet := range set {
+		if isSet {
+			n++
+		}
+	}
+	return n
 }
 
 func validateCondition(result *validationResult, model Model, ownerPath string, condition Condition) {
@@ -201,27 +220,57 @@ func validateRepoSelector(result *validationResult, model Model, owner string, s
 // validateLinkRef checks a single-target link reference: id or exact path,
 // resolving to exactly one other entry of the same kind.
 func validateLinkRef(result *validationResult, model Model, path string, kindLabel string, kind EntryKind, ref Ref) {
-	owner := kindLabel + " " + path
-	if !validateRefSyntax(result, owner, "link", ref) {
+	validateSingleTargetRef(result, model, path, kindLabel, kind, "link", ref)
+}
+
+// validateCopyRef checks a copy reference: the same single-target shape as a
+// link, plus the target must itself define src, so copies never chain
+// through links or other copies.
+func validateCopyRef(result *validationResult, model Model, path string, kindLabel string, kind EntryKind, ref Ref) {
+	target, ok := validateSingleTargetRef(result, model, path, kindLabel, kind, "copy", ref)
+	if !ok {
 		return
+	}
+	hasSrc := false
+	switch kind {
+	case EntryFile:
+		hasSrc = len(target.File.Src) > 0
+	case EntryDir:
+		hasSrc = len(target.Dir.Src) > 0
+	}
+	if !hasSrc {
+		result.Errors = append(result.Errors, fmt.Sprintf("%s %s copy target %s must define src; copying a link or copy entry is not supported", kindLabel, path, target.Path))
+	}
+}
+
+// validateSingleTargetRef checks the shape shared by link and copy sites and
+// resolves the target, reporting it only when it is exactly one other entry
+// of the required kind.
+func validateSingleTargetRef(result *validationResult, model Model, path string, kindLabel string, kind EntryKind, site string, ref Ref) (Entry, bool) {
+	owner := kindLabel + " " + path
+	if !validateRefSyntax(result, owner, site, ref) {
+		return Entry{}, false
 	}
 	if len(ref.Tags) > 0 {
-		result.Errors = append(result.Errors, fmt.Sprintf("%s link cannot use tags; it must name exactly one %s by id or path", owner, kindLabel))
-		return
+		result.Errors = append(result.Errors, fmt.Sprintf("%s %s cannot use tags; it must name exactly one %s by id or path", owner, site, kindLabel))
+		return Entry{}, false
 	}
 	if _, subtree := subtreePath(ref.Path); ref.Path != "" && subtree {
-		result.Errors = append(result.Errors, fmt.Sprintf("%s link %s cannot use \"/*\"; it must name exactly one %s", owner, ref.Path, kindLabel))
-		return
+		result.Errors = append(result.Errors, fmt.Sprintf("%s %s %s cannot use \"/*\"; it must name exactly one %s", owner, site, ref.Path, kindLabel))
+		return Entry{}, false
 	}
 	entries := model.resolveRef(ref)
 	switch {
 	case len(entries) == 0:
-		result.Errors = append(result.Errors, fmt.Sprintf("%s link %s does not resolve to any %s", owner, describeRef(ref), kindLabel))
+		result.Errors = append(result.Errors, fmt.Sprintf("%s %s %s does not resolve to any %s", owner, site, describeRef(ref), kindLabel))
 	case entries[0].Kind != kind:
-		result.Errors = append(result.Errors, fmt.Sprintf("%s link %s names a %s, not a %s", owner, describeRef(ref), entries[0].Kind, kindLabel))
+		result.Errors = append(result.Errors, fmt.Sprintf("%s %s %s names a %s, not a %s", owner, site, describeRef(ref), entries[0].Kind, kindLabel))
 	case entries[0].Path == path:
-		result.Errors = append(result.Errors, fmt.Sprintf("%s cannot link to itself", owner))
+		result.Errors = append(result.Errors, fmt.Sprintf("%s cannot %s to itself", owner, site))
+	default:
+		return entries[0], true
 	}
+	return Entry{}, false
 }
 
 func (v validationResult) asError(prefix string) error {
@@ -288,8 +337,8 @@ func repoDependencyPaths(model *Model) func(string) []string {
 
 func dirLinkPaths(model *Model) func(string) []string {
 	return func(dirPath string) []string {
-		if entry, ok := model.entry(dirPath, EntryDir); ok && entry.Dir.linkPath != "" {
-			return []string{entry.Dir.linkPath}
+		if entry, ok := model.entry(dirPath, EntryDir); ok && entry.Dir.targetPath() != "" {
+			return []string{entry.Dir.targetPath()}
 		}
 		return nil
 	}
@@ -297,8 +346,8 @@ func dirLinkPaths(model *Model) func(string) []string {
 
 func fileLinkPaths(model *Model) func(string) []string {
 	return func(filePath string) []string {
-		if entry, ok := model.entry(filePath, EntryFile); ok && entry.File.linkPath != "" {
-			return []string{entry.File.linkPath}
+		if entry, ok := model.entry(filePath, EntryFile); ok && entry.File.targetPath() != "" {
+			return []string{entry.File.targetPath()}
 		}
 		return nil
 	}

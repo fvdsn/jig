@@ -186,7 +186,7 @@ A path selector naming a `$group` entry exactly is a validation error with a hin
 Reference sites have one of two arities, enforced by validation:
 
 - **Selector sites** (`dependsOn` entries, `onlyWhen` conditions) accept any of the three selector fields and may resolve to zero or more repositories, plus site-specific extras (`optional`, `reason`).
-- **Single-target sites** (`$file.link`, `$dir.link`) accept only `id` or `path`, forbid `/*`, and must resolve to exactly one entry of the required kind.
+- **Single-target sites** (`$file.link`, `$dir.link`, `$file.copy`, `$dir.copy`) accept only `id` or `path`, forbid `/*`, and must resolve to exactly one entry of the required kind.
 
 The CLI mirrors the three selectors: the path positional, `--id`, and `--tags`. As a human interface the CLI keeps its filesystem feel — a bare path positional selects the node *and* its subtree, position-aware relative to the current directory — and also accepts an explicit trailing `/*`, which selects the same set. `--id` selects exactly one entry and cannot be combined with a path positional or `--tags`.
 
@@ -561,11 +561,40 @@ Example:
 
 Rules:
 
-- A `$file` must define exactly one of `src` or `link`.
+- A `$file` must define exactly one of `src`, `link`, or `copy`.
 - `link` must resolve to exactly one other `$file` node in the same schema; referencing any other kind, or the link's own node, is a validation error.
 - Link files are active only when their own conditions match and their target file is active.
 - Jig creates relative symlinks so workspaces remain movable.
 - `executable` applies only to `src` files.
+
+### `$file.copy`
+
+Optional reference object.
+
+Declares the file node as a materialized copy of another `$file` node: Jig
+resolves the target's `src` list (honoring per-source conditions) and writes a
+real file, exactly as if the node had declared those sources itself. Use a
+copy instead of a link when a consumer of the path does not follow symlinks
+reliably (agent harnesses reading skill directories are the motivating case).
+
+The reference is a single-target selector like `link`: exactly one of `id`
+and `path`, no `/*`, no `tags`.
+
+Rules:
+
+- The copy target must itself define `src`; copying a link or copy node is a
+  validation error, so copies never chain.
+- Copies follow the same activation and ordering rules as links: a copy is
+  active only when its target is active, and targets apply before copies.
+  Unlike a link, a copy does not require the target to be present on disk.
+- The copy's content converges on the target's sources on every sync; local
+  edits inside the copy are preserved and reported like any materialized
+  file, independently of the target.
+- `executable` is forbidden on copy nodes; the bit follows the copy target.
+- Changing a node between `link` and `copy` converges on sync: a jig-owned
+  symlink is replaced by the materialized content, and an untouched
+  materialization is replaced by the symlink. Locally modified content blocks
+  the conversion to a link.
 
 ### `$file.description`
 
@@ -630,7 +659,7 @@ Directory nodes are declared with `$dir` and materialize a whole subtree of a so
 }
 ```
 
-Fields: `id` (optional identity, defaults to the path), `src` (required, `<repo-url>[#<subtree-path>]` or a list of such sources; without a path the whole repository tree is materialized), `description`, `archived`, `tags`, `meta`, and `onlyWhen` behave as for `$file`. There is no `executable` field (modes come from the git tree). A directory node may declare `link` instead of `src`: a single-target reference (`{"id": ...}` or exact `{"path": ...}`, as for `$file.link`) making the node a relative symlink to another `$dir` entry. Exactly one of `src` and `link` is required; link dirs are active only when their target dir is active, targets are materialized before links, link cycles are validation errors, and removing a link dir removes only the symlink.
+Fields: `id` (optional identity, defaults to the path), `src` (required, `<repo-url>[#<subtree-path>]` or a list of such sources; without a path the whole repository tree is materialized), `description`, `archived`, `tags`, `meta`, and `onlyWhen` behave as for `$file`. There is no `executable` field (modes come from the git tree). A directory node may declare `link` instead of `src`: a single-target reference (`{"id": ...}` or exact `{"path": ...}`, as for `$file.link`) making the node a relative symlink to another `$dir` entry. It may instead declare `copy`, materializing the target `$dir`'s sources as a real directory with the same rules as `$file.copy` (target must define `src`, same activation and ordering as links, link/copy conversions converge on sync). Exactly one of `src`, `link`, and `copy` is required; link dirs are active only when their target dir is active, targets are materialized before links, link cycles are validation errors, and removing a link dir removes only the symlink.
 
 State records the source tree id and a manifest mapping each written file to its content hash. Rules:
 

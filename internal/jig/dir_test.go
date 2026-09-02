@@ -530,7 +530,174 @@ func TestDirLinkValidation(t *testing.T) {
 }`)
 	result := validateDefinition(def)
 	joined := strings.Join(result.Errors, "\n")
-	for _, want := range []string{"dir link cycle detected", "must define exactly one of src or link", "does not resolve to any dir"} {
+	for _, want := range []string{"dir link cycle detected", "must define exactly one of src, link, or copy", "does not resolve to any dir"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("errors = %#v, missing %q", result.Errors, want)
+		}
+	}
+}
+
+func TestDirCopyMaterializesTargetSources(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	remote := filepath.Join(root, "remote")
+	if err := os.MkdirAll(filepath.Join(remote, "skills", "A"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(remote, "skills", "A", "SKILL.md"), []byte("A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, remote, "init", "-q")
+	gitIn(t, remote, "add", ".")
+	gitIn(t, remote, "commit", "-qm", "init")
+
+	state := emptyState()
+	model := Model{Entries: map[string]Entry{
+		".agents/skills": {Path: ".agents/skills", Identity: "skills", Kind: EntryDir,
+			Dir: &Dir{Src: SrcList{{Src: remote + "#skills"}}}},
+		".claude/skills": {Path: ".claude/skills", Identity: "claude-skills", Kind: EntryDir,
+			Dir: &Dir{Copy: &Ref{Path: ".agents/skills"}}},
+	}}
+	resolveLinkPaths(&model)
+	fetcher := newFileFetcher()
+
+	// The copy materializes a real directory without the target installed.
+	var out bytes.Buffer
+	if err := ensureDir(&out, root, &model, &state, ".claude/skills", true, fetcher, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "wrote-dir: .claude/skills (1 added)") {
+		t.Fatalf("output = %q", out.String())
+	}
+	copyPath := filepath.Join(root, ".claude", "skills")
+	if isSymlink(copyPath) {
+		t.Fatal("copy is a symlink")
+	}
+	if data, err := os.ReadFile(filepath.Join(copyPath, "A", "SKILL.md")); err != nil || string(data) != "A\n" {
+		t.Fatalf("copied file: %q, %v", data, err)
+	}
+
+	// An upstream change reaches the copy on the next run.
+	if err := os.WriteFile(filepath.Join(remote, "skills", "A", "SKILL.md"), []byte("A v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, remote, "add", "-A")
+	gitIn(t, remote, "commit", "-qm", "v2")
+	out.Reset()
+	if err := ensureDir(&out, root, &model, &state, ".claude/skills", true, newFileFetcher(), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "updated-dir: .claude/skills (1 updated)") {
+		t.Fatalf("update run = %q", out.String())
+	}
+
+	// Copies follow the same activation and ordering rules as links.
+	active := activeDirsForRepoSet(&model, map[string]bool{"x": true}, nil, nil, false)
+	if !active[".claude/skills"] || !active[".agents/skills"] {
+		t.Fatalf("active = %#v", active)
+	}
+	ordered := orderDirsForApply(&model, active)
+	if len(ordered) != 2 || ordered[0] != ".agents/skills" {
+		t.Fatalf("ordered = %#v", ordered)
+	}
+}
+
+func TestDirCopyLinkTransitions(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	remote := filepath.Join(root, "remote")
+	if err := os.MkdirAll(filepath.Join(remote, "skills", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(remote, "skills", "sub", "SKILL.md"), []byte("S\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, remote, "init", "-q")
+	gitIn(t, remote, "add", ".")
+	gitIn(t, remote, "commit", "-qm", "init")
+
+	entries := func(alias *Dir) Model {
+		return Model{Entries: map[string]Entry{
+			".agents/skills": {Path: ".agents/skills", Identity: "skills", Kind: EntryDir,
+				Dir: &Dir{Src: SrcList{{Src: remote + "#skills"}}}},
+			".claude/skills": {Path: ".claude/skills", Identity: "claude-skills", Kind: EntryDir, Dir: alias},
+		}}
+	}
+	linkModel := entries(&Dir{Link: &Ref{Path: ".agents/skills"}})
+	copyModel := entries(&Dir{Copy: &Ref{Path: ".agents/skills"}})
+	resolveLinkPaths(&linkModel)
+	resolveLinkPaths(&copyModel)
+	state := emptyState()
+	fetcher := newFileFetcher()
+	aliasAbs := filepath.Join(root, ".claude", "skills")
+
+	// Materialize as a link first.
+	if err := ensureDir(ioDiscard{}, root, &linkModel, &state, ".agents/skills", true, fetcher, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureDir(ioDiscard{}, root, &linkModel, &state, ".claude/skills", true, fetcher, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !isSymlink(aliasAbs) {
+		t.Fatal("expected symlink after link run")
+	}
+
+	// link -> copy: the jig-owned symlink is replaced by a real directory.
+	var out bytes.Buffer
+	if err := ensureDir(&out, root, &copyModel, &state, ".claude/skills", true, fetcher, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if isSymlink(aliasAbs) {
+		t.Fatal("still a symlink after copy run")
+	}
+	if !strings.Contains(out.String(), "wrote-dir: .claude/skills") {
+		t.Fatalf("copy run = %q", out.String())
+	}
+
+	// copy -> link with a local modification is refused.
+	subFile := filepath.Join(aliasAbs, "sub", "SKILL.md")
+	if err := os.WriteFile(subFile, []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureDir(ioDiscard{}, root, &linkModel, &state, ".claude/skills", true, fetcher, nil, nil); err == nil ||
+		!strings.Contains(err.Error(), "locally modified") {
+		t.Fatalf("modified copy -> link err = %v", err)
+	}
+
+	// copy -> link with a clean manifest replaces the files with the symlink.
+	if err := os.WriteFile(subFile, []byte("S\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := ensureDir(&out, root, &linkModel, &state, ".claude/skills", true, fetcher, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "linked-dir: .claude/skills") {
+		t.Fatalf("link run = %q", out.String())
+	}
+	if !isSymlink(aliasAbs) {
+		t.Fatal("expected symlink after converting back")
+	}
+}
+
+func TestDirCopyValidation(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 2,
+  "tree": {
+    "a": { "$dir": { "id": "a", "src": "git@example.com:x.git#s" } },
+    "b": { "$dir": { "id": "b", "link": {"path": "a"} } },
+    "c": { "$dir": { "id": "c", "copy": {"path": "b"} } },
+    "d": { "$dir": { "id": "d", "src": "git@example.com:x.git#s", "copy": {"path": "a"} } },
+    "e": { "$dir": { "id": "e", "copy": {"path": "e"} } }
+  }
+}`)
+	result := validateDefinition(def)
+	joined := strings.Join(result.Errors, "\n")
+	for _, want := range []string{
+		"copy target b must define src",
+		"dir d must define exactly one of src, link, or copy",
+		"dir e cannot copy to itself",
+	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("errors = %#v, missing %q", result.Errors, want)
 		}

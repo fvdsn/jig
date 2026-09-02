@@ -80,6 +80,8 @@ type File struct {
 	Src         SrcList           `json:"src,omitempty"`  // one or more sources, concatenated in order
 	Link        *Ref              `json:"link,omitempty"` // single-target: id or exact path of another $file
 	linkPath    string            // Link resolved to the target's tree path after flattening
+	Copy        *Ref              `json:"copy,omitempty"` // single-target: materialize another $file's sources as a real file
+	copyPath    string            // Copy resolved to the target's tree path after flattening
 	Description string            `json:"description,omitempty"`
 	Executable  bool              `json:"executable,omitempty"`
 	Archived    bool              `json:"archived,omitempty"`
@@ -96,11 +98,31 @@ type Dir struct {
 	Src         SrcList           `json:"src,omitempty"`  // one or more sources, merged in order; first wins on conflicts
 	Link        *Ref              `json:"link,omitempty"` // single-target: id or exact path of another $dir to symlink to
 	linkPath    string            // Link resolved to the target's tree path after flattening
+	Copy        *Ref              `json:"copy,omitempty"` // single-target: materialize another $dir's sources as a real directory
+	copyPath    string            // Copy resolved to the target's tree path after flattening
 	Description string            `json:"description,omitempty"`
 	Archived    bool              `json:"archived,omitempty"`
 	Tags        []string          `json:"tags,omitempty"`
 	Meta        map[string]string `json:"meta,omitempty"` // user-defined metadata, opaque to jig
 	OnlyWhen    *Condition        `json:"onlyWhen,omitempty"`
+}
+
+// targetPath returns the resolved tree path this entry aliases, whether as a
+// symlink (link) or a materialized copy (copy); empty for source entries.
+// Planning treats both alias kinds alike: the alias is active only when its
+// target is, and targets are applied before their aliases.
+func (f *File) targetPath() string {
+	if f.linkPath != "" {
+		return f.linkPath
+	}
+	return f.copyPath
+}
+
+func (d *Dir) targetPath() string {
+	if d.linkPath != "" {
+		return d.linkPath
+	}
+	return d.copyPath
 }
 
 type Group struct {

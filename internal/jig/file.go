@@ -16,6 +16,19 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 	if file.Link != nil {
 		return ensureLinkFile(out, root, model, state, filePath, allowMove)
 	}
+	// A copy entry materializes its target's sources as a real file, so the
+	// contents match the target's by construction without requiring the
+	// target to be installed.
+	srcs := file.Src
+	executable := file.Executable
+	if file.Copy != nil {
+		target, ok := model.entry(file.copyPath, EntryFile)
+		if !ok {
+			return fmt.Errorf("copy target is not defined: %s", describeRef(*file.Copy))
+		}
+		srcs = target.File.Src
+		executable = target.File.Executable
+	}
 	stateFile, hasState := state.Files[entry.Identity]
 	expectedRel := entry.Path
 	expectedAbs := filepath.Join(root, expectedRel)
@@ -23,12 +36,17 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 	if hasState && stateFile.Path != expectedRel {
 		oldAbs := filepath.Join(root, stateFile.Path)
 		if pathExists(oldAbs) {
-			currentHash, err := fileSHA256(oldAbs)
-			if err != nil {
-				return err
-			}
-			if currentHash != stateFile.SHA256 {
-				return fmt.Errorf("locally modified")
+			// A link-state entry has no content hash to compare: the jig-owned
+			// symlink moves as-is and the conversion to a real file happens at
+			// the new path.
+			if stateFile.Link == "" {
+				currentHash, err := fileSHA256(oldAbs)
+				if err != nil {
+					return err
+				}
+				if currentHash != stateFile.SHA256 {
+					return fmt.Errorf("locally modified")
+				}
 			}
 			if !allowMove {
 				return fmt.Errorf("already written at %s; run jig sync to move it", stateFile.Path)
@@ -50,7 +68,7 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 	// A per-source onlyWhen gates just this source's content in the
 	// concatenation.
 	var activeSrcs []string
-	for _, source := range file.Src {
+	for _, source := range srcs {
 		if source.OnlyWhen != nil && !conditionMatches(*source.OnlyWhen, activeRepos, installedRepos, model) {
 			continue
 		}
@@ -61,9 +79,18 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 	}
 
 	// A symlink at the path is not a file jig wrote (link files are handled
-	// above), and pathExists would miss a dangling or looping one.
+	// above), and pathExists would miss a dangling or looping one. The one
+	// exception is a jig-owned link being converted to a copy: the recorded
+	// symlink is replaced by the materialized file.
 	if isSymlink(expectedAbs) {
-		return fmt.Errorf("existing path is a symlink: %s", expectedRel)
+		if !hasState || stateFile.Link == "" {
+			return fmt.Errorf("existing path is a symlink: %s", expectedRel)
+		}
+		if err := os.Remove(expectedAbs); err != nil {
+			return err
+		}
+		delete(state.Files, entry.Identity)
+		stateFile, hasState = StateFile{}, false
 	}
 	exists := pathExists(expectedAbs)
 	currentHash := ""
@@ -139,7 +166,7 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 		// regenerating without the missing part would drop that source's
 		// content. The full rewrite happens once every source resolves.
 		if len(unavailable) > 0 {
-			if err := ensureFileMode(expectedAbs, fileInfo, file.Executable); err != nil {
+			if err := ensureFileMode(expectedAbs, fileInfo, executable); err != nil {
 				return err
 			}
 			fmt.Fprintf(out, "present-file: %s%s\n", filePath, note)
@@ -148,7 +175,7 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 		// The tracked content is unmodified; when the source blobs have not
 		// moved either, there is nothing to transfer.
 		if stateFile.Src == srcKey && stateFile.SrcBlob != "" && blobsKnown && strings.Join(blobs, "+") == stateFile.SrcBlob {
-			if err := ensureFileMode(expectedAbs, fileInfo, file.Executable); err != nil {
+			if err := ensureFileMode(expectedAbs, fileInfo, executable); err != nil {
 				return err
 			}
 			fmt.Fprintf(out, "present-file: %s\n", filePath)
@@ -170,7 +197,7 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 		if err != nil {
 			return err
 		}
-		if err := ensureFileMode(expectedAbs, info, file.Executable); err != nil {
+		if err := ensureFileMode(expectedAbs, info, executable); err != nil {
 			return err
 		}
 		fmt.Fprintf(out, "present-file: %s\n", filePath)
@@ -180,13 +207,13 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 		return err
 	}
 	mode := os.FileMode(0o644)
-	if file.Executable {
+	if executable {
 		mode = 0o755
 	}
 	if err := os.WriteFile(expectedAbs, content, mode); err != nil {
 		return err
 	}
-	if file.Executable {
+	if executable {
 		_ = os.Chmod(expectedAbs, 0o755)
 	}
 	if exists {
@@ -294,23 +321,39 @@ func ensureLinkFile(out io.Writer, root string, model *Model, state *State, file
 		if err != nil {
 			return err
 		}
-		if info.Mode()&os.ModeSymlink == 0 {
+		switch {
+		case info.Mode()&os.ModeSymlink != 0:
+			currentTarget, err := os.Readlink(expectedAbs)
+			if err != nil {
+				return err
+			}
+			if currentTarget == expectedTarget {
+				state.Files[entry.Identity] = StateFile{Path: expectedRel, Link: file.linkPath}
+				fmt.Fprintf(out, "present-file: %s\n", filePath)
+				return nil
+			}
+			if !hasState || stateFile.Link == "" {
+				return fmt.Errorf("existing symlink has different target")
+			}
+			if err := os.Remove(expectedAbs); err != nil {
+				return err
+			}
+		case hasState && stateFile.Link == "" && stateFile.SHA256 != "" && !info.IsDir():
+			// Converting a copy (or src) entry to a link: a jig-written,
+			// untouched file is replaced by the symlink; a modified one is
+			// kept and reported.
+			currentHash, err := fileSHA256(expectedAbs)
+			if err != nil {
+				return err
+			}
+			if currentHash != stateFile.SHA256 {
+				return fmt.Errorf("locally modified; refusing to replace with a symlink: %s", expectedRel)
+			}
+			if err := os.Remove(expectedAbs); err != nil {
+				return err
+			}
+		default:
 			return fmt.Errorf("expected symlink path exists and is not a symlink: %s", expectedRel)
-		}
-		currentTarget, err := os.Readlink(expectedAbs)
-		if err != nil {
-			return err
-		}
-		if currentTarget == expectedTarget {
-			state.Files[entry.Identity] = StateFile{Path: expectedRel, Link: file.linkPath}
-			fmt.Fprintf(out, "present-file: %s\n", filePath)
-			return nil
-		}
-		if !hasState || stateFile.Link == "" {
-			return fmt.Errorf("existing symlink has different target")
-		}
-		if err := os.Remove(expectedAbs); err != nil {
-			return err
 		}
 	}
 

@@ -424,6 +424,155 @@ func TestInstalledFileIdentitySetRequiresTrackedExistingFile(t *testing.T) {
 	}
 }
 
+func TestFileCopyMaterializesTargetSources(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	remote := filepath.Join(root, "remote")
+	if err := os.MkdirAll(filepath.Join(remote, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(remote, "scripts", "dev.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, remote, "init", "-q")
+	gitIn(t, remote, "add", ".")
+	gitIn(t, remote, "commit", "-qm", "init")
+
+	entries := func(alias *File) Model {
+		return Model{Entries: map[string]Entry{
+			"scripts/dev.sh": {Path: "scripts/dev.sh", Identity: "dev-script", Kind: EntryFile,
+				File: &File{Src: SrcList{{Src: remote + "#scripts/dev.sh"}}, Executable: true}},
+			"bin/dev": {Path: "bin/dev", Identity: "dev-command", Kind: EntryFile, File: alias},
+		}}
+	}
+	copyModel := entries(&File{Copy: &Ref{Path: "scripts/dev.sh"}})
+	linkModel := entries(&File{Link: &Ref{Path: "scripts/dev.sh"}})
+	resolveLinkPaths(&copyModel)
+	resolveLinkPaths(&linkModel)
+	state := emptyState()
+	aliasAbs := filepath.Join(root, "bin", "dev")
+
+	// The copy is a real file carrying the target's executable bit, without
+	// the target installed.
+	var out bytes.Buffer
+	if err := ensureFile(&out, root, &copyModel, &state, "bin/dev", true, newFileFetcher(), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "wrote-file: bin/dev") {
+		t.Fatalf("output = %q", out.String())
+	}
+	info, err := os.Lstat(aliasAbs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("copy is a symlink")
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Fatalf("mode = %v, want 0755", info.Mode().Perm())
+	}
+
+	// copy -> link: the clean jig-written file is replaced by the symlink
+	// (the target must exist for a link).
+	if err := ensureFile(ioDiscard{}, root, &linkModel, &state, "scripts/dev.sh", true, newFileFetcher(), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := ensureFile(&out, root, &linkModel, &state, "bin/dev", true, newFileFetcher(), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "linked-file: bin/dev") {
+		t.Fatalf("link run = %q", out.String())
+	}
+	if !isSymlink(aliasAbs) {
+		t.Fatal("expected symlink after converting")
+	}
+
+	// link -> copy: the jig-owned symlink is replaced by a real file again.
+	out.Reset()
+	if err := ensureFile(&out, root, &copyModel, &state, "bin/dev", true, newFileFetcher(), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "wrote-file: bin/dev") {
+		t.Fatalf("copy run = %q", out.String())
+	}
+	if isSymlink(aliasAbs) {
+		t.Fatal("still a symlink after converting back")
+	}
+}
+
+func TestFileCopyValidation(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 2,
+  "tree": {
+    "scripts/dev.sh": { "$file": { "id": "dev-script", "src": "git:git@example.com:config.git#scripts/dev.sh" } },
+    "bin/dev": { "$file": { "id": "dev-command", "link": {"path": "scripts/dev.sh"} } },
+    "bin/dev2": { "$file": { "id": "dev2", "copy": {"path": "bin/dev"} } },
+    "bin/dev3": { "$file": { "id": "dev3", "copy": {"path": "scripts/dev.sh"}, "executable": true } }
+  }
+}`)
+	result := validateDefinition(def)
+	joined := strings.Join(result.Errors, "\n")
+	for _, want := range []string{
+		"copy target bin/dev must define src",
+		"file bin/dev3 cannot use executable with copy",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("errors = %#v, missing %q", result.Errors, want)
+		}
+	}
+}
+
+func TestFileLinkToCopyConversionAcrossMove(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	remote := filepath.Join(root, "remote")
+	if err := os.MkdirAll(filepath.Join(remote, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(remote, "scripts", "dev.sh"), []byte("dev\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, remote, "init", "-q")
+	gitIn(t, remote, "add", ".")
+	gitIn(t, remote, "commit", "-qm", "init")
+
+	entries := func(aliasPath string, alias *File) Model {
+		return Model{Entries: map[string]Entry{
+			"scripts/dev.sh": {Path: "scripts/dev.sh", Identity: "dev-script", Kind: EntryFile,
+				File: &File{Src: SrcList{{Src: remote + "#scripts/dev.sh"}}}},
+			aliasPath: {Path: aliasPath, Identity: "dev-command", Kind: EntryFile, File: alias},
+		}}
+	}
+	linkModel := entries("bin/dev", &File{Link: &Ref{Path: "scripts/dev.sh"}})
+	// The schema then both moves the entry and converts it from link to copy.
+	copyModel := entries("tools/dev", &File{Copy: &Ref{Path: "scripts/dev.sh"}})
+	resolveLinkPaths(&linkModel)
+	resolveLinkPaths(&copyModel)
+	state := emptyState()
+
+	if err := ensureFile(ioDiscard{}, root, &linkModel, &state, "scripts/dev.sh", true, newFileFetcher(), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureFile(ioDiscard{}, root, &linkModel, &state, "bin/dev", true, newFileFetcher(), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := ensureFile(&out, root, &copyModel, &state, "tools/dev", true, newFileFetcher(), nil, nil); err != nil {
+		t.Fatalf("moved link -> copy: %v", err)
+	}
+	newAbs := filepath.Join(root, "tools", "dev")
+	if isSymlink(newAbs) {
+		t.Fatal("expected a real file at the new path")
+	}
+	if data, err := os.ReadFile(newAbs); err != nil || string(data) != "dev\n" {
+		t.Fatalf("copied content: %q, %v", data, err)
+	}
+	if pathEntryExists(filepath.Join(root, "bin", "dev")) {
+		t.Fatal("old symlink path still exists")
+	}
+}
+
 func TestEnsureFileSkipsUnavailableSources(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))

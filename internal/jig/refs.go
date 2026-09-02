@@ -65,8 +65,12 @@ func resolveLinkPaths(model *Model) {
 		switch {
 		case entry.Kind == EntryFile && entry.File.Link != nil:
 			entry.File.linkPath = linkTargetPath(model, *entry.File.Link, EntryFile)
+		case entry.Kind == EntryFile && entry.File.Copy != nil:
+			entry.File.copyPath = linkTargetPath(model, *entry.File.Copy, EntryFile)
 		case entry.Kind == EntryDir && entry.Dir.Link != nil:
 			entry.Dir.linkPath = linkTargetPath(model, *entry.Dir.Link, EntryDir)
+		case entry.Kind == EntryDir && entry.Dir.Copy != nil:
+			entry.Dir.copyPath = linkTargetPath(model, *entry.Dir.Copy, EntryDir)
 		}
 	}
 }
