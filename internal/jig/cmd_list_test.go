@@ -9,7 +9,7 @@ import (
 func TestListSupportsPathAndArchivedFlag(t *testing.T) {
 	root := t.TempDir()
 	writeTestWorkspace(t, root, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services": {
       "$group": {
@@ -85,7 +85,7 @@ func TestListSupportsPathAndArchivedFlag(t *testing.T) {
 func TestListTruncatesDescriptionsForTerminals(t *testing.T) {
 	root := t.TempDir()
 	writeTestWorkspace(t, root, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "svc/a": {
       "$repo": { "git": "git@example.com:a.git", "description": "This is a very long description that would wrap around the terminal and make the listing unreadable for everyone" }

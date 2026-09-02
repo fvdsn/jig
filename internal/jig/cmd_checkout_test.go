@@ -16,7 +16,7 @@ func TestCheckoutAcrossInstalledRepos(t *testing.T) {
 	testRemoteRepo(t, remoteA)
 	testRemoteRepo(t, remoteB)
 	writeTestWorkspace(t, root, fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/a": { "$repo": { "git": %q } },
     "services/b": { "$repo": { "git": %q } }
@@ -113,7 +113,7 @@ func TestCheckoutDefaultBranch(t *testing.T) {
 	// exists for.
 	gitIn(t, remoteB, "branch", "-m", "trunk")
 	writeTestWorkspace(t, root, fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/a": { "$repo": { "git": %q } },
     "services/b": { "$repo": { "git": %q } }

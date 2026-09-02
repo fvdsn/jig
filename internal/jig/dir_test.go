@@ -101,7 +101,7 @@ func TestEnsureDirLifecycle(t *testing.T) {
 
 func TestDirValidationAndWholeRepoSrc(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "tools/config": {
       "$dir": { "id": "config", "src": "git:git@example.com:config.git" }
@@ -520,7 +520,7 @@ func TestDirLinksCreateSymlinksToTargetDir(t *testing.T) {
 
 func TestDirLinkValidation(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "a": { "$dir": { "id": "a", "link": {"path": "b"} } },
     "b": { "$dir": { "id": "b", "link": {"path": "a"} } },
@@ -682,7 +682,7 @@ func TestDirCopyLinkTransitions(t *testing.T) {
 
 func TestDirCopyValidation(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "a": { "$dir": { "id": "a", "src": "git@example.com:x.git#s" } },
     "b": { "$dir": { "id": "b", "link": {"path": "a"} } },

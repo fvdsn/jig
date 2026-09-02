@@ -16,7 +16,7 @@ Initial schema:
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "tree": {
     "platform/auth": {
       "$repo": {
@@ -77,7 +77,7 @@ Required integer.
 
 Identifies the schema version used by the definition file.
 
-Current version: `2`. Version 2 introduced structured references (see References); version 1 schemas are refused with an error pointing at the reference format change.
+Current version: `3`. Version 3 added local sources and `optional` source entries; declaring it is required to use them, so older jigs refuse the schema with a clear upgrade-jig error. Version 2 (structured references) schemas remain valid; version 1 schemas are refused with an error pointing at the reference format change.
 
 ### `source`
 

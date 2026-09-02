@@ -81,7 +81,7 @@ The definition uses a top-level `tree`.
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "tree": {
     "platform/auth": {
       "$repo": {

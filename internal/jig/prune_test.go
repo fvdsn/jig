@@ -60,7 +60,7 @@ func TestSyncPruneDeletesStaleEntriesSafely(t *testing.T) {
 	testRemoteRepo(t, remoteStale)
 	testRemoteRepo(t, remoteDirty)
 	writeTestWorkspace(t, root, fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/keep": { "$repo": { "id": "keep", "git": %q } }
   }
@@ -141,7 +141,7 @@ func TestSyncPruneDeletesStaleEntriesSafely(t *testing.T) {
 
 	// A renamed id at the same path is readopted, never pruned.
 	writeTestWorkspace2 := fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/keep": { "$repo": { "id": "keep-renamed", "git": %q } }
   }

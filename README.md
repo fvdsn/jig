@@ -90,7 +90,7 @@ A JSON tree where paths are the directory layout. Repos, files, and dirs are lea
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "tree": {
     "platform": {
       "$group": { "description": "Shared platform services", "tags": ["backend"] },

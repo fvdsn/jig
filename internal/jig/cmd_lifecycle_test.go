@@ -11,7 +11,7 @@ import (
 
 func TestLifecycleCommandsInheritedFromGroups(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services": {
       "$group": { "lint": "make check", "test": "make test" },
@@ -50,7 +50,7 @@ func TestLifecycleRunsCommandsAcrossRepos(t *testing.T) {
 	remoteB := testBareRemote(t, root, "remote-b")
 	remoteC := testBareRemote(t, root, "remote-c")
 	writeTestWorkspace(t, root, fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/a": {
       "$repo": { "git": %q, "lint": "echo linted-a > lint-marker", "test": "echo boom >&2; exit 3" }
@@ -129,7 +129,7 @@ func TestSetupRunsInDependencyOrder(t *testing.T) {
 	// app depends on lib: lib's setup must run first even though app sorts
 	// first alphabetically.
 	writeTestWorkspace(t, root, fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": {
     "app": {
       "$repo": { "git": %q, "setup": "echo app >> ../order.log", "dependsOn": [{ "path": "lib" }] }

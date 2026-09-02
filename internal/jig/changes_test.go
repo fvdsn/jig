@@ -8,7 +8,7 @@ import (
 
 func TestDefinitionChangesTrackGroupsByIdentity(t *testing.T) {
 	oldModel, err := flattenDefinition(testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "platform": {
       "$group": { "id": "shared-group" }
@@ -19,7 +19,7 @@ func TestDefinitionChangesTrackGroupsByIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	newModel, err := flattenDefinition(testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services": {
       "$group": { "id": "shared-group" }

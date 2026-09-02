@@ -12,16 +12,16 @@ import (
 // stripping fields this jig does not know about on rewrite).
 func TestNewerVersionsAreRefused(t *testing.T) {
 	root := t.TempDir()
-	writeTestWorkspace(t, root, `{"version": 2, "tree": {}}`)
+	writeTestWorkspace(t, root, `{"version": 3, "tree": {}}`)
 
-	if err := os.WriteFile(filepath.Join(root, stateFile), []byte(`{"version": 2, "repos": {}, "files": {}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, stateFile), []byte(`{"version": 3, "repos": {}, "files": {}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := loadState(root); err == nil || !strings.Contains(err.Error(), "upgrade jig") {
 		t.Fatalf("state guard: %v", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(root, configFile), []byte(`{"version": 2, "schema": "jig.json"}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, configFile), []byte(`{"version": 3, "schema": "jig.json"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := loadConfig(root); err == nil || !strings.Contains(err.Error(), "upgrade jig") {
@@ -30,7 +30,7 @@ func TestNewerVersionsAreRefused(t *testing.T) {
 
 	// Schema guard goes through loadWorkspace.
 	root2 := t.TempDir()
-	writeTestWorkspace(t, root2, `{"version": 3, "tree": {}}`)
+	writeTestWorkspace(t, root2, `{"version": 4, "tree": {}}`)
 	oldWd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)

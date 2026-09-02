@@ -8,7 +8,7 @@ import (
 
 func TestScopeActivationFollowsNearbyRepos(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "platform/auth": {
       "$repo": { "git": "git@example.com:auth.git" }
@@ -80,7 +80,7 @@ func TestScopeActivationFollowsNearbyRepos(t *testing.T) {
 
 func TestTagConditionsActivateByEvidenceTags(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/api": {
       "$repo": { "git": "git@example.com:api.git", "tags": ["api", "go"] }
@@ -144,7 +144,7 @@ func TestTagConditionsActivateByEvidenceTags(t *testing.T) {
 
 func TestTagConditionValidation(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/api": {
       "$repo": { "git": "git@example.com:api.git", "tags": ["api"] }

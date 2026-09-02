@@ -16,7 +16,7 @@ func TestWorkspaceLifecycle(t *testing.T) {
 	checkout := w.newRemote("checkout", map[string]string{"README.md": "checkout\n"})
 	util := w.newRemote("util", map[string]string{"README.md": "util\n"})
 	w.newRemote("schema", map[string]string{"jig.json": fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": {
     "platform/auth": { "$repo": { "id": "auth", "git": "%s" } },
     "services/checkout": {
@@ -82,7 +82,7 @@ func TestSchemaEvolution(t *testing.T) {
 	svc := w.newRemote("svc", map[string]string{"README.md": "svc\n"})
 	legacy := w.newRemote("legacy", map[string]string{"README.md": "legacy\n"})
 	schemaV1 := fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/checkout": { "$repo": { "id": "checkout", "git": "%s" } },
     "tools/legacy": { "$repo": { "id": "legacy", "git": "%s" } }
@@ -99,7 +99,7 @@ func TestSchemaEvolution(t *testing.T) {
 	// Upstream: rename services/checkout to services/cart (same identity),
 	// drop tools/legacy entirely.
 	schemaV2 := fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/cart": { "$repo": { "id": "checkout", "git": "%s" } }
   }
@@ -131,7 +131,7 @@ func TestSyncUpdatesSchemaFirst(t *testing.T) {
 	svc := w.newRemote("svc", map[string]string{"README.md": "svc\n"})
 	extra := w.newRemote("extra", map[string]string{"README.md": "extra\n"})
 	schemaV1 := fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/checkout": { "$repo": { "id": "checkout", "git": "%s" } }
   }
@@ -142,7 +142,7 @@ func TestSyncUpdatesSchemaFirst(t *testing.T) {
 	ws := w.path("ws")
 
 	schemaV2 := fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/checkout": { "$repo": { "id": "checkout", "git": "%s" } },
     "services/extra": { "$repo": { "id": "extra", "git": "%s" } }
@@ -177,7 +177,7 @@ func TestFilesDirsAndLinks(t *testing.T) {
 	ezSkills := w.newRemote("ez-skills", map[string]string{"skills/A/SKILL.md": "A\n"})
 	moreSkills := w.newRemote("more-skills", map[string]string{"skills/B/SKILL.md": "B\n"})
 	schemaRemote := w.newRemote("schema", map[string]string{"jig.json": fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": {
     "app": { "$repo": { "id": "app", "git": "%s" } },
     "scripts/dev.sh": { "$file": { "id": "dev", "src": "%s#scripts/dev.sh" } },
@@ -240,7 +240,7 @@ func TestFetchStatusPullCheckout(t *testing.T) {
 	w := newWorld(t)
 	app := w.newRemote("app", map[string]string{"README.md": "v1\n"})
 	schemaRemote := w.newRemote("schema", map[string]string{"jig.json": fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": { "app": { "$repo": { "id": "app", "git": "%s" } } }
 }`, app)})
 
@@ -278,7 +278,7 @@ func TestTagsSelectAndGateSources(t *testing.T) {
 	baseSkills := w.newRemote("base-skills", map[string]string{"skills/base/SKILL.md": "base\n"})
 	webSkills := w.newRemote("web-skills", map[string]string{"skills/web/SKILL.md": "web\n"})
 	schemaRemote := w.newRemote("schema", map[string]string{"jig.json": fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/api": { "$repo": { "id": "api", "git": "%s", "tags": ["backend"] } },
     "services/web": { "$repo": { "id": "web", "git": "%s", "tags": ["frontend"] } },
@@ -331,7 +331,7 @@ func TestSafetyRefusals(t *testing.T) {
 	w := newWorld(t)
 	app := w.newRemote("app", map[string]string{"README.md": "app\n"})
 	schemaV1 := fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": { "svc/app": { "$repo": { "id": "app", "git": "%s" } } }
 }`, app)
 	schemaRemote := w.newRemote("schema", map[string]string{"jig.json": schemaV1})
@@ -360,7 +360,7 @@ func TestSafetyRefusals(t *testing.T) {
 	// changes travel with it untouched.
 	w.writeFiles(appDir, map[string]string{"WIP2.txt": "wip\n"})
 	schemaMoved := fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": { "svc/renamed": { "$repo": { "id": "app", "git": "%s" } } }
 }`, app)
 	w.commitRemote(schemaRemote, map[string]string{"jig.json": schemaMoved}, "rename")
@@ -370,7 +370,7 @@ func TestSafetyRefusals(t *testing.T) {
 	}
 
 	// An invalid upstream schema is rejected before touching the checkout.
-	w.commitRemote(schemaRemote, map[string]string{"jig.json": `{"version": 2}`}, "broken")
+	w.commitRemote(schemaRemote, map[string]string{"jig.json": `{"version": 3}`}, "broken")
 	out, err = w.jig(ws, "update")
 	if err == nil {
 		t.Fatalf("expected update to reject an invalid upstream schema:\n%s", out)
@@ -408,7 +408,7 @@ func TestConditionsScopeAndArchived(t *testing.T) {
 	config := w.newRemote("config", map[string]string{"api.md": "api-notes\n"})
 	schema := func(apiURL string) string {
 		return fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/api": { "$repo": { "id": "api", "git": "%s" } },
     "tools/debug": {
@@ -480,7 +480,7 @@ func TestSubdirScoping(t *testing.T) {
 	app1 := w.newRemote("app1", map[string]string{"README.md": "app1\n"})
 	app2 := w.newRemote("app2", map[string]string{"README.md": "app2\n"})
 	schemaRemote := w.newRemote("schema", map[string]string{"jig.json": fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": {
     "groupa/app1": { "$repo": { "id": "app1", "git": "%s" } },
     "groupb/app2": { "$repo": { "id": "app2", "git": "%s" } }
@@ -564,7 +564,7 @@ func TestInitRetryAfterFailure(t *testing.T) {
 	// Upstream fixes the schema; the retry replaces the leftover checkout,
 	// writes the config, then fails cloning the not-yet-existing remote.
 	schemaV1 := fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/checkout": { "$repo": { "id": "checkout", "git": "%s" } },
     "services/late": { "$repo": { "id": "late", "git": "%s" } }
@@ -606,7 +606,7 @@ func TestDiffShowsWorkspaceWideChanges(t *testing.T) {
 	svc := w.newRemote("svc", map[string]string{"README.md": "one\ntwo\n"})
 	other := w.newRemote("other", map[string]string{"README.md": "other\n"})
 	schemaRemote := w.newRemote("schema", map[string]string{"jig.json": fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/checkout": { "$repo": { "id": "checkout", "git": "%s" } },
     "tools/other": { "$repo": { "id": "other", "git": "%s" } }

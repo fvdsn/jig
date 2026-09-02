@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.4.1 — 2026-09-02
+
+- Schema version 3 (breaking): the local-source and `optional`
+  additions bump the schema version. Version 2 schemas are refused
+  with "set version: 3 (no other changes needed)" — the bump is the
+  whole migration — and older jigs refuse version 3 schemas with
+  their clear upgrade-jig error instead of a confusing invalid-src
+  one.
+
 ## v2.4.0 — 2026-09-02
 
 - `$file` and `$dir` source lists accept local sources — `{"file":

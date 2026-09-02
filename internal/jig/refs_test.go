@@ -26,7 +26,7 @@ func assertErrors(t *testing.T, errors []string, wants ...string) {
 
 func TestRefValidationRequiresExactlyOneSelector(t *testing.T) {
 	errors := validateSchema(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "a": { "$repo": { "git": "git@example.com:a.git" } },
     "b": { "$repo": { "git": "git@example.com:b.git",
@@ -43,7 +43,7 @@ func TestRefValidationRequiresExactlyOneSelector(t *testing.T) {
 
 func TestRefValidationStarPlacement(t *testing.T) {
 	errors := validateSchema(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "a/b": { "$repo": { "git": "git@example.com:b.git" } },
     "c": { "$repo": { "git": "git@example.com:c.git",
@@ -60,7 +60,7 @@ func TestRefValidationStarPlacement(t *testing.T) {
 
 func TestRefValidationTargets(t *testing.T) {
 	errors := validateSchema(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "grp": { "$group": { "id": "the-group" } },
     "grp/a": { "$repo": { "git": "git@example.com:a.git" } },
@@ -94,7 +94,7 @@ func TestRefValidationTargets(t *testing.T) {
 
 func TestRefValidationLinks(t *testing.T) {
 	errors := validateSchema(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "a": { "$repo": { "git": "git@example.com:a.git", "tags": ["t"] } },
     "scripts/dev.sh": { "$file": { "id": "dev", "src": "git@example.com:c.git#dev.sh" } },
@@ -110,7 +110,7 @@ func TestRefValidationLinks(t *testing.T) {
 	)
 
 	good := validateSchema(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "scripts/dev.sh": { "$file": { "id": "dev", "src": "git@example.com:c.git#dev.sh" } },
     "bin/dev": { "$file": { "link": { "id": "dev" } } }
@@ -123,7 +123,7 @@ func TestRefValidationLinks(t *testing.T) {
 
 func TestIdentitiesAreGloballyUnique(t *testing.T) {
 	errors := validateSchema(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "a": { "$repo": { "id": "shared", "git": "git@example.com:a.git" } },
     "b.md": { "$file": { "id": "shared", "src": "git@example.com:c.git#b.md" } }
@@ -134,7 +134,7 @@ func TestIdentitiesAreGloballyUnique(t *testing.T) {
 
 func TestDependenciesResolveByIdTagsAndSubtree(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "root": { "$repo": { "git": "git@example.com:root.git",
       "dependsOn": [
@@ -167,7 +167,7 @@ func TestDependenciesResolveByIdTagsAndSubtree(t *testing.T) {
 
 func TestConditionsByIdAndExactPath(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "platform/auth": { "$repo": { "id": "auth", "git": "git@example.com:auth.git" } },
     "platform/billing": { "$repo": { "git": "git@example.com:billing.git" } },
@@ -207,7 +207,7 @@ func TestConditionsByIdAndExactPath(t *testing.T) {
 func TestSelectByIdIgnoresPositionAndArchived(t *testing.T) {
 	root := t.TempDir()
 	writeTestWorkspace(t, root, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/current": { "$repo": { "id": "current", "git": "git@example.com:current.git" } },
     "services/old": { "$repo": { "id": "old", "git": "git@example.com:old.git", "archived": true } }
@@ -256,7 +256,7 @@ func TestSelectByIdIgnoresPositionAndArchived(t *testing.T) {
 func TestQueryPathAcceptsSubtreeMarker(t *testing.T) {
 	root := t.TempDir()
 	writeTestWorkspace(t, root, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/api": { "$repo": { "git": "git@example.com:api.git" } },
     "platform/auth": { "$repo": { "git": "git@example.com:auth.git" } }

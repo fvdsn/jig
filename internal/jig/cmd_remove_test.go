@@ -11,7 +11,7 @@ import (
 func TestRemoveFileAndRecursiveRequirement(t *testing.T) {
 	root := t.TempDir()
 	writeTestWorkspace(t, root, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "scripts/dev.sh": {
       "$file": { "id": "dev-script", "src": "git:git@example.com:config.git#dev.sh" }

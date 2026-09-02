@@ -15,7 +15,9 @@ func validateDefinition(def *Definition) validationResult {
 	var result validationResult
 	if def.Version == 1 {
 		result.Errors = append(result.Errors, "schema version 1 predates structured references; update refs (see specs: References) and set version: 2")
-	} else if def.Version != 2 {
+	} else if def.Version == 2 {
+		result.Errors = append(result.Errors, "schema version 2 predates local sources; set version: 3 (no other changes needed)")
+	} else if def.Version != 3 {
 		result.Errors = append(result.Errors, "unsupported or missing version")
 	}
 	if def.Tree == nil {

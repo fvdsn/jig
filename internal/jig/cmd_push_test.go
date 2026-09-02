@@ -25,7 +25,7 @@ func TestPushAcrossInstalledRepos(t *testing.T) {
 	remoteA := testBareRemote(t, root, "remote-a")
 	remoteB := testBareRemote(t, root, "remote-b")
 	writeTestWorkspace(t, root, fmt.Sprintf(`{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/a": { "$repo": { "git": %q } },
     "services/b": { "$repo": { "git": %q } }

@@ -12,7 +12,7 @@ import (
 func TestStatusSkipsArchivedMissingEntriesUnlessIncluded(t *testing.T) {
 	root := t.TempDir()
 	writeTestWorkspace(t, root, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/current": {
       "$repo": { "git": "git@example.com:current.git" }

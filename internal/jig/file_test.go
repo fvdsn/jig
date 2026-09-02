@@ -12,7 +12,7 @@ import (
 
 func TestFileLinkValidationAndOrdering(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "scripts/dev.sh": {
       "$file": {
@@ -348,7 +348,7 @@ func TestFileWithoutActiveSourcesIsNotGenerated(t *testing.T) {
 
 func TestFileSrcListValidation(t *testing.T) {
 	good := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "billing/api": { "$repo": { "git": "git@example.com:billing.git" } },
     "AGENTS.md": {
@@ -367,7 +367,7 @@ func TestFileSrcListValidation(t *testing.T) {
 	}
 
 	bad := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "billing/api": { "$repo": { "git": "git@example.com:billing.git" } },
     "AGENTS.md": {
@@ -503,7 +503,7 @@ func TestFileCopyMaterializesTargetSources(t *testing.T) {
 
 func TestFileCopyValidation(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "scripts/dev.sh": { "$file": { "id": "dev-script", "src": "git:git@example.com:config.git#scripts/dev.sh" } },
     "bin/dev": { "$file": { "id": "dev-command", "link": {"path": "scripts/dev.sh"} } },
@@ -740,7 +740,7 @@ func TestEnsureFileLocalSources(t *testing.T) {
 
 func TestLocalSourceValidation(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "A.md": { "$file": { "id": "a", "src": [{ "src": "git@example.com:x.git#a.md", "file": "~/a.md" }] } },
     "B.md": { "$file": { "id": "b", "src": [{ "file": "relative/b.md" }] } },
@@ -765,3 +765,4 @@ func TestLocalSourceValidation(t *testing.T) {
 		}
 	}
 }
+

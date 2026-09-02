@@ -10,7 +10,7 @@ Filesystem trees are shown relative to the workspace root. The workspace root is
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "tree": {
     "platform/auth": {
       "$repo": {
@@ -124,7 +124,7 @@ workspace/
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "tree": {
     "platform/auth": {
       "$repo": {
@@ -191,7 +191,7 @@ The file `.agents/skills/platform` becomes active because `platform` is active, 
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "tree": {
     "platform/auth": {
       "$repo": {
@@ -238,7 +238,7 @@ The clone step uses the same behavior as `jig clone services/checkout`.
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "tree": {
     "platform/auth": {
       "$repo": {
@@ -287,7 +287,7 @@ Nested form:
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "tree": {
     "platform": {
       "auth": {
@@ -304,7 +304,7 @@ Slash shorthand form:
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "tree": {
     "platform/auth": {
       "$repo": {
@@ -386,7 +386,7 @@ skipped:
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "tree": {
     "../outside": {
       "$file": {

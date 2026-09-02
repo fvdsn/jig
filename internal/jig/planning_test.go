@@ -7,7 +7,7 @@ import (
 
 func TestResolveDependenciesRecursiveAndOptional(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/checkout": {
       "$repo": {
@@ -61,7 +61,7 @@ func TestResolveDependenciesRecursiveAndOptional(t *testing.T) {
 
 func TestResolvePlanSkipDepsKeepsOnlyRoots(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/checkout": {
       "$repo": {
@@ -106,7 +106,7 @@ func TestResolvePlanSkipDepsKeepsOnlyRoots(t *testing.T) {
 
 func TestResolveDependenciesDoesNotIncludeRootInCycle(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "service/a": {
       "$repo": {
@@ -139,7 +139,7 @@ func TestResolveDependenciesDoesNotIncludeRootInCycle(t *testing.T) {
 
 func TestResolvePlanForGroupDeduplicatesDependencies(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/checkout": {
       "$repo": {
@@ -192,7 +192,7 @@ func TestResolvePlanForGroupDeduplicatesDependencies(t *testing.T) {
 
 func TestCloneAllRootsIncludeAllRepositories(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "platform/auth": {
       "$repo": { "git": "git@example.com:auth.git" }
@@ -219,7 +219,7 @@ func TestCloneAllRootsIncludeAllRepositories(t *testing.T) {
 
 func TestResolvePlanSkipsArchivedReposUnlessIncluded(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/active": {
       "$repo": {
@@ -297,7 +297,7 @@ func TestResolvePlanSkipsArchivedReposUnlessIncluded(t *testing.T) {
 
 func TestArchivedFilesAreSkippedUnlessIncluded(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "scripts/current.sh": {
       "$file": { "src": "git:git@example.com:config.git#scripts/current.sh" }
@@ -351,7 +351,7 @@ func TestArchivedFilesAreSkippedUnlessIncluded(t *testing.T) {
 
 func TestResolvePlanIncludesInstalledOptionalDependencyForSync(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services/checkout": {
       "$repo": {
@@ -385,7 +385,7 @@ func TestResolvePlanIncludesInstalledOptionalDependencyForSync(t *testing.T) {
 
 func TestResolvePlanActivatesOnlyWhenFileAndRepo(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "platform/auth": {
       "$repo": {
@@ -430,7 +430,7 @@ func TestResolvePlanActivatesOnlyWhenFileAndRepo(t *testing.T) {
 
 func TestIncludeExplicitFilesAddsRequestedFilesAndLinkTargets(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "scripts/dev.sh": {
       "$file": {

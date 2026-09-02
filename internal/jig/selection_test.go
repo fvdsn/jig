@@ -35,7 +35,7 @@ func TestNormalizeQueryPathTrimsTrailingSlashes(t *testing.T) {
 
 func TestSelectNodesAppliesPathArchiveAndOrdering(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "services": {
       "$group": { "description": "Services" },
@@ -120,7 +120,7 @@ func TestSelectNodesRejectsUnsafePath(t *testing.T) {
 
 func TestSelectNodesIncludesInstalledArchivedNodes(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "legacy": {
       "$group": { "archived": true },
@@ -169,7 +169,7 @@ func TestSelectNodesIncludesInstalledArchivedNodes(t *testing.T) {
 
 func TestTrailingSlashPathMatchesGroup(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "platform/auth": {
       "$repo": { "git": "git@example.com:auth.git" }
@@ -192,7 +192,7 @@ func TestTrailingSlashPathMatchesGroup(t *testing.T) {
 
 func TestNoEntriesMatchError(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "sourcery/silver": {
       "$repo": { "git": "git@example.com:silver.git", "tags": ["team:sourcery", "product:codabox"] }
@@ -237,7 +237,7 @@ func TestNoEntriesMatchError(t *testing.T) {
 
 func TestUnknownPathSuggestion(t *testing.T) {
 	def := testDefinition(t, `{
-  "version": 2,
+  "version": 3,
   "tree": {
     "codabox/sourcery": {
       "$group": {},
