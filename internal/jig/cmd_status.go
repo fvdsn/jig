@@ -149,11 +149,18 @@ func repoStatusLine(ws *Workspace, entry Entry) statusLine {
 		glyph = glyphRemote
 		notes = append(notes, "remote-changed")
 	}
-	if isDirty(expectedAbs) {
+	if changed, untracked := dirtyCounts(expectedAbs); changed+untracked > 0 {
 		if glyph == glyphClean {
 			glyph = glyphDirty
 		}
-		notes = append(notes, "dirty")
+		var parts []string
+		if changed > 0 {
+			parts = append(parts, fmt.Sprintf("%d changed", changed))
+		}
+		if untracked > 0 {
+			parts = append(parts, fmt.Sprintf("%d untracked", untracked))
+		}
+		notes = append(notes, "dirty ("+strings.Join(parts, ", ")+")")
 	}
 	if ahead, behind, ok := aheadBehind(expectedAbs); ok && ahead+behind > 0 {
 		if glyph == glyphClean {

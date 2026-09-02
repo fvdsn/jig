@@ -699,7 +699,16 @@ jig status services
 jig status --archived
 ```
 
-Status reports installed entries only; repos never installed are counted in the summary (pass `--all` to list them). Each line shows a glyph, path, branch, and notes. Repositories with an upstream report ahead/behind commit counts (computed locally; run `jig fetch` first for fresh counts). `jig fetch && jig status` gives an overview of what changed across the workspace.
+Status reports installed entries only; repos never installed are counted in the summary (pass `--all` to list them). Each line shows a glyph, path, branch, and notes; dirty repos spell out their counts, e.g. `dirty (14 changed, 3 untracked)`. Repositories with an upstream report ahead/behind commit counts (computed locally; run `jig fetch` first for fresh counts). `jig fetch && jig status` gives an overview of what changed across the workspace.
+
+Show the uncommitted changes behind those dirty notes — one workspace-wide unified diff with workspace-relative paths (staged and unstaged against HEAD; untracked files are status's business):
+
+```sh
+jig diff                  # the whole patch, like git diff over the tree
+jig diff --stat           # one summary line per dirty repo: path, files, +/-
+jig diff services --stat
+jig diff codabox/core/codabox   # inspect one repo before keeping/discarding
+```
 
 Update the schema checkout from its Git remote (fast-forward only), without touching the workspace:
 

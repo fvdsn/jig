@@ -213,6 +213,26 @@ func isDirty(path string) bool {
 	return err == nil && strings.TrimSpace(out) != ""
 }
 
+// dirtyCounts reports the number of tracked changes and untracked files in
+// the repository's working tree.
+func dirtyCounts(path string) (changed int, untracked int) {
+	out, err := git(path, "status", "--porcelain")
+	if err != nil {
+		return 0, 0
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if len(line) < 2 {
+			continue
+		}
+		if strings.HasPrefix(line, "??") {
+			untracked++
+		} else {
+			changed++
+		}
+	}
+	return changed, untracked
+}
+
 func git(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	if dir != "" {

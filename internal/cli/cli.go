@@ -63,6 +63,8 @@ func Run(args []string, out io.Writer, _ io.Writer) error {
 		return cmdRemove(args[1:], out)
 	case "status":
 		return cmdStatus(args[1:], out)
+	case "diff":
+		return cmdDiff(args[1:], out)
 	case "update":
 		return cmdUpdate(args[1:], out)
 	case "cache":
@@ -266,6 +268,12 @@ var commandDocs = []commandDoc{
 	{"status",
 		[]string{"status [path] [--all] [--archived] [--tags a,b] [--id x]"},
 		[]string{"Show the state of installed entries; repos never installed are only counted unless --all is given."}},
+	{"diff",
+		[]string{"diff [path] [--stat] [--archived] [--tags a,b] [--id x]"},
+		[]string{
+			"Show uncommitted changes (staged and unstaged) in installed repositories as one workspace-wide unified diff with workspace-relative paths.",
+			"--stat prints a one-line summary per dirty repository instead of the patch.",
+		}},
 	{"update",
 		[]string{"update"},
 		[]string{
@@ -714,6 +722,26 @@ func cmdStatus(args []string, out io.Writer) error {
 		Id:              parsed.Values["--id"],
 		IncludeArchived: parsed.Flags["--archived"],
 		All:             parsed.Flags["--all"],
+		Tags:            parseTags(parsed.Values["--tags"]),
+	}, out)
+}
+
+func cmdDiff(args []string, out io.Writer) error {
+	parsed, err := parseArgs(args, map[string]flagKind{"--stat": boolFlag, "--archived": boolFlag, "--tags": valueFlag, "--id": valueFlag})
+	if err != nil {
+		return err
+	}
+	if len(parsed.Positionals) > 1 {
+		return usageError("diff")
+	}
+	if err := checkIdSelector("diff", parsed, len(parsed.Positionals)); err != nil {
+		return err
+	}
+	return jig.Diff(jig.DiffOptions{
+		Path:            optionalPath(parsed.Positionals),
+		Id:              parsed.Values["--id"],
+		Stat:            parsed.Flags["--stat"],
+		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),
 	}, out)
 }

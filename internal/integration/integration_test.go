@@ -596,3 +596,53 @@ func TestInitRetryAfterFailure(t *testing.T) {
 	}
 	w.assertContains(err.Error(), "already initialized from a different source")
 }
+
+// TestDiffShowsWorkspaceWideChanges covers jig diff: uncommitted changes
+// across repos render as one workspace-relative unified diff, --stat gives a
+// per-repo summary, untracked files stay out (status's business), and a
+// clean selection prints nothing.
+func TestDiffShowsWorkspaceWideChanges(t *testing.T) {
+	w := newWorld(t)
+	svc := w.newRemote("svc", map[string]string{"README.md": "one\ntwo\n"})
+	other := w.newRemote("other", map[string]string{"README.md": "other\n"})
+	schemaRemote := w.newRemote("schema", map[string]string{"jig.json": fmt.Sprintf(`{
+  "version": 2,
+  "tree": {
+    "services/checkout": { "$repo": { "id": "checkout", "git": "%s" } },
+    "tools/other": { "$repo": { "id": "other", "git": "%s" } }
+  }
+}`, svc, other)})
+
+	w.mustJig(w.root, "init", schemaRemote, "ws", "--clone")
+	ws := w.path("ws")
+
+	// A clean workspace diffs to nothing.
+	if out := w.mustJig(ws, "diff"); strings.TrimSpace(out) != "" {
+		t.Fatalf("clean diff = %q, want empty", out)
+	}
+
+	// Tracked changes (including staged) appear with workspace-relative
+	// paths; untracked files do not.
+	if err := os.WriteFile(w.path("ws", "services", "checkout", "README.md"), []byte("one\nchanged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(w.path("ws", "services", "checkout", "scratch.txt"), []byte("junk\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := w.mustJig(ws, "diff")
+	w.assertContains(out, "a/services/checkout/README.md", "b/services/checkout/README.md", "+changed")
+	w.assertNotContains(out, "scratch")
+
+	// --stat summarizes per dirty repo; clean repos are absent.
+	out = w.mustJig(ws, "diff", "--stat")
+	w.assertContains(out, "services/checkout", "1 file (+1 -1)")
+	w.assertNotContains(out, "tools/other")
+
+	// Status spells out the dirt counts.
+	w.assertContains(w.mustJig(ws, "status"), "dirty (1 changed, 1 untracked)")
+
+	// A path selection scopes the diff.
+	if out := w.mustJig(ws, "diff", "tools"); strings.TrimSpace(out) != "" {
+		t.Fatalf("scoped diff = %q, want empty", out)
+	}
+}

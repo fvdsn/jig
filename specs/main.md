@@ -1004,6 +1004,7 @@ jig push [-u] [path]
 jig checkout [-b] <branch> [path]
 jig status [path]
 jig status [path] --archived
+jig diff [path] [--stat]
 jig update
 jig sync [path]
 jig sync [path] --no-update
@@ -1346,6 +1347,14 @@ Uninstalls repositories and files: deletes the checkout or file and drops it fro
 Safety: removal is refused for repositories with uncommitted changes, with unpushed commits, or on a branch with no upstream, and for locally modified files. `-f` / `--force` overrides.
 
 Entries tracked in state whose directory is already gone can be removed too; this only drops the state entry.
+
+### `jig diff [path]`
+
+Shows the uncommitted changes of installed repositories matching the selection as one workspace-wide unified diff. Each repository is diffed against `HEAD` (staged and unstaged changes both appear); the `a/` and `b/` path prefixes carry the repository's workspace path, so the output reads as the diff of the whole workspace tree. Untracked files do not appear, exactly as with `git diff` — `jig status` reports them.
+
+`--stat` prints one summary line per dirty repository instead of the patch: path, changed file count, and added/deleted line totals. Clean repositories produce no output in either mode.
+
+`--tags` and `--id` scope the selection as everywhere; repositories that are defined but not installed are skipped.
 
 ### `jig status [path]`
 
