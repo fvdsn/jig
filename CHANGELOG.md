@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.1.1 — 2026-09-02
+
+- Selector typos now get did-you-mean errors. A `--tags` filter naming
+  a tag no schema entry carries says so directly, suggesting the
+  closest existing tag (or pointing at `jig tags`); a path where no
+  entry is defined suggests the closest entry path. Applies to
+  `clone`, `sync`, `deps`, `graph`, and `info`. The whole-workspace
+  scope is no longer rendered as an empty `""` path in no-match
+  errors.
+
 ## v2.1.0 — 2026-09-01
 
 - `jig sync` now updates the schema before applying it, making it the
