@@ -34,7 +34,7 @@ With Go:
 go install github.com/fvdsn/jig@latest
 ```
 
-Or grab a prebuilt binary for macOS or Linux from the [releases page](https://github.com/fvdsn/jig/releases).
+Or grab a prebuilt binary for macOS, Linux, or Windows from the [releases page](https://github.com/fvdsn/jig/releases).
 
 ## Quick start
 
@@ -45,6 +45,7 @@ jig list                        # browse the catalog
 jig clone services/checkout     # install a service + its dependencies
 jig setup                       # run each repo's bootstrap → a runnable workspace
 jig status                      # branches, dirty state, ahead/behind
+jig diff --stat                 # what changed, per dirty repo (jig diff for the patch)
 jig fetch && jig status         # what changed across the workspace?
 jig pull                        # fast-forward everything installed
 jig checkout -b fix-x           # branch across repos, edit away…
@@ -65,16 +66,17 @@ jig rm services/checkout        # uninstall
 | `deps <path>` | Show a repo's recursive dependencies (`--reverse` for its direct dependents) |
 | `graph [path]` | Print the dependency graph as a Mermaid flowchart |
 | `clone [path]` | Install repos/files matching a path, plus dependencies (`--no-deps` to skip them) |
-| `sync [path]` | Converge the workspace: moves, origins, file updates, restores (`--prune` deletes what left the schema) |
+| `sync [path]` | Update the schema, then converge the workspace: moves, origins, file updates, restores (`--no-update` skips the fetch, `--prune` deletes what left the schema) |
 | `setup` / `fmt` / `lint` / `test` `[path]` | Run each repo's own schema-declared command behind a standard verb; `setup` runs in dependency order |
 | `pull [path]` | `git pull --ff-only` across installed repos, in parallel |
 | `fetch [path]` | `git fetch` across installed repos, in parallel |
 | `push [-u] [path]` | `git push` (never forced) across installed repos, in parallel; `-u` sets missing upstreams |
 | `checkout [-b] <branch> [path]` | Switch installed repos to a branch (`-b` creates it); never discards local changes |
 | `checkout --default [path]` | Switch each installed repo to its own remote default branch (main, master, …) |
-| `status [path]` | One line per installed entry, plus a summary |
+| `status [path]` | One line per installed entry — branch, dirt counts, ahead/behind — plus a summary |
+| `diff [path]` | Uncommitted changes across installed repos as one workspace-wide diff, through your git pager and colors (`--stat` for one line per dirty repo) |
 | `rm <path>...` | Uninstall: delete the checkout and stop tracking it |
-| `update [--sync]` | Fast-forward the schema from its remote (then sync) |
+| `update` | Fast-forward the schema from its remote without touching checkouts — review changes, then apply with `sync` |
 | `validate [file]` | Validate the schema — also usable in the schema repo's CI |
 | `cache [clean]` | Inspect or prune the clone cache |
 
@@ -113,8 +115,8 @@ A JSON tree where paths are the directory layout. Repos, files, and dirs are lea
 ```
 
 - **`$repo`** — a Git checkout. `id` is a stable identity that survives renames: move the entry in the schema and `jig sync` moves the checkout on disk.
-- **`$file`** — a single generated file fetched from a source repo (or a symlink to another file via `link`). Updated on sync when the source changes; never overwritten if locally modified. `src` is `<clone-url>#<path>`, or simply a file URL pasted from the forge web UI (`https://github.com/o/r/blob/main/…`, GitLab/Bitbucket/Gitea equivalents; default branch only). `src` may also be a list of sources concatenated in order — e.g. one `AGENTS.md` assembled from a base section plus sections that follow the installed repositories; list entries can be `{ "src": ..., "onlyWhen": ... }` objects gating individual sections, and when every source is gated off no file is generated.
-- **`$dir`** — a whole subtree materialized from a source repo (`<clone-url>#<subtree>`, or a pasted `…/tree/main/…` web URL). `src` may also be a list of sources merged in order (last wins on conflicts — base layers first, overrides after) — e.g. one `.agents/skills` assembled from several skill repositories; list entries can be `{ "src": ..., "onlyWhen": ... }` objects to gate individual sources. A `$dir` can instead declare `link` to become a relative symlink to another `$dir` — one real skills directory, symlinked into every harness path. Jig tracks a manifest of what it wrote, so updates touch only unmodified files and user files inside are never touched.
+- **`$file`** — a single generated file fetched from a source repo (or a symlink to another file via `link`). Updated on sync when the source changes; never overwritten if locally modified. `src` is `<clone-url>#<path>`, or simply a file URL pasted from the forge web UI (`https://github.com/o/r/blob/main/…`, GitLab/Bitbucket/Gitea equivalents; default branch only). `src` may also be a list of sources concatenated in order — e.g. one `AGENTS.md` assembled from a base section plus sections that follow the installed repositories; List entries can be `{ "src": ..., "onlyWhen": ... }` objects gating individual sections, local sources (`{ "file": "~/.config/acme/AGENTS.md", "optional": true }`) folding per-user content in on machines that provide it, and a source that fails to resolve is reported while the rest still materialize.
+- **`$dir`** — a whole subtree materialized from a source repo (`<clone-url>#<subtree>`, or a pasted `…/tree/main/…` web URL). `src` may also be a list of sources merged in order (last wins on conflicts — base layers first, overrides after) — e.g. one `.agents/skills` assembled from several skill repositories; list entries can be `{ "src": ..., "onlyWhen": ... }` objects to gate individual sources. List entries can also be local directories (`{ "dir": "~/.config/acme/skills", "optional": true }`) for per-user additions. A `$dir` can instead declare `link` to become a relative symlink to another `$dir`, or `copy` to materialize a second real directory for consumers that do not follow symlinks — one real skills directory, aliased into every harness path. Jig tracks a manifest of what it wrote, so updates touch only unmodified files and user files inside are never touched.
 - **`$group`** — metadata on a directory: `description`, `tags`, `meta`, `dependsOn`, `archived`, `onlyWhen` are inherited by everything beneath it.
 - **References** — `dependsOn`, `onlyWhen`, and `link` all use one structured form with exactly one selector: `{"id": ...}` (one entry, stable across moves), `{"path": ...}` (one declared entry, exact; append `/*` for the subtree below it), or `{"tags": [...]}` (every repo carrying all the tags). Dangling references are validation errors, so renames fail loudly instead of silently matching less.
 - **`dependsOn`** — cloning a repo brings its dependency closure along (`optional: true` deps only with `--with-optional-deps`).
@@ -142,12 +144,12 @@ Files and dirs follow the repositories around them: a support file placed inside
         ]
       }
     },
-    ".claude/skills": { "$dir": { "id": "claude-skills", "link": {"path": ".agents/skills"} } }
+    ".claude/skills": { "$dir": { "id": "claude-skills", "copy": {"path": ".agents/skills"} } }
   }
 }
 ```
 
-`jig sync` merges the sources into `.agents/skills` (last wins on conflicts, `onlyWhen` gates per source) and symlinks it into harness-specific paths — every agent working in the workspace then knows how to use jig. Note the first source is a directory URL pasted straight from the GitHub UI; jig resolves it to the clone URL and subtree path.
+`jig sync` merges the sources into `.agents/skills` (last wins on conflicts, `onlyWhen` gates per source) and aliases it into harness-specific paths via `link` (symlink) or `copy` (real directory, for harnesses that do not follow symlinks) — every agent working in the workspace then knows how to use jig. Add `{ "dir": "~/.config/acme/skills", "optional": true }` as a final source and each user can extend the skill set machine-wide; a source that is temporarily unavailable (say a pending MR) is reported while the rest still materialize. Note the first source is a directory URL pasted straight from the GitHub UI; jig resolves it to the clone URL and subtree path.
 
 ## How it works
 
@@ -166,11 +168,11 @@ Everything jig manages lives under `.jig/` at the workspace root:
 
 ## Compatibility
 
-- **Schemas are stable.** A `version: 1` schema keeps working across jig releases; schema and CLI behavior follow semver from v1.0.0.
+- **Schemas are versioned.** The current schema version is 3 (local sources and `optional`); older versions are refused with a one-line migration message rather than misparsed.
 - **Versioned formats fail loudly.** When jig meets a schema, workspace config, or state file with a version it does not understand, it stops with an "upgrade jig" error instead of guessing (or silently dropping fields a newer jig wrote).
 - **Concurrent-safe.** Commands that mutate the workspace take a lock (`.jig/lock`); state files are written atomically.
 - **Exit codes tell the truth.** Commands exit non-zero when any entry could not be brought to its desired state, so scripts and agents never mistake a partial run for success.
-- **Platforms.** macOS and Linux are supported and tested in CI. Windows is not supported.
+- **Platforms.** macOS and Linux are supported and tested in CI; Windows binaries ship with each release.
 
 ## Validating the schema in CI
 
