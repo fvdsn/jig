@@ -80,6 +80,13 @@ func validateDefinition(def *Definition) validationResult {
 				result.Errors = append(result.Errors, fmt.Sprintf("dir %s must define exactly one of src, link, or copy", path))
 			}
 			for _, source := range entry.Dir.Src {
+				if err := validateLocalSource(source, EntryDir); err != nil {
+					result.Errors = append(result.Errors, fmt.Sprintf("dir %s invalid src: %s", path, err))
+					continue
+				}
+				if source.Dir != "" {
+					continue
+				}
 				if _, err := parseDirSrc(source.Src); err != nil {
 					result.Errors = append(result.Errors, fmt.Sprintf("dir %s invalid src: %s", path, err))
 				}
@@ -113,6 +120,13 @@ func validateFileEntry(result *validationResult, model Model, path string, file 
 		result.Errors = append(result.Errors, fmt.Sprintf("file %s must define exactly one of src, link, or copy", path))
 	}
 	for _, source := range file.Src {
+		if err := validateLocalSource(source, EntryFile); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("file %s invalid src: %s", path, err))
+			continue
+		}
+		if source.File != "" {
+			continue
+		}
 		if _, err := parseFileSrc(source.Src); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("file %s invalid src: %s", path, err))
 		}
@@ -360,4 +374,28 @@ func indexOf(items []string, value string) int {
 		}
 	}
 	return -1
+}
+
+// validateLocalSource checks a source entry's selector shape: exactly one of
+// the git src or the kind's local form, with local paths rooted at ~/ or /.
+func validateLocalSource(source SrcEntry, kind EntryKind) error {
+	local := source.File
+	localField, wrong, wrongField := "file", source.Dir, "dir"
+	if kind == EntryDir {
+		local = source.Dir
+		localField, wrong, wrongField = "dir", source.File, "file"
+	}
+	if wrong != "" {
+		return fmt.Errorf("%s is not valid here; use %s", wrongField, localField)
+	}
+	if source.Src != "" && local != "" {
+		return fmt.Errorf("source must define exactly one of src or %s", localField)
+	}
+	if source.Src == "" && local == "" {
+		return fmt.Errorf("source must define src or %s", localField)
+	}
+	if local != "" && !strings.HasPrefix(local, "~/") && !strings.HasPrefix(local, "/") {
+		return fmt.Errorf("local %s path must start with ~/ or /: %s", localField, local)
+	}
+	return nil
 }

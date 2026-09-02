@@ -4,9 +4,11 @@ import (
 	"archive/tar"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -77,6 +79,7 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 	type resolvedSource struct {
 		mirror string
 		tree   string
+		local  string // local directory source; mirror is empty
 	}
 	var sources []resolvedSource
 	var treeOIDs []string
@@ -87,12 +90,36 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 		if dirSource.OnlyWhen != nil && !conditionMatches(*dirSource.OnlyWhen, activeRepos, installedRepos, model) {
 			continue
 		}
+		// A local directory source: a content digest stands in for the git
+		// tree id. An absent optional source is gated off (the merge
+		// converges without it); an absent required one is unavailable.
+		if dirSource.Dir != "" {
+			localAbs, err := expandLocalSource(dirSource.Dir)
+			if err != nil {
+				return err
+			}
+			digest, err := localTreeDigest(localAbs)
+			if err != nil {
+				if dirSource.Optional {
+					continue
+				}
+				unavailable = append(unavailable, fmt.Sprintf("source %s unavailable: %s", dirSource.Dir, shortError(err)))
+				continue
+			}
+			sources = append(sources, resolvedSource{local: localAbs, tree: digest})
+			treeOIDs = append(treeOIDs, digest)
+			activeSrcs = append(activeSrcs, "dir:"+dirSource.Dir)
+			continue
+		}
 		parsed, err := parseDirSrc(dirSource.Src)
 		if err != nil {
 			return fmt.Errorf("source %s: %s", dirSource.Src, shortError(err))
 		}
 		mirror, err := fetcher.mirror(parsed.GitURL)
 		if err != nil {
+			if dirSource.Optional {
+				continue
+			}
 			unavailable = append(unavailable, fmt.Sprintf("source %s unavailable: %s", dirSource.Src, shortError(err)))
 			continue
 		}
@@ -106,15 +133,21 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 		}
 		treeOut, err := git(mirror, "rev-parse", treeRef)
 		if err != nil {
+			if dirSource.Optional {
+				continue
+			}
 			unavailable = append(unavailable, fmt.Sprintf("source %s unavailable: subtree not found: %s", dirSource.Src, shortError(err)))
 			continue
 		}
 		treeOID := strings.TrimSpace(treeOut)
 		if objType, err := git(mirror, "cat-file", "-t", treeOID); err != nil || strings.TrimSpace(objType) != "tree" {
+			if dirSource.Optional {
+				continue
+			}
 			unavailable = append(unavailable, fmt.Sprintf("source %s unavailable: %s is not a directory in the source repository", dirSource.Src, srcPath))
 			continue
 		}
-		sources = append(sources, resolvedSource{mirror, treeOID})
+		sources = append(sources, resolvedSource{mirror: mirror, tree: treeOID})
 		treeOIDs = append(treeOIDs, treeOID)
 		activeSrcs = append(activeSrcs, dirSource.Src)
 	}
@@ -150,7 +183,13 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 	// layers first and overrides after. Materializing in reverse order makes
 	// the first-claim rule award a conflict to the last listed source.
 	for i := len(sources) - 1; i >= 0; i-- {
-		if err := materializeTree(sources[i].mirror, sources[i].tree, expectedAbs, oldManifest, newManifest, &counts); err != nil {
+		var err error
+		if sources[i].local != "" {
+			err = materializeLocalTree(sources[i].local, expectedAbs, oldManifest, newManifest, &counts)
+		} else {
+			err = materializeTree(sources[i].mirror, sources[i].tree, expectedAbs, oldManifest, newManifest, &counts)
+		}
+		if err != nil {
 			return err
 		}
 	}
@@ -380,57 +419,13 @@ func materializeTree(mirror string, treeOID string, dirAbs string, oldManifest m
 			continue
 		}
 		rel := filepath.ToSlash(filepath.Clean(header.Name))
-		if err := validateSafePath(rel); err != nil {
-			return fmt.Errorf("unsafe path in source tree: %q", header.Name)
-		}
-		if _, claimed := manifest[rel]; claimed {
-			counts.shadowed++
-			continue
-		}
 		content, err := io.ReadAll(reader)
 		if err != nil {
 			return err
 		}
-		newHash := sha256Hex(content)
-		manifest[rel] = newHash
-
-		target := filepath.Join(dirAbs, filepath.FromSlash(rel))
-		mode := header.FileInfo().Mode().Perm()
-		if pathEntryExists(target) {
-			// A symlink here cannot be a file this $dir wrote (manifests
-			// track regular files only, and hashing through the link may
-			// fail on loops); keep it like a locally modified file.
-			if isSymlink(target) {
-				counts.kept++
-				continue
-			}
-			localHash, err := fileSHA256(target)
-			if err != nil {
-				return err
-			}
-			if localHash == newHash {
-				counts.unchanged++
-				continue
-			}
-			oldHash, tracked := oldManifest[rel]
-			if !tracked || localHash != oldHash {
-				counts.kept++
-				continue
-			}
-			if err := os.WriteFile(target, content, mode); err != nil {
-				return err
-			}
-			_ = os.Chmod(target, mode)
-			counts.updated++
-			continue
-		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		if err := mergeFileIntoDir(rel, content, header.FileInfo().Mode().Perm(), dirAbs, oldManifest, manifest, counts); err != nil {
 			return err
 		}
-		if err := os.WriteFile(target, content, mode); err != nil {
-			return err
-		}
-		counts.added++
 	}
 	if err := cmd.Wait(); err != nil {
 		return fmt.Errorf("git archive: %s", err)
@@ -450,4 +445,119 @@ func installedDirIdentitySet(root string, model *Model, state *State) map[string
 		}
 	}
 	return installed
+}
+
+// mergeFileIntoDir applies one source file to the merged directory under the
+// manifest rules: paths already claimed by a source materialized earlier are
+// shadowed, untouched files are overwritten, locally modified files kept.
+func mergeFileIntoDir(rel string, content []byte, mode os.FileMode, dirAbs string, oldManifest map[string]string, manifest map[string]string, counts *dirCounts) error {
+	if err := validateSafePath(rel); err != nil {
+		return fmt.Errorf("unsafe path in source tree: %q", rel)
+	}
+	if _, claimed := manifest[rel]; claimed {
+		counts.shadowed++
+		return nil
+	}
+	newHash := sha256Hex(content)
+	manifest[rel] = newHash
+
+	target := filepath.Join(dirAbs, filepath.FromSlash(rel))
+	if pathEntryExists(target) {
+		// A symlink here cannot be a file this $dir wrote (manifests track
+		// regular files only, and hashing through the link may fail on
+		// loops); keep it like a locally modified file.
+		if isSymlink(target) {
+			counts.kept++
+			return nil
+		}
+		localHash, err := fileSHA256(target)
+		if err != nil {
+			return err
+		}
+		if localHash == newHash {
+			counts.unchanged++
+			return nil
+		}
+		oldHash, tracked := oldManifest[rel]
+		if !tracked || localHash != oldHash {
+			counts.kept++
+			return nil
+		}
+		if err := os.WriteFile(target, content, mode); err != nil {
+			return err
+		}
+		_ = os.Chmod(target, mode)
+		counts.updated++
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(target, content, mode); err != nil {
+		return err
+	}
+	counts.added++
+	return nil
+}
+
+// materializeLocalTree merges a local directory's regular files into dirAbs
+// under the same manifest rules as a git tree source.
+func materializeLocalTree(localAbs string, dirAbs string, oldManifest map[string]string, manifest map[string]string, counts *dirCounts) error {
+	return filepath.WalkDir(localAbs, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(localAbs, path)
+		if err != nil {
+			return err
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		return mergeFileIntoDir(filepath.ToSlash(rel), content, info.Mode().Perm(), dirAbs, oldManifest, manifest, counts)
+	})
+}
+
+// localTreeDigest fingerprints a local directory source: a hash over every
+// regular file's path and content hash, the local analogue of a git tree id.
+func localTreeDigest(localAbs string) (string, error) {
+	info, err := os.Stat(localAbs)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("not a directory: %s", localAbs)
+	}
+	var lines []string
+	err = filepath.WalkDir(localAbs, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(localAbs, path)
+		if err != nil {
+			return err
+		}
+		hash, err := fileSHA256(path)
+		if err != nil {
+			return err
+		}
+		lines = append(lines, filepath.ToSlash(rel)+":"+hash)
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	sort.Strings(lines)
+	return sha256Hex([]byte(strings.Join(lines, "\n"))), nil
 }

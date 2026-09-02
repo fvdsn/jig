@@ -11,8 +11,22 @@ import (
 // gates just this source's contribution: its tree within a dir merge, or its
 // content within a file concatenation.
 type SrcEntry struct {
-	Src      string     `json:"src"`
+	Src      string     `json:"src,omitempty"`
+	File     string     `json:"file,omitempty"` // local file path (~/ or absolute); $file entries only
+	Dir      string     `json:"dir,omitempty"`  // local directory path (~/ or absolute); $dir entries only
+	Optional bool       `json:"optional,omitempty"`
 	OnlyWhen *Condition `json:"onlyWhen,omitempty"`
+}
+
+// describe renders a source for output: the git spec or the local path.
+func (s SrcEntry) describe() string {
+	if s.File != "" {
+		return s.File
+	}
+	if s.Dir != "" {
+		return s.Dir
+	}
+	return s.Src
 }
 
 // SrcList accepts a single source string, or a list whose elements are
@@ -38,7 +52,7 @@ func (s *SrcList) UnmarshalJSON(data []byte) error {
 		}
 		var source SrcEntry
 		if err := json.Unmarshal(raw, &source); err != nil {
-			return errors.New("src entries must be strings or {src, onlyWhen} objects")
+			return errors.New("src entries must be strings or {src|file|dir, optional, onlyWhen} objects")
 		}
 		list = append(list, source)
 	}

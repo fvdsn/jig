@@ -330,3 +330,16 @@ func fetchGitFileDirect(parsed fileSrc) ([]byte, error) {
 	}
 	return os.ReadFile(filepath.Join(repoDir, sourcePath))
 }
+
+// expandLocalSource resolves a schema-declared local source path (~/ or
+// absolute) to an absolute filesystem path.
+func expandLocalSource(path string) (string, error) {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, filepath.FromSlash(path[2:])), nil
+	}
+	return filepath.FromSlash(path), nil
+}

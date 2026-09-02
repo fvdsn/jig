@@ -703,3 +703,92 @@ func TestDirCopyValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestEnsureDirLocalSources(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+
+	gitSource := filepath.Join(root, "skills-src")
+	if err := os.MkdirAll(filepath.Join(gitSource, "skills", "A"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitSource, "skills", "A", "SKILL.md"), []byte("A\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, gitSource, "init", "-q")
+	gitIn(t, gitSource, "add", ".")
+	gitIn(t, gitSource, "commit", "-qm", "init")
+
+	state := emptyState()
+	model := Model{Entries: map[string]Entry{
+		".agents/skills": {Path: ".agents/skills", Identity: "skills", Kind: EntryDir,
+			Dir: &Dir{Src: SrcList{
+				{Src: gitSource + "#skills"},
+				{Dir: "~/.codabox/skills", Optional: true},
+			}}},
+	}}
+	resolveLinkPaths(&model)
+	ensure := func() string {
+		var out bytes.Buffer
+		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, newFileFetcher(), nil, nil); err != nil {
+			t.Fatalf("ensureDir: %v", err)
+		}
+		return out.String()
+	}
+
+	// An absent optional local dir is silently gated off.
+	if got := ensure(); !strings.Contains(got, "wrote-dir") || strings.Contains(got, "unavailable") {
+		t.Fatalf("first run = %q, want quiet wrote-dir", got)
+	}
+
+	// The local dir appearing merges in; last listed source wins conflicts.
+	localSkills := filepath.Join(home, ".codabox", "skills")
+	if err := os.MkdirAll(filepath.Join(localSkills, "B"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(localSkills, "B", "SKILL.md"), []byte("B\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(localSkills, "A", "SKILL.md"), []byte("A local\n"), 0o644); err != nil {
+		if err := os.MkdirAll(filepath.Join(localSkills, "A"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(localSkills, "A", "SKILL.md"), []byte("A local\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := ensure()
+	if !strings.Contains(got, "added") || !strings.Contains(got, "shadowed") {
+		t.Fatalf("appear run = %q, want additions with a shadowed conflict", got)
+	}
+	if data, _ := os.ReadFile(filepath.Join(root, ".agents", "skills", "A", "SKILL.md")); string(data) != "A local\n" {
+		t.Fatalf("A = %q, want the local override to win", data)
+	}
+	if !pathExists(filepath.Join(root, ".agents", "skills", "B", "SKILL.md")) {
+		t.Fatal("expected local skill merged")
+	}
+
+	// Local edits flow through on the next sync.
+	if err := os.WriteFile(filepath.Join(localSkills, "B", "SKILL.md"), []byte("B v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := ensure(); !strings.Contains(got, "1 updated") {
+		t.Fatalf("edit run = %q, want 1 updated", got)
+	}
+
+	// Removing the optional dir converges: its untouched files are deleted.
+	if err := os.RemoveAll(localSkills); err != nil {
+		t.Fatal(err)
+	}
+	if got := ensure(); !strings.Contains(got, "deleted") {
+		t.Fatalf("remove run = %q, want deletions", got)
+	}
+	if pathExists(filepath.Join(root, ".agents", "skills", "B")) {
+		t.Fatal("expected local skill removed after the source vanished")
+	}
+	if data, _ := os.ReadFile(filepath.Join(root, ".agents", "skills", "A", "SKILL.md")); string(data) != "A\n" {
+		t.Fatalf("A = %q, want git content restored", data)
+	}
+}

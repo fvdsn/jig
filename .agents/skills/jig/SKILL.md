@@ -342,6 +342,8 @@ Rules for links:
 - Link files are active only when their target file is active.
 - Jig skips existing non-symlink paths instead of overwriting them.
 
+A `$file` or `$dir` source list may include local sources — `{"file": "~/.codabox/MY-AGENTS.md", "optional": true}` for files, `{"dir": "~/.codabox/skills", "optional": true}` for directories (paths rooted at `~/` or `/`). Local content merges like any other source and local edits flow in on the next sync. With `optional`, a machine without the path simply composes without it — the schema can declare per-user extension points that most machines leave empty. Without `optional`, a missing source is reported and handled as unavailable.
+
 A `$file` can declare `copy` instead of `link` with the same reference shape: Jig then materializes the target's sources as a real file rather than a symlink (the executable bit follows the target; the target must define `src`). Use `copy` when a consumer of the path does not follow symlinks reliably.
 
 ## Directory Nodes

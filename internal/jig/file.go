@@ -67,12 +67,12 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 
 	// A per-source onlyWhen gates just this source's content in the
 	// concatenation.
-	var activeSrcs []string
+	var activeSrcs []SrcEntry
 	for _, source := range srcs {
 		if source.OnlyWhen != nil && !conditionMatches(*source.OnlyWhen, activeRepos, installedRepos, model) {
 			continue
 		}
-		activeSrcs = append(activeSrcs, source.Src)
+		activeSrcs = append(activeSrcs, source)
 	}
 	if len(activeSrcs) == 0 {
 		return ensureFileWithoutSources(out, root, state, entry, filePath, stateFile, hasState)
@@ -128,21 +128,49 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 	var blobs []string
 	blobsKnown := true
 	var unavailable []string
-	for _, src := range activeSrcs {
-		if _, err := parseFileSrc(src); err != nil {
-			return fmt.Errorf("source %s: %s", src, shortError(err))
-		}
-		part, blob, err := fetcher.content(src)
-		if err != nil {
-			unavailable = append(unavailable, fmt.Sprintf("source %s unavailable: %s", src, shortError(err)))
+	for _, source := range activeSrcs {
+		// A local file source: content hashes stand in for blob ids. An
+		// absent optional source is gated off (the file converges without
+		// it); an absent required one is unavailable.
+		if source.File != "" {
+			localPath, err := expandLocalSource(source.File)
+			if err != nil {
+				return err
+			}
+			part, err := os.ReadFile(localPath)
+			if err != nil {
+				if source.Optional {
+					continue
+				}
+				unavailable = append(unavailable, fmt.Sprintf("source %s unavailable: %s", source.File, shortError(err)))
+				continue
+			}
+			available = append(available, "file:"+source.File)
+			parts = append(parts, part)
+			blobs = append(blobs, sha256Hex(part))
 			continue
 		}
-		available = append(available, src)
+		if _, err := parseFileSrc(source.Src); err != nil {
+			return fmt.Errorf("source %s: %s", source.Src, shortError(err))
+		}
+		part, blob, err := fetcher.content(source.Src)
+		if err != nil {
+			if source.Optional {
+				continue
+			}
+			unavailable = append(unavailable, fmt.Sprintf("source %s unavailable: %s", source.Src, shortError(err)))
+			continue
+		}
+		available = append(available, source.Src)
 		parts = append(parts, part)
 		if blob == "" {
 			blobsKnown = false
 		}
 		blobs = append(blobs, blob)
+	}
+	// Every source optional and absent behaves like every source gated off.
+	if len(available) == 0 && len(unavailable) == 0 {
+		return ensureFileWithoutSources(out, root, state, entry, filePath, stateFile, hasState)
 	}
 	srcKey := strings.Join(available, " ")
 	note := ""

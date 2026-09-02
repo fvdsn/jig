@@ -654,3 +654,114 @@ func TestEnsureFileSkipsUnavailableSources(t *testing.T) {
 		t.Fatalf("content = %q, want full rewrite after recovery", content())
 	}
 }
+
+func TestEnsureFileLocalSources(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	source := filepath.Join(root, "config")
+	testFileSource(t, source, map[string]string{"agents/base.md": "base\n"})
+
+	state := emptyState()
+	model := Model{Entries: map[string]Entry{
+		"AGENTS.md": testFileEntry("AGENTS.md", "agents", File{Src: SrcList{
+			{Src: source + "#agents/base.md"},
+			{File: "~/.codabox/MY-AGENTS.md", Optional: true},
+		}}),
+	}}
+	resolveLinkPaths(&model)
+	ensure := func() string {
+		var out bytes.Buffer
+		if err := ensureFile(&out, root, &model, &state, "AGENTS.md", true, newFileFetcher(), nil, nil); err != nil {
+			t.Fatalf("ensureFile: %v", err)
+		}
+		return out.String()
+	}
+	content := func() string {
+		data, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+
+	// An absent optional local source is silently gated off.
+	if got := ensure(); !strings.Contains(got, "wrote-file:") || strings.Contains(got, "unavailable") {
+		t.Fatalf("first run = %q, want quiet wrote-file", got)
+	}
+	if content() != "base\n" {
+		t.Fatalf("content = %q, want git part only", content())
+	}
+
+	// The local file appearing flows into the concatenation.
+	if err := os.MkdirAll(filepath.Join(home, ".codabox"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	local := filepath.Join(home, ".codabox", "MY-AGENTS.md")
+	if err := os.WriteFile(local, []byte("mine\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := ensure(); !strings.Contains(got, "updated-file:") {
+		t.Fatalf("appear run = %q, want updated-file", got)
+	}
+	if content() != "base\nmine\n" {
+		t.Fatalf("content = %q, want local part appended", content())
+	}
+
+	// Local edits are picked up (content hashes stand in for blob ids).
+	if err := os.WriteFile(local, []byte("mine v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := ensure(); !strings.Contains(got, "updated-file:") {
+		t.Fatalf("edit run = %q, want updated-file", got)
+	}
+	if content() != "base\nmine v2\n" {
+		t.Fatalf("content = %q, want edited local part", content())
+	}
+
+	// Deleting the optional file converges the generated file without it.
+	if err := os.Remove(local); err != nil {
+		t.Fatal(err)
+	}
+	if got := ensure(); !strings.Contains(got, "updated-file:") {
+		t.Fatalf("remove run = %q, want updated-file", got)
+	}
+	if content() != "base\n" {
+		t.Fatalf("content = %q, want local part gone", content())
+	}
+
+	// A required local source that is missing is reported unavailable.
+	model.Entries["AGENTS.md"].File.Src[1].Optional = false
+	if got := ensure(); !strings.Contains(got, "unavailable") {
+		t.Fatalf("required run = %q, want unavailable note", got)
+	}
+}
+
+func TestLocalSourceValidation(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 2,
+  "tree": {
+    "A.md": { "$file": { "id": "a", "src": [{ "src": "git@example.com:x.git#a.md", "file": "~/a.md" }] } },
+    "B.md": { "$file": { "id": "b", "src": [{ "file": "relative/b.md" }] } },
+    "C.md": { "$file": { "id": "c", "src": [{ "dir": "~/c" }] } },
+    "d":    { "$dir":  { "id": "d", "src": [{ "file": "~/d.md" }] } },
+    "ok.md": { "$file": { "id": "ok", "src": [{ "file": "~/ok.md", "optional": true }] } }
+  }
+}`)
+	result := validateDefinition(def)
+	if len(result.Errors) != 4 {
+		t.Fatalf("errors = %#v, want 4", result.Errors)
+	}
+	for _, want := range []string{"exactly one of src or file", "must start with ~/ or /", "dir is not valid here", "file is not valid here"} {
+		found := false
+		for _, err := range result.Errors {
+			if strings.Contains(err, want) {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("errors = %#v, missing %q", result.Errors, want)
+		}
+	}
+}

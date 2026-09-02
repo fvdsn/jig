@@ -158,13 +158,16 @@ func Info(options InfoOptions, out io.Writer) error {
 // printSrcList renders a $file or $dir source list: a single unconditional
 // source inline, anything else as one line per source.
 func printSrcList(out io.Writer, sources SrcList) {
-	if len(sources) == 1 && sources[0].OnlyWhen == nil {
-		fmt.Fprintf(out, "src: %s\n", sources[0].Src)
+	if len(sources) == 1 && sources[0].OnlyWhen == nil && !sources[0].Optional {
+		fmt.Fprintf(out, "src: %s\n", sources[0].describe())
 		return
 	}
 	fmt.Fprintln(out, "src:")
 	for _, source := range sources {
-		line := "  " + source.Src
+		line := "  " + source.describe()
+		if source.Optional {
+			line += " (optional)"
+		}
 		if source.OnlyWhen != nil {
 			line += " (onlyWhen: " + describeRef(source.OnlyWhen.Ref) + ")"
 		}
