@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode/utf8"
 )
@@ -308,6 +309,9 @@ func staleStatusLines(ws *Workspace) []statusLine {
 }
 
 func printStatusLines(out io.Writer, lines []statusLine, notInstalled int) {
+	// Selected entries arrive in schema order and stale entries in map
+	// order; one listing sorted by path merges them deterministically.
+	sort.SliceStable(lines, func(i, j int) bool { return lines[i].path < lines[j].path })
 	maxPath, maxBranch := 0, 0
 	for _, line := range lines {
 		if w := utf8.RuneCountInString(line.path); w > maxPath {

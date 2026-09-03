@@ -9,6 +9,52 @@ import (
 	"testing"
 )
 
+// Stale entries are listed among the defined ones by path, in a stable
+// order, rather than appended in map order.
+func TestStatusMergesStaleEntriesByPath(t *testing.T) {
+	root := t.TempDir()
+	writeTestWorkspace(t, root, `{
+  "version": 3,
+  "tree": {
+    "b/repo": { "$repo": { "git": "git@example.com:repo.git" } }
+  }
+}`)
+	state := emptyState()
+	state.Repos["b/repo"] = StateRepo{Path: "b/repo", Git: "git@example.com:repo.git"}
+	for _, rel := range []string{"a/stale.txt", "c/stale.txt"} {
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("stale"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		state.Files[rel] = StateFile{Path: rel, SHA256: sha256Hex([]byte("stale"))}
+	}
+	if err := saveState(root, state); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+
+	var first string
+	for i := 0; i < 5; i++ {
+		var out bytes.Buffer
+		if err := Status(StatusOptions{}, &out); err != nil {
+			t.Fatal(err)
+		}
+		got := out.String()
+		a, b, c := strings.Index(got, "a/stale.txt"), strings.Index(got, "b/repo"), strings.Index(got, "c/stale.txt")
+		if a < 0 || b < 0 || c < 0 || !(a < b && b < c) {
+			t.Fatalf("expected a/stale.txt, b/repo, c/stale.txt in path order, got:\n%s", got)
+		}
+		if first == "" {
+			first = got
+		} else if got != first {
+			t.Fatalf("status output changed between runs:\n%s\n---\n%s", first, got)
+		}
+	}
+}
+
 func TestStatusSkipsArchivedMissingEntriesUnlessIncluded(t *testing.T) {
 	root := t.TempDir()
 	writeTestWorkspace(t, root, `{
