@@ -340,7 +340,7 @@ Rules for links:
 - `link` is a reference object (`{"id": ...}` or exact `{"path": ...}`) naming another `$file` in the same schema.
 - Jig creates relative symlinks.
 - Link files are active only when their target file is active.
-- Jig skips existing non-symlink paths instead of overwriting them.
+- Jig never overwrites a non-symlink path it did not write, or one modified since; an untouched jig-written file (a `src` or `copy` entry turned into a `link`) is replaced by the symlink.
 
 A `$file` or `$dir` source list may include local sources — `{"file": "~/.codabox/MY-AGENTS.md", "optional": true}` for files, `{"dir": "~/.codabox/skills", "optional": true}` for directories (paths rooted at `~/` or `/`). Local content merges like any other source and local edits flow in on the next sync. With `optional`, a machine without the path simply composes without it — the schema can declare per-user extension points that most machines leave empty. Without `optional`, a missing source is reported and handled as unavailable.
 

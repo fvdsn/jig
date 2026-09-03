@@ -986,7 +986,7 @@ Rules:
 
 ## Compatibility
 
-The schema, workspace config, and state files each carry a `version` field. The current schema version is 2 (structured references); workspace config and state are at version 1. When jig encounters a version newer than it understands, it must fail with an error telling the user to upgrade jig; it must never guess at newer formats or rewrite a newer state file (which would silently strip unknown fields). Future format changes bump the corresponding version.
+The schema, workspace config, and state files each carry a `version` field. The current schema version is 3 (local sources and optional source entries; version 2 introduced structured references); workspace config and state are at version 1. When jig encounters a version newer than it understands, it must fail with an error telling the user to upgrade jig; it must never guess at newer formats or rewrite a newer state file (which would silently strip unknown fields). Future format changes bump the corresponding version.
 
 Schema version 1 (string `link` values, prefix-matching dependency paths, combined path-and-tags conditions) is refused with an error pointing at the reference format change; there is no in-tool migration.
 
