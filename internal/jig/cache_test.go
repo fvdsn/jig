@@ -156,8 +156,4 @@ func TestFetcherReadsContentAndBlobViaCache(t *testing.T) {
 	if blob == "" {
 		t.Fatal("expected a blob id via the cache")
 	}
-	again, err := fetcher.srcBlob("git:" + remote + "#README.md")
-	if err != nil || again != blob {
-		t.Fatalf("srcBlob = %q, %v; want %q", again, err, blob)
-	}
 }

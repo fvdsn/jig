@@ -258,28 +258,6 @@ func (f *fileFetcher) prefetchMirrors(gitURLs []string) {
 	}
 }
 
-// srcBlob returns the git blob id of the source file at the repository's
-// HEAD, without transferring the content.
-func (f *fileFetcher) srcBlob(src string) (string, error) {
-	parsed, err := parseFileSrc(src)
-	if err != nil {
-		return "", err
-	}
-	dir, err := f.mirror(parsed.GitURL)
-	if err != nil {
-		return "", err
-	}
-	path, err := resolveSrcFilePath(dir, parsed)
-	if err != nil {
-		return "", err
-	}
-	out, err := git(dir, "rev-parse", "HEAD:"+path)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(out), nil
-}
-
 // content returns the source file's content and blob id. When the cache is
 // unavailable it falls back to a throwaway shallow clone; the blob id is
 // empty in that case.
