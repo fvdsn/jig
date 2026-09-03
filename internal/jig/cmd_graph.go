@@ -98,11 +98,12 @@ func Graph(options GraphOptions, out io.Writer) error {
 	for node := range nodes {
 		root.insert(node)
 	}
+	ids := newMermaidIDs()
 	fmt.Fprintln(out, "flowchart TD")
-	root.render(out, "  ", "")
+	root.render(out, ids, "  ", "")
 	for _, group := range sortedKeys(groupTargets) {
 		if !isSubgraph(group) {
-			fmt.Fprintf(out, "  %s[\"%s\"]\n", mermaidID(group), group)
+			fmt.Fprintf(out, "  %s[\"%s\"]\n", ids.id(group), group)
 		}
 	}
 	keys := make([]string, 0, len(edges))
@@ -115,7 +116,7 @@ func Graph(options GraphOptions, out io.Writer) error {
 		if edges[key].optional {
 			arrow = "-.->"
 		}
-		fmt.Fprintf(out, "  %s %s %s\n", mermaidID(edges[key].from), arrow, mermaidID(edges[key].to))
+		fmt.Fprintf(out, "  %s %s %s\n", ids.id(edges[key].from), arrow, ids.id(edges[key].to))
 	}
 	return nil
 }
@@ -145,7 +146,7 @@ func (d *graphDir) insert(repoPath string) {
 	node.repos = append(node.repos, repoPath)
 }
 
-func (d *graphDir) render(out io.Writer, indent string, prefix string) {
+func (d *graphDir) render(out io.Writer, ids *mermaidIDs, indent string, prefix string) {
 	names := make([]string, 0, len(d.dirs))
 	for name := range d.dirs {
 		names = append(names, name)
@@ -156,15 +157,42 @@ func (d *graphDir) render(out io.Writer, indent string, prefix string) {
 		if prefix != "" {
 			path = prefix + "/" + name
 		}
-		fmt.Fprintf(out, "%ssubgraph %s [\"%s\"]\n", indent, mermaidID(path), name)
-		d.dirs[name].render(out, indent+"  ", path)
+		fmt.Fprintf(out, "%ssubgraph %s [\"%s\"]\n", indent, ids.id(path), name)
+		d.dirs[name].render(out, ids, indent+"  ", path)
 		fmt.Fprintf(out, "%send\n", indent)
 	}
 	sort.Strings(d.repos)
 	for _, repoPath := range d.repos {
 		segments := strings.Split(repoPath, "/")
-		fmt.Fprintf(out, "%s%s[\"%s\"]\n", indent, mermaidID(repoPath), segments[len(segments)-1])
+		fmt.Fprintf(out, "%s%s[\"%s\"]\n", indent, ids.id(repoPath), segments[len(segments)-1])
 	}
+}
+
+// mermaidIDs hands out one identifier per drawn name. The readable form
+// folds every symbol to an underscore, so distinct names such as
+// "services/api" and "services-api" can collide; the first name keeps the
+// readable id and later ones get a numeric suffix.
+type mermaidIDs struct {
+	byName map[string]string
+	used   map[string]bool
+}
+
+func newMermaidIDs() *mermaidIDs {
+	return &mermaidIDs{byName: map[string]string{}, used: map[string]bool{}}
+}
+
+func (m *mermaidIDs) id(name string) string {
+	if id, ok := m.byName[name]; ok {
+		return id
+	}
+	base := mermaidID(name)
+	id := base
+	for n := 2; m.used[id]; n++ {
+		id = fmt.Sprintf("%s_%d", base, n)
+	}
+	m.byName[name] = id
+	m.used[id] = true
+	return id
 }
 
 // mermaidID turns a workspace path into a safe mermaid identifier. Flowchart

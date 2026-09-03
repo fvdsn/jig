@@ -105,4 +105,16 @@ func TestMermaidIDEscapesKeywordsAndSymbols(t *testing.T) {
 	if got, want := mermaidID("end"), "end_"; got != want {
 		t.Fatalf("mermaidID keyword = %q, want %q", got, want)
 	}
+	// Names that fold to the same id stay distinct within one graph, and a
+	// name always maps to the same id.
+	ids := newMermaidIDs()
+	if got, want := ids.id("services/api"), "services_api"; got != want {
+		t.Fatalf("first id = %q, want %q", got, want)
+	}
+	if got, want := ids.id("services-api"), "services_api_2"; got != want {
+		t.Fatalf("colliding id = %q, want %q", got, want)
+	}
+	if got, want := ids.id("services/api"), "services_api"; got != want {
+		t.Fatalf("repeated id = %q, want %q", got, want)
+	}
 }
