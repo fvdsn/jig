@@ -71,9 +71,13 @@ func updateSchema(ws *Workspace, out io.Writer) error {
 		return err
 	}
 
-	if mergeOut, err := git(src, "merge", "--ff-only", "@{upstream}"); err != nil {
-		return fmt.Errorf("could not fast-forward schema checkout: local history has diverged or local edits conflict; resolve with git in %s", sourceDir)
-	} else if strings.Contains(mergeOut, "Already up to date") {
+	// Whether the merge changed anything is read from HEAD rather than
+	// from git's (localized) output.
+	before, _ := git(src, "rev-parse", "HEAD")
+	if _, err := git(src, "merge", "--ff-only", "@{upstream}"); err != nil {
+		return fmt.Errorf("could not fast-forward schema checkout (%s): local history has diverged or local edits conflict; resolve with git in %s", shortError(err), sourceDir)
+	}
+	if after, _ := git(src, "rev-parse", "HEAD"); strings.TrimSpace(after) == strings.TrimSpace(before) {
 		fmt.Fprintln(out, "schema already up to date")
 	}
 
