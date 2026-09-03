@@ -73,7 +73,8 @@ func TestInfoOrdersMixedGroupEntriesByPath(t *testing.T) {
 	if err := Info(InfoOptions{Path: "services"}, &out); err != nil {
 		t.Fatal(err)
 	}
-	want := "group: services\n" +
+	want := "path: services\n" +
+		"type: group\n" +
 		"identity: services-group\n" +
 		"description: Services\n" +
 		"entries:\n" +

@@ -23,89 +23,11 @@ func Info(options InfoOptions, out io.Writer) error {
 		return err
 	}
 	path := selection.Path
-	if entry, ok := selection.exactRepo(); ok {
-		repo := entry.Repo
-		fmt.Fprintf(out, "path: %s\n", path)
-		fmt.Fprintln(out, "type: repo")
-		fmt.Fprintf(out, "identity: %s\n", entry.Identity)
-		fmt.Fprintf(out, "git: %s\n", repo.Git)
-		if repo.Web != "" {
-			fmt.Fprintf(out, "web: %s\n", repo.Web)
+	for _, kind := range []EntryKind{EntryRepo, EntryFile, EntryDir} {
+		if entry, ok := selection.exact(kind); ok {
+			printEntryInfo(out, entry)
+			return nil
 		}
-		if repo.Description != "" {
-			fmt.Fprintf(out, "description: %s\n", repo.Description)
-		}
-		printLifecycleCommands(out, repo.Setup, repo.Fmt, repo.Lint, repo.Test)
-		if repo.Archived {
-			fmt.Fprintln(out, "archived: true")
-		}
-		printTags(out, entry.Tags)
-		printMeta(out, entry.Meta)
-		if len(entry.Conditions) > 0 {
-			printConditions(out, "onlyWhen", entry.Conditions)
-		}
-		if len(repo.DependsOn) > 0 {
-			fmt.Fprintln(out, "dependsOn:")
-			for _, dep := range repo.DependsOn {
-				printDependency(out, dep)
-			}
-		}
-		return nil
-	}
-	if entry, ok := selection.exactFile(); ok {
-		file := entry.File
-		fmt.Fprintf(out, "path: %s\n", path)
-		fmt.Fprintln(out, "type: file")
-		fmt.Fprintf(out, "identity: %s\n", entry.Identity)
-		if len(file.Src) > 0 {
-			printSrcList(out, file.Src)
-		}
-		if file.Link != nil {
-			fmt.Fprintf(out, "link: %s\n", describeRef(*file.Link))
-		}
-		if file.Copy != nil {
-			fmt.Fprintf(out, "copy: %s\n", describeRef(*file.Copy))
-		}
-		if file.Description != "" {
-			fmt.Fprintf(out, "description: %s\n", file.Description)
-		}
-		if file.Archived {
-			fmt.Fprintln(out, "archived: true")
-		}
-		printTags(out, entry.Tags)
-		printMeta(out, entry.Meta)
-		fmt.Fprintf(out, "executable: %v\n", file.Executable)
-		if len(entry.Conditions) > 0 {
-			printConditions(out, "onlyWhen", entry.Conditions)
-		}
-		return nil
-	}
-
-	if entry, ok := selection.exact(EntryDir); ok {
-		dir := entry.Dir
-		fmt.Fprintf(out, "path: %s\n", path)
-		fmt.Fprintln(out, "type: dir")
-		fmt.Fprintf(out, "identity: %s\n", entry.Identity)
-		switch {
-		case dir.Link != nil:
-			fmt.Fprintf(out, "link: %s\n", describeRef(*dir.Link))
-		case dir.Copy != nil:
-			fmt.Fprintf(out, "copy: %s\n", describeRef(*dir.Copy))
-		default:
-			printSrcList(out, dir.Src)
-		}
-		if dir.Description != "" {
-			fmt.Fprintf(out, "description: %s\n", dir.Description)
-		}
-		if dir.Archived {
-			fmt.Fprintln(out, "archived: true")
-		}
-		printTags(out, entry.Tags)
-		printMeta(out, entry.Meta)
-		if len(entry.Conditions) > 0 {
-			printConditions(out, "onlyWhen", entry.Conditions)
-		}
-		return nil
 	}
 
 	group, hasGroup := selection.exactGroup()
@@ -115,30 +37,13 @@ func Info(options InfoOptions, out io.Writer) error {
 		}
 		return fmt.Errorf("no repository, file, or group matches %q", path)
 	}
-	fmt.Fprintf(out, "group: %s\n", path)
 	if hasGroup {
-		fmt.Fprintf(out, "identity: %s\n", group.Identity)
-		if group.Group.Description != "" {
-			fmt.Fprintf(out, "description: %s\n", group.Group.Description)
-		}
-		if group.Group.Web != "" {
-			fmt.Fprintf(out, "web: %s\n", group.Group.Web)
-		}
-		printLifecycleCommands(out, group.Group.Setup, group.Group.Fmt, group.Group.Lint, group.Group.Test)
-		if group.Group.Archived {
-			fmt.Fprintln(out, "archived: true")
-		}
-		printTags(out, group.Tags)
-		printMeta(out, group.Meta)
-		if len(group.Conditions) > 0 {
-			printConditions(out, "onlyWhen", group.Conditions)
-		}
-		if len(group.Group.DependsOn) > 0 {
-			fmt.Fprintln(out, "dependsOn:")
-			for _, dep := range group.Group.DependsOn {
-				printDependency(out, dep)
-			}
-		}
+		printEntryInfo(out, group)
+	} else {
+		// A directory with no $group of its own is still a selectable
+		// scope; it has nothing but its entries.
+		fmt.Fprintf(out, "path: %s\n", path)
+		fmt.Fprintln(out, "type: group")
 	}
 	var children []Entry
 	for _, entry := range selection.Entries {
@@ -153,6 +58,81 @@ func Info(options InfoOptions, out io.Writer) error {
 		}
 	}
 	return nil
+}
+
+// printEntryInfo renders one entry: the header every kind shares, the
+// kind's own fields, then the shared trailer (archived, tags, meta,
+// conditions, dependencies).
+func printEntryInfo(out io.Writer, entry Entry) {
+	fmt.Fprintf(out, "path: %s\n", entry.Path)
+	fmt.Fprintf(out, "type: %s\n", entry.Kind)
+	fmt.Fprintf(out, "identity: %s\n", entry.Identity)
+	var description, web string
+	var lifecycle []string
+	var dependsOn []Dependency
+	archived := entry.archived()
+	switch entry.Kind {
+	case EntryRepo:
+		repo := entry.Repo
+		fmt.Fprintf(out, "git: %s\n", repo.Git)
+		description, web = repo.Description, repo.Web
+		lifecycle = []string{repo.Setup, repo.Fmt, repo.Lint, repo.Test}
+		dependsOn = repo.DependsOn
+	case EntryFile:
+		file := entry.File
+		printSources(out, file.Src, file.Link, file.Copy)
+		description = file.Description
+	case EntryDir:
+		dir := entry.Dir
+		printSources(out, dir.Src, dir.Link, dir.Copy)
+		description = dir.Description
+	case EntryGroup:
+		group := entry.Group
+		description, web = group.Description, group.Web
+		lifecycle = []string{group.Setup, group.Fmt, group.Lint, group.Test}
+		dependsOn = group.DependsOn
+	}
+	if web != "" {
+		fmt.Fprintf(out, "web: %s\n", web)
+	}
+	if description != "" {
+		fmt.Fprintf(out, "description: %s\n", description)
+	}
+	if lifecycle != nil {
+		printLifecycleCommands(out, lifecycle[0], lifecycle[1], lifecycle[2], lifecycle[3])
+	}
+	if entry.Kind == EntryFile && entry.File.Executable {
+		// The bit is only settable on src files; link and copy files
+		// follow their target.
+		fmt.Fprintln(out, "executable: true")
+	}
+	if archived {
+		fmt.Fprintln(out, "archived: true")
+	}
+	printTags(out, entry.Tags)
+	printMeta(out, entry.Meta)
+	if len(entry.Conditions) > 0 {
+		printConditions(out, "onlyWhen", entry.Conditions)
+	}
+	if len(dependsOn) > 0 {
+		fmt.Fprintln(out, "dependsOn:")
+		for _, dep := range dependsOn {
+			printDependency(out, dep)
+		}
+	}
+}
+
+// printSources renders how a $file or $dir gets its content: its source
+// list, or the link or copy target.
+func printSources(out io.Writer, sources SrcList, link *Ref, copy *Ref) {
+	switch {
+	case link != nil:
+		fmt.Fprintf(out, "link: %s\n", describeRef(*link))
+	case copy != nil:
+		fmt.Fprintf(out, "copy: %s\n", describeRef(*copy))
+	default:
+		printSrcList(out, sources)
+	}
 }
 
 // printSrcList renders a $file or $dir source list: a single unconditional
