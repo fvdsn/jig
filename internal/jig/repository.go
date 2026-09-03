@@ -26,6 +26,7 @@ func ensureRepo(root string, entry Entry, stateRepo StateRepo, hasState bool, al
 	expectedRel := entry.Path
 	expectedAbs := filepath.Join(root, expectedRel)
 	var result ensureRepoResult
+	moved := false
 
 	if hasState && stateRepo.Path != expectedRel {
 		oldAbs := filepath.Join(root, stateRepo.Path)
@@ -45,8 +46,9 @@ func ensureRepo(root string, entry Entry, stateRepo StateRepo, hasState bool, al
 			}
 			result.Messages = append(result.Messages, message)
 			stateRepo.Path = expectedRel
-			moved := stateRepo
-			result.StateRepo = &moved
+			record := stateRepo
+			result.StateRepo = &record
+			moved = true
 		} else {
 			result.Remove = true
 			hasState = false
@@ -96,7 +98,10 @@ func ensureRepo(root string, entry Entry, stateRepo StateRepo, hasState bool, al
 		return result
 	}
 	result.StateRepo = &StateRepo{Path: expectedRel, Git: repo.Git}
-	result.Messages = append(result.Messages, "present: "+entry.Path)
+	if !moved {
+		// The move line already reported the checkout.
+		result.Messages = append(result.Messages, "present: "+entry.Path)
+	}
 	return result
 }
 
