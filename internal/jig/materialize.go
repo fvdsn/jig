@@ -35,7 +35,9 @@ func resolveAndApplyPlan(out io.Writer, ws *Workspace, roots []string, explicitF
 		plan = excludeArchivedFiles(&ws.Model, plan, installed.Files)
 		plan = excludeArchivedDirs(&ws.Model, plan, installed.Dirs)
 	}
-	return applyPlan(out, ws, plan, opts, installed.Repos)
+	err = applyPlan(out, ws, plan, opts, installed.Repos)
+	ws.invalidateInstalled()
+	return err
 }
 
 func includeExplicitDirs(model *Model, base plan, dirs []string) plan {

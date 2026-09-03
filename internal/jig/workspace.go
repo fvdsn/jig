@@ -35,7 +35,8 @@ type Workspace struct {
 	Model  Model
 	State  State
 
-	unlock func() // releases the workspace lock; set when loaded with state
+	unlock    func()          // releases the workspace lock; set when loaded with state
+	installed *InstalledNodes // memoized installedNodes scan; nil until asked
 }
 
 // Close releases the workspace lock. Commands that load the workspace with

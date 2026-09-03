@@ -237,12 +237,23 @@ func (model *Model) entryByIdentity(identity string) (Entry, bool) {
 	return Entry{}, false
 }
 
+// installedNodes reports which entries are on disk. The scan stats every
+// tracked path, so it is computed once per workspace load and invalidated
+// by whatever changes the disk (see invalidateInstalled).
 func (ws *Workspace) installedNodes() InstalledNodes {
-	return InstalledNodes{
-		Repos: installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State),
-		Files: installedFileIdentitySet(ws.Root, &ws.Model, &ws.State),
-		Dirs:  installedDirIdentitySet(ws.Root, &ws.Model, &ws.State),
+	if ws.installed == nil {
+		ws.installed = &InstalledNodes{
+			Repos: installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State),
+			Files: installedFileIdentitySet(ws.Root, &ws.Model, &ws.State),
+			Dirs:  installedDirIdentitySet(ws.Root, &ws.Model, &ws.State),
+		}
 	}
+	return *ws.installed
+}
+
+// invalidateInstalled drops the installed-entry scan after a mutation.
+func (ws *Workspace) invalidateInstalled() {
+	ws.installed = nil
 }
 
 func (entry Entry) archived() bool {

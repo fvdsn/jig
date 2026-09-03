@@ -94,5 +94,6 @@ func updateSchema(ws *Workspace, out io.Writer) error {
 	printDefinitionChanges(out, &ws.Model, &model)
 	ws.Def = *def
 	ws.Model = model
+	ws.invalidateInstalled()
 	return nil
 }
