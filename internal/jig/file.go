@@ -234,15 +234,13 @@ func ensureFile(out io.Writer, root string, model *Model, state *State, filePath
 	if err := os.MkdirAll(filepath.Dir(expectedAbs), 0o755); err != nil {
 		return err
 	}
-	mode := os.FileMode(0o644)
-	if executable {
-		mode = 0o755
-	}
-	if err := os.WriteFile(expectedAbs, content, mode); err != nil {
+	// WriteFile applies the mode only to a file it creates; an existing
+	// file keeps its permissions, so the chmod sets them either way.
+	if err := os.WriteFile(expectedAbs, content, fileMode(executable)); err != nil {
 		return err
 	}
-	if executable {
-		_ = os.Chmod(expectedAbs, 0o755)
+	if err := os.Chmod(expectedAbs, fileMode(executable)); err != nil {
+		return err
 	}
 	if exists {
 		fmt.Fprintf(out, "updated-file: %s%s\n", filePath, note)
@@ -292,10 +290,20 @@ func concatParts(parts [][]byte) []byte {
 	return content
 }
 
-// ensureFileMode fixes the executable bit on an otherwise up-to-date file.
+// fileMode is the permission jig gives a written file: the schema's
+// executable flag decides, in both directions.
+func fileMode(executable bool) os.FileMode {
+	if executable {
+		return 0o755
+	}
+	return 0o644
+}
+
+// ensureFileMode makes the mode of an otherwise up-to-date file follow the
+// schema, so flipping executable on or off takes effect without a rewrite.
 func ensureFileMode(path string, info os.FileInfo, executable bool) error {
-	if executable && info.Mode().Perm() != 0o755 {
-		return os.Chmod(path, 0o755)
+	if info.Mode().Perm() != fileMode(executable) {
+		return os.Chmod(path, fileMode(executable))
 	}
 	return nil
 }

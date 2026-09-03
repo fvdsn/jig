@@ -178,6 +178,54 @@ func testFileSource(t *testing.T, dir string, files map[string]string) {
 	gitIn(t, dir, "commit", "-qm", "init")
 }
 
+// The executable flag is applied in both directions: turning it off on a
+// written file clears the bit, and turning it on sets it, without a
+// content rewrite.
+func TestEnsureFileExecutableFollowsSchema(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	source := filepath.Join(root, "config")
+	testFileSource(t, source, map[string]string{"dev.sh": "#!/bin/sh\n"})
+
+	state := emptyState()
+	file := &File{Src: SrcList{{Src: source + "#dev.sh"}}, Executable: true}
+	model := Model{Entries: map[string]Entry{
+		"bin/dev": {Path: "bin/dev", Identity: "dev", Kind: EntryFile, File: file},
+	}}
+	resolveLinkPaths(&model)
+	ensure := func() string {
+		var out bytes.Buffer
+		if err := ensureFile(&out, root, &model, &state, "bin/dev", true, newFileFetcher(), nil, nil); err != nil {
+			t.Fatalf("ensureFile: %v", err)
+		}
+		return out.String()
+	}
+	mode := func() os.FileMode {
+		info, err := os.Stat(filepath.Join(root, "bin", "dev"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return info.Mode().Perm()
+	}
+
+	ensure()
+	if got := mode(); got != 0o755 {
+		t.Fatalf("mode after write = %o, want 755", got)
+	}
+	file.Executable = false
+	if got := ensure(); !strings.Contains(got, "present-file:") {
+		t.Fatalf("flip-off run = %q, want present-file", got)
+	}
+	if got := mode(); got != 0o644 {
+		t.Fatalf("mode after flipping executable off = %o, want 644", got)
+	}
+	file.Executable = true
+	ensure()
+	if got := mode(); got != 0o755 {
+		t.Fatalf("mode after flipping executable on = %o, want 755", got)
+	}
+}
+
 func TestEnsureFileConcatenatesMultipleSources(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
