@@ -151,6 +151,11 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 		treeOIDs = append(treeOIDs, treeOID)
 		activeSrcs = append(activeSrcs, dirSource.Src)
 	}
+	// Every source gated off (or optional and absent) leaves nothing to
+	// materialize: the entry converges to not existing.
+	if len(sources) == 0 && len(unavailable) == 0 {
+		return ensureDirWithoutSources(out, root, state, entry, dirPath, stateDir, hasState)
+	}
 	srcKey := strings.Join(activeSrcs, " ")
 	combinedTree := strings.Join(treeOIDs, "+")
 	note := ""
@@ -160,7 +165,7 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 
 	// With no source resolvable there is nothing to materialize: an
 	// already-written directory is left as is, a missing one is an error.
-	if len(sources) == 0 && len(unavailable) > 0 {
+	if len(sources) == 0 {
 		if hasState && pathExists(expectedAbs) {
 			fmt.Fprintf(out, "present-dir: %s%s\n", dirPath, note)
 			return nil
@@ -228,6 +233,32 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 
 	state.Dirs[entry.Identity] = StateDir{Path: expectedRel, Src: srcKey, Tree: combinedTree, Files: newManifest}
 	fmt.Fprintln(out, dirMessage(dirPath, hasState, counts)+note)
+	return nil
+}
+
+// ensureDirWithoutSources converges a dir entry whose sources are all gated
+// off: nothing is materialized, and the untouched files of a previously
+// written directory are removed. Locally modified files are kept but
+// abandoned as untracked, like $file deactivation and like the modified
+// files of a single deactivated source.
+func ensureDirWithoutSources(out io.Writer, root string, state *State, entry Entry, dirPath string, stateDir StateDir, hasState bool) error {
+	if !hasState {
+		fmt.Fprintf(out, "inactive-dir: %s (no active sources)\n", dirPath)
+		return nil
+	}
+	kept, err := deleteTrackedDir(root, entry.Path, stateDir, abandonModified)
+	if err != nil {
+		return err
+	}
+	delete(state.Dirs, entry.Identity)
+	switch {
+	case kept > 0:
+		fmt.Fprintf(out, "inactive-dir: %s (no active sources; %d modified files left untracked)\n", dirPath, kept)
+	case len(stateDir.Files) > 0:
+		fmt.Fprintf(out, "removed-dir: %s (no active sources)\n", dirPath)
+	default:
+		fmt.Fprintf(out, "inactive-dir: %s (no active sources)\n", dirPath)
+	}
 	return nil
 }
 

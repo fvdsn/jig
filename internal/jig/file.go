@@ -261,27 +261,20 @@ func ensureFileWithoutSources(out io.Writer, root string, state *State, entry En
 		fmt.Fprintf(out, "inactive-file: %s (no active sources)\n", filePath)
 		return nil
 	}
-	expectedAbs := filepath.Join(root, entry.Path)
-	if pathExists(expectedAbs) && !isSymlink(expectedAbs) {
-		currentHash, err := fileSHA256(expectedAbs)
-		if err != nil {
-			return err
-		}
-		if currentHash != stateFile.SHA256 {
-			delete(state.Files, entry.Identity)
-			fmt.Fprintf(out, "inactive-file: %s (no active sources; modified file left untracked)\n", filePath)
-			return nil
-		}
-		if err := os.Remove(expectedAbs); err != nil {
-			return err
-		}
-		pruneEmptyParents(root, filepath.Dir(entry.Path))
-		delete(state.Files, entry.Identity)
-		fmt.Fprintf(out, "removed-file: %s (no active sources)\n", filePath)
-		return nil
+	existed := pathEntryExists(filepath.Join(root, entry.Path))
+	kept, err := deleteTrackedFile(root, entry.Path, stateFile, abandonModified)
+	if err != nil {
+		return err
 	}
 	delete(state.Files, entry.Identity)
-	fmt.Fprintf(out, "inactive-file: %s (no active sources)\n", filePath)
+	switch {
+	case kept:
+		fmt.Fprintf(out, "inactive-file: %s (no active sources; modified file left untracked)\n", filePath)
+	case existed:
+		fmt.Fprintf(out, "removed-file: %s (no active sources)\n", filePath)
+	default:
+		fmt.Fprintf(out, "inactive-file: %s (no active sources)\n", filePath)
+	}
 	return nil
 }
 

@@ -453,6 +453,81 @@ func TestDirSourcesGatedByOnlyWhen(t *testing.T) {
 	}
 }
 
+// A $dir whose every source is gated off converges to not existing, the way
+// a $file does: nothing is written on the first run, a written untouched
+// directory is removed on deactivation, and modified files are abandoned as
+// untracked.
+func TestDirWithAllSourcesGatedOff(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	source := filepath.Join(root, "billing-skills")
+	testFileSource(t, source, map[string]string{"skills/billing.md": "billing\n", "skills/sub/notes.md": "notes\n"})
+
+	state := emptyState()
+	model := Model{Entries: map[string]Entry{
+		"billing/api": testRepoEntry("billing/api", "billing-api", Repo{Git: "git@example.com:billing.git"}),
+		".agents/skills": {Path: ".agents/skills", Identity: "skills", Kind: EntryDir,
+			Dir: &Dir{Src: SrcList{
+				{Src: source + "#skills", OnlyWhen: &Condition{Ref: Ref{Path: "billing/*"}}},
+			}}},
+	}}
+	resolveLinkPaths(&model)
+	ensure := func(activeRepos map[string]bool) string {
+		var out bytes.Buffer
+		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, newFileFetcher(), activeRepos, nil); err != nil {
+			t.Fatalf("ensureDir: %v", err)
+		}
+		return out.String()
+	}
+	dirAbs := filepath.Join(root, ".agents", "skills")
+
+	// With every source gated off, no directory appears and nothing is
+	// recorded.
+	if got := ensure(nil); !strings.Contains(got, "inactive-dir:") {
+		t.Fatalf("inactive run = %q, want inactive-dir", got)
+	}
+	if pathExists(dirAbs) {
+		t.Fatal("did not expect .agents/skills without active sources")
+	}
+	if _, tracked := state.Dirs["skills"]; tracked {
+		t.Fatalf("expected no state entry, got %#v", state.Dirs["skills"])
+	}
+
+	// Deactivating every source of a written untouched directory removes it.
+	ensure(map[string]bool{"billing/api": true})
+	if !pathExists(filepath.Join(dirAbs, "sub", "notes.md")) {
+		t.Fatal("expected the directory with billing active")
+	}
+	if got := ensure(nil); !strings.Contains(got, "removed-dir:") {
+		t.Fatalf("deactivation run = %q, want removed-dir", got)
+	}
+	if pathExists(dirAbs) {
+		t.Fatal("expected .agents/skills removed after deactivation")
+	}
+	if _, tracked := state.Dirs["skills"]; tracked {
+		t.Fatal("expected state entry dropped")
+	}
+
+	// A locally modified file is never deleted; it is left untracked while
+	// untouched files still go.
+	ensure(map[string]bool{"billing/api": true})
+	if err := os.WriteFile(filepath.Join(dirAbs, "billing.md"), []byte("edited\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := ensure(nil); !strings.Contains(got, "1 modified files left untracked") {
+		t.Fatalf("modified deactivation run = %q, want left untracked", got)
+	}
+	if data, _ := os.ReadFile(filepath.Join(dirAbs, "billing.md")); string(data) != "edited\n" {
+		t.Fatalf("content = %q, want local edit kept", data)
+	}
+	if pathExists(filepath.Join(dirAbs, "sub")) {
+		t.Fatal("expected the untouched file and its directory removed")
+	}
+	if _, tracked := state.Dirs["skills"]; tracked {
+		t.Fatal("expected state entry dropped for the abandoned directory")
+	}
+}
+
 func TestDirLinksCreateSymlinksToTargetDir(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
