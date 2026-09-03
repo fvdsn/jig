@@ -58,11 +58,9 @@ func lockMirror(dir string) (func(), error) {
 	}
 	deadline := time.Now().Add(2 * time.Minute)
 	for {
-		file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		release, err := createLockFile(lockPath)
 		if err == nil {
-			fmt.Fprintf(file, "%d\n", os.Getpid())
-			file.Close()
-			return func() { os.Remove(lockPath) }, nil
+			return release, nil
 		}
 		if !errors.Is(err, os.ErrExist) {
 			return nil, err
@@ -107,14 +105,8 @@ func mirrorLastUsed(dir string) time.Time {
 // tryLockMirror acquires the mirror lock without waiting; ok is false when
 // another process holds it.
 func tryLockMirror(dir string) (func(), bool) {
-	lockPath := dir + ".lock"
-	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
-	if err != nil {
-		return nil, false
-	}
-	fmt.Fprintf(file, "%d\n", os.Getpid())
-	file.Close()
-	return func() { os.Remove(lockPath) }, true
+	release, err := createLockFile(dir + ".lock")
+	return release, err == nil
 }
 
 // ensureMirror creates or freshens the bare mirror for gitURL and returns
