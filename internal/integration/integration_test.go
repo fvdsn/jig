@@ -645,4 +645,15 @@ func TestDiffShowsWorkspaceWideChanges(t *testing.T) {
 	if out := w.mustJig(ws, "diff", "tools"); strings.TrimSpace(out) != "" {
 		t.Fatalf("scoped diff = %q, want empty", out)
 	}
+
+	// A repository whose diff fails is reported as skipped and, like the
+	// other git verbs, fails the command.
+	if err := os.WriteFile(w.path("ws", "tools", "other", ".git", "HEAD"), []byte("garbage\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := w.jig(ws, "diff")
+	if err == nil {
+		t.Fatalf("expected diff to fail with a skipped repository:\n%s", out)
+	}
+	w.assertContains(out, "skipped:", "tools/other")
 }

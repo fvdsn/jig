@@ -99,6 +99,9 @@ func Diff(options DiffOptions, out io.Writer) error {
 	}
 	printDiffStats(out, stats)
 	printGroup(dst, "skipped", skipped)
+	if len(skipped) > 0 {
+		return fmt.Errorf("%d repositories were skipped", len(skipped))
+	}
 	return nil
 }
 
