@@ -239,9 +239,18 @@ func dirtyCounts(path string) (changed int, untracked int) {
 }
 
 func git(dir string, args ...string) (string, error) {
+	return gitEnv(dir, nil, args...)
+}
+
+// gitEnv runs git with extra environment variables on top of the process
+// environment.
+func gitEnv(dir string, env []string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	if dir != "" {
 		cmd.Dir = dir
+	}
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
 	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

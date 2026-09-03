@@ -1,13 +1,10 @@
 package jig
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -58,8 +55,8 @@ func Diff(options DiffOptions, out io.Writer) error {
 	}
 	results := make([]result, len(repos))
 	forEachParallel(len(repos), func(i int) {
-		abs := filepath.Join(ws.Root, repos[i])
-		if !isGitRepo(abs) {
+		abs, ok := installedPath(ws.Root, &ws.Model, &ws.State, repos[i])
+		if !ok {
 			return
 		}
 		if options.Stat {
@@ -111,23 +108,11 @@ func Diff(options DiffOptions, out io.Writer) error {
 // output pager-bound, enabling the user's color configuration on auto.
 func repoDiffPatch(abs string, repoPath string, pagerInUse bool) (string, error) {
 	args := []string{"diff", "HEAD", "--src-prefix=a/" + repoPath + "/", "--dst-prefix=b/" + repoPath + "/"}
-	if !pagerInUse {
-		return git(abs, args...)
+	var env []string
+	if pagerInUse {
+		env = []string{"GIT_PAGER_IN_USE=true"}
 	}
-	cmd := exec.Command("git", args...)
-	cmd.Dir = abs
-	cmd.Env = append(os.Environ(), "GIT_PAGER_IN_USE=true")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-		return stdout.String(), errors.New(msg)
-	}
-	return stdout.String(), nil
+	return gitEnv(abs, env, args...)
 }
 
 // startDiffPager launches the pager git diff would use, attached to the
