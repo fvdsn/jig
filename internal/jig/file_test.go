@@ -36,17 +36,12 @@ func TestFileLinkValidationAndOrdering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan, err := resolvePlan(&model, []string{}, planOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
 	active := map[string]bool{"scripts/dev.sh": true, "bin/dev": true}
 	ordered := orderArtifactsForApply(&model, EntryFile, active)
 	want := []string{"scripts/dev.sh", "bin/dev"}
 	if !reflect.DeepEqual(ordered, want) {
 		t.Fatalf("ordered files = %#v, want %#v", ordered, want)
 	}
-	_ = plan
 }
 
 func TestEnsureLinkFileCreatesRelativeSymlink(t *testing.T) {
@@ -162,22 +157,6 @@ func TestEnsureFilePicksUpSourceChanges(t *testing.T) {
 
 // testFileSource creates a git repository holding the given files, for use
 // as a $file source.
-func testFileSource(t *testing.T, dir string, files map[string]string) {
-	t.Helper()
-	for rel, content := range files {
-		path := filepath.Join(dir, rel)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	gitIn(t, dir, "init", "-q")
-	gitIn(t, dir, "add", ".")
-	gitIn(t, dir, "commit", "-qm", "init")
-}
-
 // The executable flag is applied in both directions: turning it off on a
 // written file clears the bit, and turning it on sets it, without a
 // content rewrite.
@@ -482,9 +461,7 @@ func TestFileCopyMaterializesTargetSources(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(remote, "scripts", "dev.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, remote, "init", "-q")
-	gitIn(t, remote, "add", ".")
-	gitIn(t, remote, "commit", "-qm", "init")
+	testCommitAll(t, remote)
 
 	entries := func(alias *File) Model {
 		return Model{Entries: map[string]Entry{
@@ -581,9 +558,7 @@ func TestFileLinkToCopyConversionAcrossMove(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(remote, "scripts", "dev.sh"), []byte("dev\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, remote, "init", "-q")
-	gitIn(t, remote, "add", ".")
-	gitIn(t, remote, "commit", "-qm", "init")
+	testCommitAll(t, remote)
 
 	entries := func(aliasPath string, alias *File) Model {
 		return Model{Entries: map[string]Entry{

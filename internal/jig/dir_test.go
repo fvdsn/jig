@@ -3,22 +3,12 @@ package jig
 import (
 	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
-
-func gitIn(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", append([]string{"-c", "user.email=t@t", "-c", "user.name=t"}, args...)...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
-}
 
 func TestEnsureDirLifecycle(t *testing.T) {
 	root := t.TempDir()
@@ -37,9 +27,7 @@ func TestEnsureDirLifecycle(t *testing.T) {
 	write("scripts/sub/util.sh", "util v1\n", 0o644)
 	write("scripts/gone.sh", "gone\n", 0o644)
 	write("top.txt", "top\n", 0o644)
-	gitIn(t, remote, "init", "-q")
-	gitIn(t, remote, "add", ".")
-	gitIn(t, remote, "commit", "-qm", "init")
+	testCommitAll(t, remote)
 
 	state := emptyState()
 	model := Model{Entries: map[string]Entry{
@@ -123,29 +111,10 @@ func TestEnsureDirMergesMultipleSources(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
 
-	makeSource := func(name string, files map[string]string) string {
-		dir := filepath.Join(root, name)
-		if err := os.MkdirAll(filepath.Join(dir, "skills"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		for rel, content := range files {
-			path := filepath.Join(dir, "skills", rel)
-			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-		gitIn(t, dir, "init", "-q")
-		gitIn(t, dir, "add", ".")
-		gitIn(t, dir, "commit", "-qm", "init")
-		return dir
-	}
-	ez := makeSource("ez-skills", map[string]string{
+	ez := testSkillsSource(t, root, "ez-skills", map[string]string{
 		"A/SKILL.md": "skill A\n", "B/SKILL.md": "skill B\n", "README.md": "ez readme\n",
 	})
-	awesome := makeSource("awesome-skills", map[string]string{
+	awesome := testSkillsSource(t, root, "awesome-skills", map[string]string{
 		"C/SKILL.md": "skill C\n", "D/SKILL.md": "skill D\n", "README.md": "awesome readme\n",
 	})
 
@@ -198,27 +167,8 @@ func TestEnsureDirSkipsUnavailableSources(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
 
-	makeSource := func(name string, files map[string]string) string {
-		dir := filepath.Join(root, name)
-		if err := os.MkdirAll(filepath.Join(dir, "skills"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		for rel, content := range files {
-			path := filepath.Join(dir, "skills", rel)
-			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-		gitIn(t, dir, "init", "-q")
-		gitIn(t, dir, "add", ".")
-		gitIn(t, dir, "commit", "-qm", "init")
-		return dir
-	}
-	base := makeSource("base-skills", map[string]string{"A/SKILL.md": "skill A\n"})
-	extra := makeSource("extra-skills", map[string]string{"B/SKILL.md": "skill B\n"})
+	base := testSkillsSource(t, root, "base-skills", map[string]string{"A/SKILL.md": "skill A\n"})
+	extra := testSkillsSource(t, root, "extra-skills", map[string]string{"B/SKILL.md": "skill B\n"})
 	restoreExtra := func(content string) {
 		if err := os.MkdirAll(filepath.Join(extra, "skills", "B"), 0o755); err != nil {
 			t.Fatal(err)
@@ -294,9 +244,7 @@ func TestEnsureDirErrorsWhenNoSourceResolves(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(good, "skills", "SKILL.md"), []byte("skill\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, good, "init", "-q")
-	gitIn(t, good, "add", ".")
-	gitIn(t, good, "commit", "-qm", "init")
+	testCommitAll(t, good)
 
 	badSrc := good + "#no-such-subtree"
 	state := emptyState()
@@ -332,9 +280,7 @@ func TestEnsureDirKeepsForeignSymlinks(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(source, "skills", "README.md"), []byte("readme\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, source, "init", "-q")
-	gitIn(t, source, "add", ".")
-	gitIn(t, source, "commit", "-qm", "init")
+	testCommitAll(t, source)
 
 	state := emptyState()
 	model := Model{Entries: map[string]Entry{
@@ -392,21 +338,8 @@ func TestDirSourcesGatedByOnlyWhen(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
 
-	makeSource := func(name, file, content string) string {
-		dir := filepath.Join(root, name)
-		if err := os.MkdirAll(filepath.Join(dir, "skills"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "skills", file), []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		gitIn(t, dir, "init", "-q")
-		gitIn(t, dir, "add", ".")
-		gitIn(t, dir, "commit", "-qm", "init")
-		return dir
-	}
-	base := makeSource("base-skills", "base.md", "base\n")
-	billing := makeSource("billing-skills", "billing.md", "billing\n")
+	base := testSkillsSource(t, root, "base-skills", map[string]string{"base.md": "base\n"})
+	billing := testSkillsSource(t, root, "billing-skills", map[string]string{"billing.md": "billing\n"})
 
 	state := emptyState()
 	model := Model{Entries: map[string]Entry{
@@ -575,9 +508,7 @@ func TestDirLinksCreateSymlinksToTargetDir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(remote, "skills", "A", "SKILL.md"), []byte("A\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, remote, "init", "-q")
-	gitIn(t, remote, "add", ".")
-	gitIn(t, remote, "commit", "-qm", "init")
+	testCommitAll(t, remote)
 
 	state := emptyState()
 	model := Model{Entries: map[string]Entry{
@@ -659,9 +590,7 @@ func TestDirCopyMaterializesTargetSources(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(remote, "skills", "A", "SKILL.md"), []byte("A\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, remote, "init", "-q")
-	gitIn(t, remote, "add", ".")
-	gitIn(t, remote, "commit", "-qm", "init")
+	testCommitAll(t, remote)
 
 	state := emptyState()
 	model := Model{Entries: map[string]Entry{
@@ -724,9 +653,7 @@ func TestDirCopyLinkTransitions(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(remote, "skills", "sub", "SKILL.md"), []byte("S\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, remote, "init", "-q")
-	gitIn(t, remote, "add", ".")
-	gitIn(t, remote, "commit", "-qm", "init")
+	testCommitAll(t, remote)
 
 	entries := func(alias *Dir) Model {
 		return Model{Entries: map[string]Entry{
@@ -829,9 +756,7 @@ func TestEnsureDirLocalSources(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(gitSource, "skills", "A", "SKILL.md"), []byte("A\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, gitSource, "init", "-q")
-	gitIn(t, gitSource, "add", ".")
-	gitIn(t, gitSource, "commit", "-qm", "init")
+	testCommitAll(t, gitSource)
 
 	state := emptyState()
 	model := Model{Entries: map[string]Entry{
