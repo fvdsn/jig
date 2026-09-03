@@ -110,25 +110,29 @@ func removeEntry(out io.Writer, ws *Workspace, entry Entry, force bool) error {
 	}
 }
 
+// removalPolicy maps --force onto the shared delete helpers.
+func removalPolicy(force bool) modifiedPolicy {
+	if force {
+		return deleteModified
+	}
+	return refuseModified
+}
+
+// forceHint tells the user how to override a refused removal.
+func forceHint(err error) error {
+	return fmt.Errorf("%s (use --force)", err)
+}
+
 func removeRepo(out io.Writer, ws *Workspace, entry Entry, force bool) error {
 	rel := entry.Path
 	if stateRepo, ok := ws.State.Repos[entry.Identity]; ok && isGitRepo(filepath.Join(ws.Root, stateRepo.Path)) {
 		rel = stateRepo.Path
 	}
-	abs := filepath.Join(ws.Root, rel)
-	if isGitRepo(abs) {
-		if !force {
-			if isDirty(abs) {
-				return errors.New("uncommitted changes (use --force)")
-			}
-			if reason := unpushedReason(abs); reason != "" {
-				return fmt.Errorf("%s (use --force)", reason)
-			}
+	if err := deleteTrackedRepo(ws.Root, rel, force); err != nil {
+		if !force && !isRemovalIOError(err) {
+			return forceHint(err)
 		}
-		if err := os.RemoveAll(abs); err != nil {
-			return err
-		}
-		pruneEmptyParents(ws.Root, filepath.Dir(rel))
+		return err
 	}
 	delete(ws.State.Repos, entry.Identity)
 	fmt.Fprintf(out, "removed: %s\n", entry.Path)
@@ -141,21 +145,11 @@ func removeFile(out io.Writer, ws *Workspace, entry Entry, force bool) error {
 	if tracked && pathEntryExists(filepath.Join(ws.Root, stateFile.Path)) {
 		rel = stateFile.Path
 	}
-	abs := filepath.Join(ws.Root, rel)
-	if pathEntryExists(abs) {
-		if !force && tracked && stateFile.SHA256 != "" {
-			currentHash, err := fileSHA256(abs)
-			if err != nil {
-				return err
-			}
-			if currentHash != stateFile.SHA256 {
-				return errors.New("locally modified (use --force)")
-			}
+	if _, err := deleteTrackedFile(ws.Root, rel, stateFile, removalPolicy(force)); err != nil {
+		if !force && !isRemovalIOError(err) {
+			return forceHint(err)
 		}
-		if err := os.Remove(abs); err != nil {
-			return err
-		}
-		pruneEmptyParents(ws.Root, filepath.Dir(rel))
+		return err
 	}
 	delete(ws.State.Files, entry.Identity)
 	fmt.Fprintf(out, "removed: %s\n", entry.Path)
@@ -168,60 +162,23 @@ func removeFile(out io.Writer, ws *Workspace, entry Entry, force bool) error {
 func removeDir(out io.Writer, ws *Workspace, entry Entry, force bool) error {
 	rel := entry.Path
 	stateDir, tracked := ws.State.Dirs[entry.Identity]
-	if tracked && pathExists(filepath.Join(ws.Root, stateDir.Path)) {
+	if tracked && pathEntryExists(filepath.Join(ws.Root, stateDir.Path)) {
 		rel = stateDir.Path
 	}
-	abs := filepath.Join(ws.Root, rel)
-	if tracked && stateDir.Link != "" {
-		if info, err := os.Lstat(abs); err == nil && info.Mode()&os.ModeSymlink != 0 {
-			if err := os.Remove(abs); err != nil {
-				return err
-			}
-			pruneEmptyParents(ws.Root, filepath.Dir(rel))
+	if _, err := deleteTrackedDir(ws.Root, rel, stateDir, removalPolicy(force)); err != nil {
+		if !force && !isRemovalIOError(err) {
+			return forceHint(err)
 		}
-		delete(ws.State.Dirs, entry.Identity)
-		fmt.Fprintf(out, "removed: %s\n", entry.Path)
-		return nil
-	}
-	if tracked && pathExists(abs) {
-		if !force {
-			modified := 0
-			for fileRel, recorded := range stateDir.Files {
-				hash, err := fileSHA256(filepath.Join(abs, filepath.FromSlash(fileRel)))
-				if err == nil && hash != recorded {
-					modified++
-				}
-			}
-			if modified > 0 {
-				return fmt.Errorf("%d locally modified files (use --force)", modified)
-			}
-		}
-		for fileRel := range stateDir.Files {
-			target := filepath.Join(abs, filepath.FromSlash(fileRel))
-			if pathEntryExists(target) {
-				if err := os.Remove(target); err != nil {
-					return err
-				}
-			}
-			pruneEmptyParents(ws.Root, filepath.Dir(filepath.Join(rel, filepath.FromSlash(fileRel))))
-		}
-		_ = os.Remove(abs)
-		pruneEmptyParents(ws.Root, filepath.Dir(rel))
+		return err
 	}
 	delete(ws.State.Dirs, entry.Identity)
 	fmt.Fprintf(out, "removed: %s\n", entry.Path)
 	return nil
 }
 
-// unpushedReason reports why deleting the checkout could lose commits: the
-// current branch is ahead of its upstream, or has no upstream at all.
-func unpushedReason(path string) string {
-	ahead, _, ok := aheadBehind(path)
-	if !ok {
-		return "current branch has no upstream"
-	}
-	if ahead > 0 {
-		return fmt.Sprintf("%d unpushed commits", ahead)
-	}
-	return ""
+// isRemovalIOError tells a filesystem failure apart from a safety refusal:
+// only the latter is answered by --force.
+func isRemovalIOError(err error) bool {
+	var pathErr *os.PathError
+	return errors.As(err, &pathErr)
 }

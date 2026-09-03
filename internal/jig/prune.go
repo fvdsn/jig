@@ -3,7 +3,6 @@ package jig
 import (
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 )
 
@@ -160,19 +159,10 @@ func pruneStale(out io.Writer, root string, model *Model, state *State) {
 			kept = append(kept, stateRepo.Path+": origin does not match the recorded URL")
 			continue
 		}
-		if isDirty(abs) {
-			kept = append(kept, stateRepo.Path+": uncommitted changes")
-			continue
-		}
-		if reason := unpushedReason(abs); reason != "" {
-			kept = append(kept, stateRepo.Path+": "+reason)
-			continue
-		}
-		if err := os.RemoveAll(abs); err != nil {
+		if err := deleteTrackedRepo(root, stateRepo.Path, false); err != nil {
 			kept = append(kept, stateRepo.Path+": "+err.Error())
 			continue
 		}
-		pruneEmptyParents(root, filepath.Dir(stateRepo.Path))
 		delete(state.Repos, identity)
 		pruned = append(pruned, stateRepo.Path)
 	}
@@ -193,19 +183,10 @@ func pruneStale(out io.Writer, root string, model *Model, state *State) {
 			pruned = append(pruned, fmt.Sprintf("%s (state only: %s is owned by a defined entry)", identity, stateFile.Path))
 			continue
 		}
-		// Symlinks are tracked link files; removing one loses only the link.
-		if stateFile.SHA256 != "" && !isSymlink(abs) {
-			hash, err := fileSHA256(abs)
-			if err != nil || hash != stateFile.SHA256 {
-				kept = append(kept, stateFile.Path+": locally modified")
-				continue
-			}
-		}
-		if err := os.Remove(abs); err != nil {
+		if _, err := deleteTrackedFile(root, stateFile.Path, stateFile, refuseModified); err != nil {
 			kept = append(kept, stateFile.Path+": "+err.Error())
 			continue
 		}
-		pruneEmptyParents(root, filepath.Dir(stateFile.Path))
 		delete(state.Files, identity)
 		pruned = append(pruned, stateFile.Path)
 	}
@@ -226,7 +207,7 @@ func pruneStale(out io.Writer, root string, model *Model, state *State) {
 			pruned = append(pruned, fmt.Sprintf("%s (state only: %s is owned by a defined entry)", identity, stateDir.Path))
 			continue
 		}
-		if err := pruneStaleDir(root, stateDir); err != nil {
+		if _, err := deleteTrackedDir(root, stateDir.Path, stateDir, refuseModified); err != nil {
 			kept = append(kept, stateDir.Path+": "+err.Error())
 			continue
 		}
@@ -236,48 +217,6 @@ func pruneStale(out io.Writer, root string, model *Model, state *State) {
 
 	printGroup(out, "pruned", pruned)
 	printGroup(out, "kept", kept)
-}
-
-// pruneStaleDir deletes a stale $dir like removeDir does: the symlink for a
-// link dir, otherwise the manifest-tracked files, keeping everything the
-// user added or modified.
-func pruneStaleDir(root string, stateDir StateDir) error {
-	abs := filepath.Join(root, stateDir.Path)
-	if stateDir.Link != "" {
-		if isSymlink(abs) {
-			if err := os.Remove(abs); err != nil {
-				return err
-			}
-			pruneEmptyParents(root, filepath.Dir(stateDir.Path))
-		}
-		return nil
-	}
-	modified := 0
-	for fileRel, recorded := range stateDir.Files {
-		target := filepath.Join(abs, filepath.FromSlash(fileRel))
-		if isSymlink(target) {
-			modified++
-			continue
-		}
-		if hash, err := fileSHA256(target); err == nil && hash != recorded {
-			modified++
-		}
-	}
-	if modified > 0 {
-		return fmt.Errorf("%d locally modified files", modified)
-	}
-	for fileRel := range stateDir.Files {
-		target := filepath.Join(abs, filepath.FromSlash(fileRel))
-		if pathEntryExists(target) {
-			if err := os.Remove(target); err != nil {
-				return err
-			}
-		}
-		pruneEmptyParents(root, filepath.Dir(filepath.Join(stateDir.Path, filepath.FromSlash(fileRel))))
-	}
-	_ = os.Remove(abs)
-	pruneEmptyParents(root, filepath.Dir(stateDir.Path))
-	return nil
 }
 
 // definedEntryPaths returns every workspace path currently owned by a
