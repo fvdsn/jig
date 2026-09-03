@@ -68,7 +68,13 @@ func lockMirror(dir string) (func(), error) {
 			return nil, err
 		}
 		if info, statErr := os.Stat(lockPath); statErr == nil && time.Since(info.ModTime()) > 10*time.Minute {
-			os.Remove(lockPath)
+			// Steal by renaming first: only one waiter's rename can succeed,
+			// so two waiters that both saw the stale lock cannot each remove
+			// it and have the second removal delete the first's fresh lock.
+			stolen := fmt.Sprintf("%s.stale-%d", lockPath, os.Getpid())
+			if os.Rename(lockPath, stolen) == nil {
+				_ = os.Remove(stolen)
+			}
 			continue
 		}
 		if time.Now().After(deadline) {
