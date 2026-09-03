@@ -90,6 +90,12 @@ func insertTreeMap(node *treeNode, nodes map[string]json.RawMessage, prefix stri
 				if prefix == "" {
 					return fmt.Errorf("reserved tree key %q cannot be used as a path segment", key)
 				}
+				// A nested node and a slash-shorthand key can land on the
+				// same path; letting the later one win would silently drop
+				// an entry.
+				if _, defined := node.markers[key]; defined {
+					return fmt.Errorf("tree path %s defines %s more than once", prefix, key)
+				}
 				node.markers[key] = nodes[key]
 				continue
 			default:

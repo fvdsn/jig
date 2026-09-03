@@ -2,6 +2,7 @@ package jig
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -36,6 +37,22 @@ func TestFlattenDefinitionWithSlashShorthandAndFile(t *testing.T) {
 	}
 	if entry, ok := model.entry("scripts/dev.sh", EntryFile); !ok || entry.Identity != "dev-script" {
 		t.Fatal("missing scripts/dev.sh file")
+	}
+}
+
+// The same path reached both through nesting and through a slash key is a
+// definition error, not a silent overwrite by whichever key sorts last.
+func TestFlattenDefinitionRejectsAPathDefinedTwice(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 3,
+  "tree": {
+    "services": { "api": { "$repo": { "git": "git@example.com:one.git" } } },
+    "services/api": { "$repo": { "git": "git@example.com:two.git" } }
+  }
+}`)
+	_, err := flattenDefinition(def)
+	if err == nil || !strings.Contains(err.Error(), "services/api defines $repo more than once") {
+		t.Fatalf("expected a duplicate path error, got %v", err)
 	}
 }
 
