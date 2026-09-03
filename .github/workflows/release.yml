@@ -52,6 +52,9 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" dist/*.tar.gz dist/checksums.txt \
             --title "${GITHUB_REF_NAME}" --verify-tag --notes-from-tag
       - name: bump homebrew tap
+        # The release above already exists; a broken tap token must not
+        # turn the run red. The tap is bumped by hand when this fails.
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
         run: |
