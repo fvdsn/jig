@@ -20,6 +20,11 @@ func TestNewerVersionsAreRefused(t *testing.T) {
 	if _, err := loadState(root); err == nil || !strings.Contains(err.Error(), "upgrade jig") {
 		t.Fatalf("state guard: %v", err)
 	}
+	// Read-only commands load without the lock but must hit the same guard
+	// rather than treating the workspace as empty.
+	if _, err := loadWorkspaceAt(root, "", false); err == nil || !strings.Contains(err.Error(), "upgrade jig") {
+		t.Fatalf("state guard through loadWorkspace: %v", err)
+	}
 
 	if err := os.WriteFile(filepath.Join(root, configFile), []byte(`{"version": 3, "schema": "jig.json"}`), 0o644); err != nil {
 		t.Fatal(err)

@@ -111,13 +111,13 @@ func loadWorkspaceAt(root string, subdir string, withState bool) (*Workspace, er
 	}
 	ws.Def = *def
 	ws.Model = model
+	// A missing state file is an empty workspace; anything else (corrupt
+	// JSON, a version from a newer jig) is an error for every command, or a
+	// read-only command would report a fully installed workspace as empty.
 	ws.State, err = loadState(root)
 	if err != nil {
-		if withState {
-			ws.Close()
-			return nil, err
-		}
-		ws.State = emptyState()
+		ws.Close()
+		return nil, err
 	}
 	return ws, nil
 }
