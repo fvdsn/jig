@@ -139,6 +139,18 @@ func (d *Dir) targetPath() string {
 	return d.copyPath
 }
 
+// targetPath returns the tree path a file or dir entry aliases through link
+// or copy; "" for a src entry and for the other kinds.
+func (entry Entry) targetPath() string {
+	switch entry.Kind {
+	case EntryFile:
+		return entry.File.targetPath()
+	case EntryDir:
+		return entry.Dir.targetPath()
+	}
+	return ""
+}
+
 type Group struct {
 	ID          string            `json:"id,omitempty"`
 	Description string            `json:"description,omitempty"`

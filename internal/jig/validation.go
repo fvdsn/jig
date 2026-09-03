@@ -73,77 +73,63 @@ func validateDefinition(def *Definition) validationResult {
 				result.Errors = append(result.Errors, fmt.Sprintf("repo %s missing git", path))
 			}
 		case EntryFile:
-			validateFileEntry(&result, model, path, entry.File)
+			validateSources(&result, model, path, EntryFile, entry.File.Src, entry.File.Link, entry.File.Copy)
+			if entry.File.Executable && entry.File.Link != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot use executable with link", path))
+			}
+			if entry.File.Executable && entry.File.Copy != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot use executable with copy; the bit follows the copy target", path))
+			}
 		case EntryDir:
-			if countVariants(len(entry.Dir.Src) > 0, entry.Dir.Link != nil, entry.Dir.Copy != nil) != 1 {
-				result.Errors = append(result.Errors, fmt.Sprintf("dir %s must define exactly one of src, link, or copy", path))
-			}
-			for _, source := range entry.Dir.Src {
-				if err := validateLocalSource(source, EntryDir); err != nil {
-					result.Errors = append(result.Errors, fmt.Sprintf("dir %s invalid src: %s", path, err))
-					continue
-				}
-				if source.Dir != "" {
-					continue
-				}
-				if _, err := parseDirSrc(source.Src); err != nil {
-					result.Errors = append(result.Errors, fmt.Sprintf("dir %s invalid src: %s", path, err))
-				}
-				if source.OnlyWhen != nil {
-					validateCondition(&result, model, path, *source.OnlyWhen)
-				}
-			}
-			if entry.Dir.Link != nil {
-				validateLinkRef(&result, model, path, "dir", EntryDir, *entry.Dir.Link)
-			}
-			if entry.Dir.Copy != nil {
-				validateCopyRef(&result, model, path, "dir", EntryDir, *entry.Dir.Copy)
-			}
+			validateSources(&result, model, path, EntryDir, entry.Dir.Src, entry.Dir.Link, entry.Dir.Copy)
 		}
 	}
 
 	for _, cycle := range detectCycles(sortedRepoPaths(&model), repoDependencyPaths(&model)) {
 		result.Warnings = append(result.Warnings, "dependency cycle detected: "+strings.Join(cycle, " -> "))
 	}
-	for _, cycle := range detectCycles(sortedFilePaths(&model), fileLinkPaths(&model)) {
+	for _, cycle := range detectCycles(sortedFilePaths(&model), linkPathsOf(&model, EntryFile)) {
 		result.Errors = append(result.Errors, "file link cycle detected: "+strings.Join(cycle, " -> "))
 	}
-	for _, cycle := range detectCycles(sortedPathsOfKind(&model, EntryDir), dirLinkPaths(&model)) {
+	for _, cycle := range detectCycles(sortedPathsOfKind(&model, EntryDir), linkPathsOf(&model, EntryDir)) {
 		result.Errors = append(result.Errors, "dir link cycle detected: "+strings.Join(cycle, " -> "))
 	}
 	return result
 }
 
-func validateFileEntry(result *validationResult, model Model, path string, file *File) {
-	if countVariants(len(file.Src) > 0, file.Link != nil, file.Copy != nil) != 1 {
-		result.Errors = append(result.Errors, fmt.Sprintf("file %s must define exactly one of src, link, or copy", path))
+// validateSources checks how a file or dir gets its content: exactly one of
+// a source list, a link, or a copy, with every source well-formed and every
+// reference resolvable.
+func validateSources(result *validationResult, model Model, path string, kind EntryKind, sources SrcList, link *Ref, copy *Ref) {
+	label := "file"
+	parse := func(src string) error { _, err := parseFileSrc(src); return err }
+	if kind == EntryDir {
+		label = "dir"
+		parse = func(src string) error { _, err := parseDirSrc(src); return err }
 	}
-	for _, source := range file.Src {
-		if err := validateLocalSource(source, EntryFile); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("file %s invalid src: %s", path, err))
+	if countVariants(len(sources) > 0, link != nil, copy != nil) != 1 {
+		result.Errors = append(result.Errors, fmt.Sprintf("%s %s must define exactly one of src, link, or copy", label, path))
+	}
+	for _, source := range sources {
+		if err := validateLocalSource(source, kind); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s %s invalid src: %s", label, path, err))
 			continue
 		}
-		if source.File != "" {
+		if source.File != "" || source.Dir != "" {
 			continue
 		}
-		if _, err := parseFileSrc(source.Src); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("file %s invalid src: %s", path, err))
+		if err := parse(source.Src); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("%s %s invalid src: %s", label, path, err))
 		}
 		if source.OnlyWhen != nil {
 			validateCondition(result, model, path, *source.OnlyWhen)
 		}
 	}
-	if file.Link != nil {
-		validateLinkRef(result, model, path, "file", EntryFile, *file.Link)
+	if link != nil {
+		validateLinkRef(result, model, path, label, kind, *link)
 	}
-	if file.Copy != nil {
-		validateCopyRef(result, model, path, "file", EntryFile, *file.Copy)
-	}
-	if file.Executable && file.Link != nil {
-		result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot use executable with link", path))
-	}
-	if file.Executable && file.Copy != nil {
-		result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot use executable with copy; the bit follows the copy target", path))
+	if copy != nil {
+		validateCopyRef(result, model, path, label, kind, *copy)
 	}
 }
 
@@ -348,19 +334,12 @@ func repoDependencyPaths(model *Model) func(string) []string {
 	}
 }
 
-func dirLinkPaths(model *Model) func(string) []string {
-	return func(dirPath string) []string {
-		if entry, ok := model.entry(dirPath, EntryDir); ok && entry.Dir.targetPath() != "" {
-			return []string{entry.Dir.targetPath()}
-		}
-		return nil
-	}
-}
-
-func fileLinkPaths(model *Model) func(string) []string {
-	return func(filePath string) []string {
-		if entry, ok := model.entry(filePath, EntryFile); ok && entry.File.targetPath() != "" {
-			return []string{entry.File.targetPath()}
+// linkPathsOf returns, for cycle detection, the target a file or dir
+// aliases through link or copy.
+func linkPathsOf(model *Model, kind EntryKind) func(string) []string {
+	return func(path string) []string {
+		if entry, ok := model.entry(path, kind); ok && entry.targetPath() != "" {
+			return []string{entry.targetPath()}
 		}
 		return nil
 	}

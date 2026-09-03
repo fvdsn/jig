@@ -41,7 +41,7 @@ func TestFileLinkValidationAndOrdering(t *testing.T) {
 		t.Fatal(err)
 	}
 	active := map[string]bool{"scripts/dev.sh": true, "bin/dev": true}
-	ordered := orderFilesForApply(&model, active)
+	ordered := orderArtifactsForApply(&model, EntryFile, active)
 	want := []string{"scripts/dev.sh", "bin/dev"}
 	if !reflect.DeepEqual(ordered, want) {
 		t.Fatalf("ordered files = %#v, want %#v", ordered, want)

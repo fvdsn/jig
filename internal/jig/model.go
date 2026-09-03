@@ -185,12 +185,7 @@ func flattenTreeNode(node *treeNode, path string, inherited inheritedGroup, mode
 		if err := json.Unmarshal(node.markers["$dir"], &dir); err != nil {
 			return fmt.Errorf("invalid $dir at %s: %s", path, err)
 		}
-		if dir.Description == "" {
-			dir.Description = inherited.Description
-		}
-		if inherited.Archived {
-			dir.Archived = true
-		}
+		dir = applyInheritedDir(dir, inherited)
 		model.Entries[path] = Entry{
 			Path:       path,
 			Identity:   identityOr(dir.ID, path),
@@ -319,6 +314,16 @@ func applyInheritedFile(file File, inherited inheritedGroup) File {
 		file.Archived = true
 	}
 	return file
+}
+
+func applyInheritedDir(dir Dir, inherited inheritedGroup) Dir {
+	if dir.Description == "" {
+		dir.Description = inherited.Description
+	}
+	if inherited.Archived {
+		dir.Archived = true
+	}
+	return dir
 }
 
 func mergeGroup(inherited inheritedGroup, group Group) inheritedGroup {

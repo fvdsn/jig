@@ -74,8 +74,8 @@ func resolvePlan(model *Model, roots []string, opts planOptions) (plan, error) {
 	dirs := artifactsActive(model, EntryDir, p.evidence, opts.InstalledDirs, opts.IncludeArchived)
 	return plan{
 		Repos: sortedKeys(p.active),
-		Files: orderFilesForApply(model, files),
-		Dirs:  orderDirsForApply(model, dirs),
+		Files: orderArtifactsForApply(model, EntryFile, files),
+		Dirs:  orderArtifactsForApply(model, EntryDir, dirs),
 	}, nil
 }
 
@@ -278,12 +278,7 @@ func conditionMatches(condition Condition, activeRepos map[string]bool, installe
 // resolve to inactive.
 func artifactsActive(model *Model, kind EntryKind, evidence map[string]bool, installedSelf map[string]bool, includeArchived bool) map[string]bool {
 	repoPaths := sortedRepoPaths(model)
-	linkOf := func(entry Entry) string {
-		if kind == EntryFile {
-			return entry.File.targetPath()
-		}
-		return entry.Dir.targetPath()
-	}
+	linkOf := Entry.targetPath
 
 	const (
 		unknown = iota
@@ -386,19 +381,12 @@ func archivedExcluded(entry Entry, installed map[string]bool, includeArchived bo
 	return entry.archived() && !includeArchived && !installed[entry.Identity]
 }
 
-func orderFilesForApply(model *Model, active map[string]bool) []string {
+// orderArtifactsForApply orders the active files or dirs so link and copy
+// targets are applied before the entries pointing at them.
+func orderArtifactsForApply(model *Model, kind EntryKind, active map[string]bool) []string {
 	return orderLinkedForApply(active, func(path string) string {
-		if entry, ok := model.entry(path, EntryFile); ok {
-			return entry.File.targetPath()
-		}
-		return ""
-	})
-}
-
-func orderDirsForApply(model *Model, active map[string]bool) []string {
-	return orderLinkedForApply(active, func(path string) string {
-		if entry, ok := model.entry(path, EntryDir); ok {
-			return entry.Dir.targetPath()
+		if entry, ok := model.entry(path, kind); ok {
+			return entry.targetPath()
 		}
 		return ""
 	})

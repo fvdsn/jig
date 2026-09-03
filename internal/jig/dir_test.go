@@ -624,7 +624,7 @@ func TestDirLinksCreateSymlinksToTargetDir(t *testing.T) {
 		t.Fatalf("active = %#v", active)
 	}
 	// Ordering puts the target before the link.
-	ordered := orderDirsForApply(&model, active)
+	ordered := orderArtifactsForApply(&model, EntryDir, active)
 	if len(ordered) != 2 || ordered[0] != ".agents/skills" {
 		t.Fatalf("ordered = %#v", ordered)
 	}
@@ -708,7 +708,7 @@ func TestDirCopyMaterializesTargetSources(t *testing.T) {
 	if !active[".claude/skills"] || !active[".agents/skills"] {
 		t.Fatalf("active = %#v", active)
 	}
-	ordered := orderDirsForApply(&model, active)
+	ordered := orderArtifactsForApply(&model, EntryDir, active)
 	if len(ordered) != 2 || ordered[0] != ".agents/skills" {
 		t.Fatalf("ordered = %#v", ordered)
 	}

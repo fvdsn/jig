@@ -29,108 +29,81 @@ func resolveAndApplyPlan(out io.Writer, ws *Workspace, roots []string, explicitF
 	if err != nil {
 		return err
 	}
-	plan = includeExplicitFiles(&ws.Model, plan, explicitFiles)
-	plan = includeExplicitDirs(&ws.Model, plan, explicitDirs)
+	plan = includeExplicitArtifacts(&ws.Model, plan, EntryFile, explicitFiles)
+	plan = includeExplicitArtifacts(&ws.Model, plan, EntryDir, explicitDirs)
 	if !opts.IncludeArchived {
-		plan = excludeArchivedFiles(&ws.Model, plan, installed.Files)
-		plan = excludeArchivedDirs(&ws.Model, plan, installed.Dirs)
+		plan = excludeArchivedArtifacts(&ws.Model, plan, EntryFile, installed.Files)
+		plan = excludeArchivedArtifacts(&ws.Model, plan, EntryDir, installed.Dirs)
 	}
 	err = applyPlan(out, ws, plan, opts, installed.Repos)
 	ws.invalidateInstalled()
 	return err
 }
 
-func includeExplicitDirs(model *Model, base plan, dirs []string) plan {
+// artifacts returns the plan's files or dirs.
+func (p plan) artifacts(kind EntryKind) []string {
+	if kind == EntryFile {
+		return p.Files
+	}
+	return p.Dirs
+}
+
+// withArtifacts returns the plan with its files or dirs replaced.
+func (p plan) withArtifacts(kind EntryKind, paths []string) plan {
+	if kind == EntryFile {
+		p.Files = paths
+	} else {
+		p.Dirs = paths
+	}
+	return p
+}
+
+// includeExplicitArtifacts adds explicitly selected files or dirs to the
+// plan along with the link and copy targets they need.
+func includeExplicitArtifacts(model *Model, base plan, kind EntryKind, paths []string) plan {
 	active := map[string]bool{}
-	for _, dirPath := range base.Dirs {
-		active[dirPath] = true
+	for _, path := range base.artifacts(kind) {
+		active[path] = true
 	}
 	var add func(string)
-	add = func(dirPath string) {
-		entry, ok := model.entry(dirPath, EntryDir)
-		if !ok || active[dirPath] {
+	add = func(path string) {
+		entry, ok := model.entry(path, kind)
+		if !ok || active[path] {
 			return
 		}
-		active[dirPath] = true
-		if entry.Dir.targetPath() != "" {
-			add(entry.Dir.targetPath())
+		active[path] = true
+		if target := entry.targetPath(); target != "" {
+			add(target)
 		}
 	}
-	for _, dirPath := range dirs {
-		add(dirPath)
+	for _, path := range paths {
+		add(path)
 	}
-	base.Dirs = orderDirsForApply(model, active)
-	return base
+	return base.withArtifacts(kind, orderArtifactsForApply(model, kind, active))
 }
 
-func excludeArchivedDirs(model *Model, base plan, installed map[string]bool) plan {
+// excludeArchivedArtifacts drops uninstalled archived files or dirs from
+// the plan, and with them any link or copy whose target dropped out.
+func excludeArchivedArtifacts(model *Model, base plan, kind EntryKind, installed map[string]bool) plan {
 	active := map[string]bool{}
-	for _, dirPath := range base.Dirs {
-		entry, ok := model.entry(dirPath, EntryDir)
+	for _, path := range base.artifacts(kind) {
+		entry, ok := model.entry(path, kind)
 		if ok && !archivedExcluded(entry, installed, false) {
-			active[dirPath] = true
-		}
-	}
-	// Drop links whose target dropped out.
-	changed := true
-	for changed {
-		changed = false
-		for dirPath := range active {
-			entry, _ := model.entry(dirPath, EntryDir)
-			if entry.Dir.targetPath() != "" && !active[entry.Dir.targetPath()] {
-				delete(active, dirPath)
-				changed = true
-			}
-		}
-	}
-	base.Dirs = orderDirsForApply(model, active)
-	return base
-}
-
-func includeExplicitFiles(model *Model, base plan, files []string) plan {
-	active := map[string]bool{}
-	for _, filePath := range base.Files {
-		active[filePath] = true
-	}
-	var add func(string)
-	add = func(filePath string) {
-		entry, ok := model.entry(filePath, EntryFile)
-		if !ok {
-			return
-		}
-		if entry.File.targetPath() != "" {
-			add(entry.File.targetPath())
-		}
-		active[filePath] = true
-	}
-	for _, filePath := range files {
-		add(filePath)
-	}
-	base.Files = orderFilesForApply(model, active)
-	return base
-}
-
-func excludeArchivedFiles(model *Model, base plan, installed map[string]bool) plan {
-	active := map[string]bool{}
-	for _, filePath := range base.Files {
-		entry, ok := model.entry(filePath, EntryFile)
-		if ok && !archivedExcluded(entry, installed, false) {
-			active[filePath] = true
+			active[path] = true
 		}
 	}
 	changed := true
 	for changed {
 		changed = false
-		for filePath := range active {
-			entry, _ := model.entry(filePath, EntryFile)
-			if entry.File.targetPath() != "" && !active[entry.File.targetPath()] {
-				delete(active, filePath)
+		for path := range active {
+			entry, _ := model.entry(path, kind)
+			if target := entry.targetPath(); target != "" && !active[target] {
+				delete(active, path)
 				changed = true
 			}
 		}
 	}
-	base.Files = orderFilesForApply(model, active)
-	return base
+	return base.withArtifacts(kind, orderArtifactsForApply(model, kind, active))
 }
 
 // applyPlan materializes the plan. An entry that cannot be brought to its

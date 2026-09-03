@@ -352,17 +352,17 @@ func TestArchivedFilesAreSkippedUnlessIncluded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved = includeExplicitFiles(&model, resolved, sortedFilePaths(&model))
-	resolved = excludeArchivedFiles(&model, resolved, nil)
+	resolved = includeExplicitArtifacts(&model, resolved, EntryFile, sortedFilePaths(&model))
+	resolved = excludeArchivedArtifacts(&model, resolved, EntryFile, nil)
 	if !reflect.DeepEqual(resolved.Files, []string{"scripts/current.sh"}) {
 		t.Fatalf("without archived files = %#v", resolved.Files)
 	}
 	resolved = plan{}
-	resolved = includeExplicitFiles(&model, resolved, sortedFilePaths(&model))
+	resolved = includeExplicitArtifacts(&model, resolved, EntryFile, sortedFilePaths(&model))
 	if !reflect.DeepEqual(resolved.Files, []string{"scripts/old.sh", "bin/old", "scripts/current.sh"}) {
 		t.Fatalf("with archived files = %#v", resolved.Files)
 	}
-	resolved = excludeArchivedFiles(&model, resolved, map[string]bool{"scripts/old.sh": true})
+	resolved = excludeArchivedArtifacts(&model, resolved, EntryFile, map[string]bool{"scripts/old.sh": true})
 	if !reflect.DeepEqual(resolved.Files, []string{"scripts/old.sh", "bin/old", "scripts/current.sh"}) {
 		t.Fatalf("with installed archived files = %#v", resolved.Files)
 	}
@@ -481,7 +481,7 @@ func TestIncludeExplicitFilesAddsRequestedFilesAndLinkTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plan := includeExplicitFiles(&model, plan{}, []string{"bin/dev"})
+	plan := includeExplicitArtifacts(&model, plan{}, EntryFile, []string{"bin/dev"})
 	want := []string{"scripts/dev.sh", "bin/dev"}
 	if !reflect.DeepEqual(plan.Files, want) {
 		t.Fatalf("files = %#v, want %#v", plan.Files, want)
