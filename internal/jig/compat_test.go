@@ -52,3 +52,16 @@ func TestNewerVersionsAreRefused(t *testing.T) {
 		t.Fatalf("schema v1 guard: %v", err)
 	}
 }
+
+// A legacy root .jig.json is not a workspace: the error names the layout
+// change instead of the generic not-found message.
+func TestLegacyRootSchemaIsRefused(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".jig.json"), []byte(`{"version": 3, "tree": {}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := findWorkspace(filepath.Join(root, "sub"))
+	if err == nil || !strings.Contains(err.Error(), "no longer supported") {
+		t.Fatalf("legacy layout guard: %v", err)
+	}
+}

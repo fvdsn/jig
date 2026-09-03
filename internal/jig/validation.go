@@ -11,27 +11,33 @@ type validationResult struct {
 	Warnings []string
 }
 
+// schemaVersion is the schema format this jig reads and writes.
+const schemaVersion = 3
+
+// schemaVersionError is the one place the version policy lives: older
+// versions are refused with the migration they need, newer ones with an
+// upgrade hint, so validate and the workspace loader cannot disagree.
+func schemaVersionError(version int) error {
+	switch {
+	case version == 1:
+		return errors.New("the schema uses version 1, which predates structured references; update refs (see specs: References) and set version: 3")
+	case version == 2:
+		return errors.New("the schema uses version 2, which predates local sources; set version: 3 (no other changes needed)")
+	case version == schemaVersion:
+		return nil
+	case version > schemaVersion:
+		return fmt.Errorf("the schema uses version %d, which this jig does not understand; upgrade jig", version)
+	default:
+		return errors.New("unsupported or missing schema version")
+	}
+}
+
+// validateDefinition checks a parsed schema. The deprecated source object
+// is ignored, not validated: it only needs to keep parsing.
 func validateDefinition(def *Definition) validationResult {
 	var result validationResult
-	if def.Version == 1 {
-		result.Errors = append(result.Errors, "schema version 1 predates structured references; update refs (see specs: References) and set version: 2")
-	} else if def.Version == 2 {
-		result.Errors = append(result.Errors, "schema version 2 predates local sources; set version: 3 (no other changes needed)")
-	} else if def.Version != 3 {
-		result.Errors = append(result.Errors, "unsupported or missing version")
-	}
-	if def.Source != nil {
-		if def.Source.Type != "git" {
-			result.Errors = append(result.Errors, "source.type must be git")
-		}
-		if def.Source.URL == "" {
-			result.Errors = append(result.Errors, "source.url is required")
-		}
-		if def.Source.Path != "" {
-			if err := validateSafePath(def.Source.Path); err != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("invalid source.path: %s", err))
-			}
-		}
+	if err := schemaVersionError(def.Version); err != nil {
+		result.Errors = append(result.Errors, err.Error())
 	}
 
 	model, err := flattenDefinition(def)
@@ -52,7 +58,7 @@ func validateDefinition(def *Definition) validationResult {
 			identities[entry.Identity] = path
 		}
 		for _, condition := range entry.Conditions {
-			validateCondition(&result, model, path, condition)
+			validateCondition(&result, &model, path, condition)
 		}
 		for _, tag := range entry.Tags {
 			if tag == "" || strings.ContainsAny(tag, ", \t") {
@@ -65,7 +71,7 @@ func validateDefinition(def *Definition) validationResult {
 			}
 		}
 		for _, dep := range entry.dependsOn() {
-			validateRepoSelector(&result, model, kind+" "+path, "dependency", dep.Ref)
+			validateRepoSelector(&result, &model, kind+" "+path, "dependency", dep.Ref)
 		}
 		switch entry.Kind {
 		case EntryRepo:
@@ -73,7 +79,7 @@ func validateDefinition(def *Definition) validationResult {
 				result.Errors = append(result.Errors, fmt.Sprintf("repo %s missing git", path))
 			}
 		case EntryFile:
-			validateSources(&result, model, path, EntryFile, entry.File.Src, entry.File.Link, entry.File.Copy)
+			validateSources(&result, &model, path, EntryFile, entry.File.Src, entry.File.Link, entry.File.Copy)
 			if entry.File.Executable && entry.File.Link != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot use executable with link", path))
 			}
@@ -81,7 +87,7 @@ func validateDefinition(def *Definition) validationResult {
 				result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot use executable with copy; the bit follows the copy target", path))
 			}
 		case EntryDir:
-			validateSources(&result, model, path, EntryDir, entry.Dir.Src, entry.Dir.Link, entry.Dir.Copy)
+			validateSources(&result, &model, path, EntryDir, entry.Dir.Src, entry.Dir.Link, entry.Dir.Copy)
 		}
 	}
 
@@ -100,7 +106,7 @@ func validateDefinition(def *Definition) validationResult {
 // validateSources checks how a file or dir gets its content: exactly one of
 // a source list, a link, or a copy, with every source well-formed and every
 // reference resolvable.
-func validateSources(result *validationResult, model Model, path string, kind EntryKind, sources SrcList, link *Ref, copy *Ref) {
+func validateSources(result *validationResult, model *Model, path string, kind EntryKind, sources SrcList, link *Ref, copy *Ref) {
 	label := "file"
 	parse := func(src string) error { _, err := parseFileSrc(src); return err }
 	if kind == EntryDir {
@@ -143,7 +149,7 @@ func countVariants(set ...bool) int {
 	return n
 }
 
-func validateCondition(result *validationResult, model Model, ownerPath string, condition Condition) {
+func validateCondition(result *validationResult, model *Model, ownerPath string, condition Condition) {
 	validateRepoSelector(result, model, ownerPath, "onlyWhen", condition.Ref)
 }
 
@@ -179,7 +185,7 @@ func validateRefSyntax(result *validationResult, owner string, site string, ref 
 // target domain is repositories: an id or exact path must name a declared
 // repository, and a subtree or tag selector must match at least one
 // (archived included).
-func validateRepoSelector(result *validationResult, model Model, owner string, site string, ref Ref) {
+func validateRepoSelector(result *validationResult, model *Model, owner string, site string, ref Ref) {
 	if !validateRefSyntax(result, owner, site, ref) {
 		return
 	}
@@ -218,14 +224,14 @@ func validateRepoSelector(result *validationResult, model Model, owner string, s
 
 // validateLinkRef checks a single-target link reference: id or exact path,
 // resolving to exactly one other entry of the same kind.
-func validateLinkRef(result *validationResult, model Model, path string, kindLabel string, kind EntryKind, ref Ref) {
+func validateLinkRef(result *validationResult, model *Model, path string, kindLabel string, kind EntryKind, ref Ref) {
 	validateSingleTargetRef(result, model, path, kindLabel, kind, "link", ref)
 }
 
 // validateCopyRef checks a copy reference: the same single-target shape as a
 // link, plus the target must itself define src, so copies never chain
 // through links or other copies.
-func validateCopyRef(result *validationResult, model Model, path string, kindLabel string, kind EntryKind, ref Ref) {
+func validateCopyRef(result *validationResult, model *Model, path string, kindLabel string, kind EntryKind, ref Ref) {
 	target, ok := validateSingleTargetRef(result, model, path, kindLabel, kind, "copy", ref)
 	if !ok {
 		return
@@ -245,7 +251,7 @@ func validateCopyRef(result *validationResult, model Model, path string, kindLab
 // validateSingleTargetRef checks the shape shared by link and copy sites and
 // resolves the target, reporting it only when it is exactly one other entry
 // of the required kind.
-func validateSingleTargetRef(result *validationResult, model Model, path string, kindLabel string, kind EntryKind, site string, ref Ref) (Entry, bool) {
+func validateSingleTargetRef(result *validationResult, model *Model, path string, kindLabel string, kind EntryKind, site string, ref Ref) (Entry, bool) {
 	owner := kindLabel + " " + path
 	if !validateRefSyntax(result, owner, site, ref) {
 		return Entry{}, false

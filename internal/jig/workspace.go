@@ -93,17 +93,9 @@ func loadWorkspaceAt(root string, subdir string, withState bool) (*Workspace, er
 		ws.Close()
 		return nil, err
 	}
-	if def.Version == 1 {
+	if err := schemaVersionError(def.Version); err != nil {
 		ws.Close()
-		return nil, errors.New("the schema uses version 1, which predates structured references; update refs (see specs: References) and set version: 2")
-	}
-	if def.Version == 2 {
-		ws.Close()
-		return nil, errors.New("the schema uses version 2, which predates local sources; set version: 3 (no other changes needed)")
-	}
-	if def.Version > 3 {
-		ws.Close()
-		return nil, fmt.Errorf("the schema uses version %d, which this jig does not understand; upgrade jig", def.Version)
+		return nil, err
 	}
 	model, err := flattenDefinition(def)
 	if err != nil {
@@ -131,6 +123,9 @@ func findWorkspace(start string) (string, error) {
 	for {
 		if pathExists(filepath.Join(dir, configFile)) {
 			return dir, nil
+		}
+		if pathExists(filepath.Join(dir, ".jig.json")) {
+			return "", fmt.Errorf("found a legacy .jig.json at %s; that workspace layout is no longer supported, run jig init again", dir)
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
