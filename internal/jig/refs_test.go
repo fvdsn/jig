@@ -221,7 +221,7 @@ func TestSelectByIdIgnoresPositionAndArchived(t *testing.T) {
 	t.Chdir(root + "/elsewhere")
 
 	var out bytes.Buffer
-	if err := List(ListOptions{Selector: Selector{Id: "current"}, Width: -1}, &out); err != nil {
+	if err := List(ListOptions{Selector: Selector{ID: "current"}, Width: -1}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if got := out.String(); !strings.Contains(got, "services/current") {
@@ -230,14 +230,14 @@ func TestSelectByIdIgnoresPositionAndArchived(t *testing.T) {
 
 	// An archived entry is selected by its id without --archived.
 	out.Reset()
-	if err := List(ListOptions{Selector: Selector{Id: "old"}, Width: -1}, &out); err != nil {
+	if err := List(ListOptions{Selector: Selector{ID: "old"}, Width: -1}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if got := out.String(); !strings.Contains(got, "services/old") {
 		t.Fatalf("list --id old = %q", got)
 	}
 
-	if err := List(ListOptions{Selector: Selector{Id: "ghost"}, Width: -1}, &out); err == nil || !strings.Contains(err.Error(), `no entry has id "ghost"`) {
+	if err := List(ListOptions{Selector: Selector{ID: "ghost"}, Width: -1}, &out); err == nil || !strings.Contains(err.Error(), `no entry has id "ghost"`) {
 		t.Fatalf("list --id ghost error = %v", err)
 	}
 }

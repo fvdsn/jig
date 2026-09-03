@@ -43,7 +43,7 @@ func syncWorkspace(out io.Writer, ws *Workspace, options SyncOptions) error {
 	var roots []string
 	var explicitFiles []string
 	var explicitDirs []string
-	if options.Path != "" || options.Id != "" {
+	if options.Path != "" || options.ID != "" {
 		selection, err := ws.Select(options.query())
 		if err != nil {
 			return err

@@ -196,7 +196,7 @@ func selectorFrom(name string, parsed parsedArgs, pathPositionals []string) (jig
 	}
 	return jig.Selector{
 		Path:            optionalPath(pathPositionals),
-		Id:              parsed.Values["--id"],
+		ID:              parsed.Values["--id"],
 		IncludeArchived: parsed.Flags["--archived"],
 		Tags:            parseTags(parsed.Values["--tags"]),
 	}, nil

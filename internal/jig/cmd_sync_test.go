@@ -24,7 +24,7 @@ func TestSyncByIdMaterializesTheEntry(t *testing.T) {
 	t.Chdir(root)
 
 	var out bytes.Buffer
-	if err := Sync(SyncOptions{Selector: Selector{Id: "b"}, SkipUpdate: true}, &out); err != nil {
+	if err := Sync(SyncOptions{Selector: Selector{ID: "b"}, SkipUpdate: true}, &out); err != nil {
 		t.Fatalf("sync --id b: %v\n%s", err, out.String())
 	}
 	if !strings.Contains(out.String(), "cloned: services/b") {

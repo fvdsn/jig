@@ -9,7 +9,7 @@ import (
 
 type NodeQuery struct {
 	Path            string
-	Id              string // when set, selects the entry with this identity instead of a path
+	ID              string // when set, selects the entry with this identity instead of a path
 	IncludeArchived bool
 	Tags            []string   // when set, only entries carrying all of these tags match
 	Meta            MetaFilter // when set, only entries carrying the meta key (and value) match
@@ -209,26 +209,26 @@ func (entry Entry) hasAllTags(tags []string) bool {
 // positional, --id, --tags, and --archived onto it.
 type Selector struct {
 	Path            string
-	Id              string // selects one entry by identity instead of a path
+	ID              string // selects one entry by identity instead of a path
 	IncludeArchived bool
 	Tags            []string
 }
 
 func (s Selector) query() NodeQuery {
-	return NodeQuery{Path: s.Path, Id: s.Id, IncludeArchived: s.IncludeArchived, Tags: s.Tags}
+	return NodeQuery{Path: s.Path, ID: s.ID, IncludeArchived: s.IncludeArchived, Tags: s.Tags}
 }
 
 func (ws *Workspace) Select(query NodeQuery) (NodeSelection, error) {
 	// An id resolves to its entry's path up front and then behaves as an
 	// exact query from the workspace root: explicit ids are not scoped by
 	// the current directory and include archived entries.
-	if query.Id != "" {
-		entry, ok := ws.Model.entryByIdentity(query.Id)
+	if query.ID != "" {
+		entry, ok := ws.Model.entryByIdentity(query.ID)
 		if !ok {
-			return NodeSelection{}, fmt.Errorf("no entry has id %q", query.Id)
+			return NodeSelection{}, fmt.Errorf("no entry has id %q", query.ID)
 		}
 		query.Path = entry.Path
-		query.Id = ""
+		query.ID = ""
 		query.IncludeArchived = true
 		query.Installed = ws.installedNodes()
 		return ws.Model.Select(query)
