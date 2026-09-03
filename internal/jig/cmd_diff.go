@@ -11,11 +11,8 @@ import (
 )
 
 type DiffOptions struct {
-	Path            string
-	Id              string // selects one entry by identity instead of a path
-	Stat            bool   // one summary line per dirty repository instead of the patch
-	IncludeArchived bool
-	Tags            []string
+	Selector
+	Stat bool // one summary line per dirty repository instead of the patch
 }
 
 // Diff prints the uncommitted changes (staged and unstaged, against HEAD) of
@@ -34,7 +31,7 @@ func Diff(options DiffOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Select(NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
+	selection, err := ws.Select(options.query())
 	if err != nil {
 		return err
 	}

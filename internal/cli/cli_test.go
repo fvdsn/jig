@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"io"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -119,5 +120,32 @@ func TestPerCommandHelp(t *testing.T) {
 	err := Run([]string{"clone", "a", "b"}, io.Discard, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "usage: jig clone [path]") {
 		t.Fatalf("usage error = %v", err)
+	}
+}
+
+// Every flag a usage string advertises must be one its command parses, and
+// every flag a scoped command parses must be advertised, so the two cannot
+// drift apart.
+func TestUsageStringsMatchCommandFlags(t *testing.T) {
+	flagToken := regexp.MustCompile(`-{1,2}[a-z][a-z-]*`)
+	for _, doc := range commandDocs {
+		flags, scoped := commandFlags[doc.name]
+		if !scoped {
+			continue
+		}
+		advertised := map[string]bool{}
+		for _, usage := range doc.usages {
+			for _, token := range flagToken.FindAllString(usage, -1) {
+				advertised[token] = true
+				if _, ok := flags[token]; !ok {
+					t.Errorf("%s usage advertises %s, which the command does not parse", doc.name, token)
+				}
+			}
+		}
+		for flag := range flags {
+			if !advertised[flag] {
+				t.Errorf("%s parses %s, which its usage does not mention", doc.name, flag)
+			}
+		}
 	}
 }

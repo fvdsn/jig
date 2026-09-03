@@ -7,10 +7,7 @@ import (
 )
 
 type InfoOptions struct {
-	Path            string
-	Id              string // selects one entry by identity instead of a path
-	IncludeArchived bool
-	Tags            []string
+	Selector
 }
 
 func Info(options InfoOptions, out io.Writer) error {
@@ -18,7 +15,7 @@ func Info(options InfoOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Select(NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
+	selection, err := ws.Select(options.query())
 	if err != nil {
 		return err
 	}

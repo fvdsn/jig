@@ -69,7 +69,7 @@ func TestGraphRendersMermaidFlowchart(t *testing.T) {
 
 	// A path scopes the selection; a group target with no drawn repos
 	// becomes a plain node so the edge does not dangle.
-	got = graph(GraphOptions{Path: "services"})
+	got = graph(GraphOptions{Selector: Selector{Path: "services"}})
 	want = `flowchart TD
   subgraph services ["services"]
     services_checkout["checkout"]
@@ -83,7 +83,7 @@ func TestGraphRendersMermaidFlowchart(t *testing.T) {
 
 	// An edge target outside the selection is drawn as a context node in
 	// its place in the tree.
-	got = graph(GraphOptions{Path: "tools"})
+	got = graph(GraphOptions{Selector: Selector{Path: "tools"}})
 	want = `flowchart TD
   subgraph platform ["platform"]
     platform_auth["auth"]

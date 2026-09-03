@@ -25,10 +25,10 @@ func TestInfoIncludesArchivedNodeWhenRequestedOrInstalled(t *testing.T) {
 	t.Chdir(root)
 
 	var out bytes.Buffer
-	if err := Info(InfoOptions{Path: "services/old"}, &out); err == nil {
+	if err := Info(InfoOptions{Selector: Selector{Path: "services/old"}}, &out); err == nil {
 		t.Fatal("expected uninstalled archived repository to be excluded")
 	}
-	if err := Info(InfoOptions{Path: "services/old", IncludeArchived: true}, &out); err != nil {
+	if err := Info(InfoOptions{Selector: Selector{Path: "services/old", IncludeArchived: true}}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "path: services/old") {
@@ -39,7 +39,7 @@ func TestInfoIncludesArchivedNodeWhenRequestedOrInstalled(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if err := Info(InfoOptions{Path: "services/old"}, &out); err != nil {
+	if err := Info(InfoOptions{Selector: Selector{Path: "services/old"}}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "path: services/old") {
@@ -70,7 +70,7 @@ func TestInfoOrdersMixedGroupEntriesByPath(t *testing.T) {
 	t.Chdir(root)
 
 	var out bytes.Buffer
-	if err := Info(InfoOptions{Path: "services"}, &out); err != nil {
+	if err := Info(InfoOptions{Selector: Selector{Path: "services"}}, &out); err != nil {
 		t.Fatal(err)
 	}
 	want := "path: services\n" +

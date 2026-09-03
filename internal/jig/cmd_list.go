@@ -10,12 +10,9 @@ import (
 )
 
 type ListOptions struct {
-	Path            string
-	Id              string // selects one entry by identity instead of a path
-	IncludeArchived bool
-	Tags            []string
-	Meta            MetaFilter
-	Width           int // output width; 0 auto-detects, <0 or non-terminal output disables truncation
+	Selector
+	Meta  MetaFilter
+	Width int // output width; 0 auto-detects, <0 or non-terminal output disables truncation
 }
 
 func List(options ListOptions, out io.Writer) error {
@@ -23,7 +20,8 @@ func List(options ListOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	query := NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags, Meta: options.Meta}
+	query := options.query()
+	query.Meta = options.Meta
 	selection, err := ws.Select(query)
 	if err != nil {
 		return err

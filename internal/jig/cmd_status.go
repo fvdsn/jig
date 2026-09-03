@@ -11,11 +11,8 @@ import (
 )
 
 type StatusOptions struct {
-	Path            string
-	Id              string // selects one entry by identity instead of a path
-	IncludeArchived bool
-	All             bool // also list defined repos that are not installed
-	Tags            []string
+	Selector
+	All bool // also list defined repos that are not installed
 }
 
 // Status glyphs. Each line carries the most significant glyph plus a note that
@@ -44,7 +41,7 @@ func Status(options StatusOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	query := NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags}
+	query := options.query()
 	selection, err := ws.Select(query)
 	if err != nil {
 		return err

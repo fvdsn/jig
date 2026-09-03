@@ -8,8 +8,7 @@ import (
 )
 
 type GraphOptions struct {
-	Path            string
-	IncludeArchived bool
+	Selector
 }
 
 // Graph prints the repository dependency graph as a Mermaid flowchart. The
@@ -23,7 +22,7 @@ func Graph(options GraphOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Select(NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived})
+	selection, err := ws.Select(options.query())
 	if err != nil {
 		return err
 	}

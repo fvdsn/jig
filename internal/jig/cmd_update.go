@@ -9,13 +9,11 @@ import (
 )
 
 type UpdateOptions struct {
+	Selector
 	Sync            bool
-	Path            string
 	IncludeOptional bool
-	IncludeArchived bool
 	SkipDeps        bool // sync only the selected repos, without their dependencies
 	Prune           bool // delete entries removed from the schema during the sync step
-	Tags            []string
 }
 
 // Update fast-forwards the schema source checkout to its upstream. The
@@ -33,12 +31,10 @@ func Update(options UpdateOptions, out io.Writer) error {
 	}
 	if options.Sync {
 		return syncWorkspace(out, ws, SyncOptions{
-			Path:            options.Path,
+			Selector:        options.Selector,
 			IncludeOptional: options.IncludeOptional,
-			IncludeArchived: options.IncludeArchived,
 			SkipDeps:        options.SkipDeps,
 			Prune:           options.Prune,
-			Tags:            options.Tags,
 		})
 	}
 	return nil

@@ -80,7 +80,7 @@ func TestCheckoutAcrossInstalledRepos(t *testing.T) {
 
 	// A path selects a subset; -b on an existing branch switches instead of
 	// failing.
-	got = checkout(CheckoutOptions{Branch: "feature", Path: "services/b", Create: true})
+	got = checkout(CheckoutOptions{Selector: Selector{Path: "services/b"}, Branch: "feature", Create: true})
 	if !strings.Contains(got, "switched: services/b") || strings.Contains(got, "services/a") {
 		t.Fatalf("subset run = %q, want only services/b switched", got)
 	}

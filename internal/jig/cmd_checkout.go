@@ -7,13 +7,10 @@ import (
 )
 
 type CheckoutOptions struct {
-	Branch          string
-	Path            string
-	Id              string // selects one entry by identity instead of a path
-	Create          bool   // create the branch (git checkout -b) when it does not exist
-	Default         bool   // switch each repository to its remote's default branch
-	IncludeArchived bool
-	Tags            []string
+	Selector
+	Branch  string
+	Create  bool // create the branch (git checkout -b) when it does not exist
+	Default bool // switch each repository to its remote's default branch
 }
 
 // Checkout switches installed repositories matching the query to a branch,
@@ -34,7 +31,7 @@ func Checkout(options CheckoutOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	repos, err := selectInstalledRepos(ws, NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
+	repos, err := selectInstalledRepos(ws, options.query())
 	if err != nil {
 		return err
 	}

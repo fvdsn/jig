@@ -6,12 +6,9 @@ import (
 )
 
 type CloneOptions struct {
-	Path            string
-	Id              string // selects one entry by identity instead of a path
+	Selector
 	IncludeOptional bool
-	IncludeArchived bool
 	SkipDeps        bool // clone only the selected repos, without their dependencies
-	Tags            []string
 }
 
 func Clone(options CloneOptions, out io.Writer) error {
@@ -29,7 +26,7 @@ func Clone(options CloneOptions, out io.Writer) error {
 }
 
 func clonePathIntoWorkspace(out io.Writer, ws *Workspace, options CloneOptions) error {
-	selection, err := ws.Select(NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
+	selection, err := ws.Select(options.query())
 	if err != nil {
 		return err
 	}

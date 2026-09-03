@@ -6,14 +6,11 @@ import (
 )
 
 type SyncOptions struct {
-	Path            string
-	Id              string // selects one entry by identity instead of a path
+	Selector
 	IncludeOptional bool
-	IncludeArchived bool
 	SkipDeps        bool // sync only the selected repos, without their dependencies
 	SkipUpdate      bool // apply the current schema without updating it first
 	Prune           bool // delete entries removed from the schema (jig rm safety rules apply)
-	Tags            []string
 }
 
 // Sync updates the schema checkout, then applies it. A schema update that
@@ -47,7 +44,7 @@ func syncWorkspace(out io.Writer, ws *Workspace, options SyncOptions) error {
 	var explicitFiles []string
 	var explicitDirs []string
 	if options.Path != "" || options.Id != "" {
-		selection, err := ws.Select(NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
+		selection, err := ws.Select(options.query())
 		if err != nil {
 			return err
 		}

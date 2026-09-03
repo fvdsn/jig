@@ -203,6 +203,20 @@ func (entry Entry) hasAllTags(tags []string) bool {
 	return true
 }
 
+// Selector is the entry selection every command shares: a path or an id,
+// narrowed by tags, with archived entries opted in. The CLI maps the path
+// positional, --id, --tags, and --archived onto it.
+type Selector struct {
+	Path            string
+	Id              string // selects one entry by identity instead of a path
+	IncludeArchived bool
+	Tags            []string
+}
+
+func (s Selector) query() NodeQuery {
+	return NodeQuery{Path: s.Path, Id: s.Id, IncludeArchived: s.IncludeArchived, Tags: s.Tags}
+}
+
 func (ws *Workspace) Select(query NodeQuery) (NodeSelection, error) {
 	// An id resolves to its entry's path up front and then behaves as an
 	// exact query from the workspace root: explicit ids are not scoped by

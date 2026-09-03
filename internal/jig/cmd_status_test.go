@@ -144,7 +144,7 @@ func TestStatusSkipsArchivedMissingEntriesUnlessIncluded(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := Status(StatusOptions{IncludeArchived: true}, &out); err != nil {
+	if err := Status(StatusOptions{Selector: Selector{IncludeArchived: true}}, &out); err != nil {
 		t.Fatal(err)
 	}
 	got = out.String()

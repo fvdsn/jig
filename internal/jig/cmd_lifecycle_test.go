@@ -103,7 +103,7 @@ func TestLifecycleRunsCommandsAcrossRepos(t *testing.T) {
 
 	// A path scopes the run like every other command.
 	out.Reset()
-	if err := Lint(LifecycleOptions{Path: "services/b"}, &out); err != nil {
+	if err := Lint(LifecycleOptions{Selector: Selector{Path: "services/b"}}, &out); err != nil {
 		t.Fatalf("lint b: %v\n%s", err, out.String())
 	}
 	if got := out.String(); strings.Contains(got, "services/a") || !strings.Contains(got, "lint: services/b") {

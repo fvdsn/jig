@@ -112,7 +112,7 @@ func TestInfoShowsMeta(t *testing.T) {
 	t.Chdir(root)
 
 	var out bytes.Buffer
-	if err := Info(InfoOptions{Path: "platform/auth"}, &out); err != nil {
+	if err := Info(InfoOptions{Selector: Selector{Path: "platform/auth"}}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if got := out.String(); !strings.Contains(got, "meta:\n  github-mirror: git@github.com:acme/auth.git\n  team: core\n") {
@@ -120,7 +120,7 @@ func TestInfoShowsMeta(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := Info(InfoOptions{Path: "platform"}, &out); err != nil {
+	if err := Info(InfoOptions{Selector: Selector{Path: "platform"}}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if got := out.String(); !strings.Contains(got, "meta:\n  team: core\n") {

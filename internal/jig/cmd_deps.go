@@ -6,12 +6,9 @@ import (
 )
 
 type DependenciesOptions struct {
-	Path            string
-	Id              string // selects one entry by identity instead of a path
-	Reverse         bool   // list direct dependents instead of recursive dependencies
+	Selector
+	Reverse         bool // list direct dependents instead of recursive dependencies
 	IncludeOptional bool
-	IncludeArchived bool
-	Tags            []string
 }
 
 func Dependencies(options DependenciesOptions, out io.Writer) error {
@@ -19,7 +16,7 @@ func Dependencies(options DependenciesOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Select(NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
+	selection, err := ws.Select(options.query())
 	if err != nil {
 		return err
 	}

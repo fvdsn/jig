@@ -7,11 +7,8 @@ import (
 )
 
 type PushOptions struct {
-	Path            string
-	Id              string // selects one entry by identity instead of a path
-	IncludeArchived bool
-	Tags            []string
-	SetUpstream     bool // create the upstream (git push -u) when the branch has none
+	Selector
+	SetUpstream bool // create the upstream (git push -u) when the branch has none
 }
 
 // Push publishes the current branch of installed repositories matching the
@@ -24,7 +21,7 @@ func Push(options PushOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	repos, err := selectInstalledRepos(ws, NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
+	repos, err := selectInstalledRepos(ws, options.query())
 	if err != nil {
 		return err
 	}

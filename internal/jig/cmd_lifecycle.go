@@ -18,10 +18,7 @@ import (
 // sync, or update.
 
 type LifecycleOptions struct {
-	Path            string
-	Id              string // selects one entry by identity instead of a path
-	IncludeArchived bool
-	Tags            []string
+	Selector
 }
 
 // Setup runs each repository's setup command in dependency order, so a
@@ -62,7 +59,7 @@ func runLifecycle(verb string, options LifecycleOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	installed, err := selectInstalledRepos(ws, NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
+	installed, err := selectInstalledRepos(ws, options.query())
 	if err != nil {
 		return err
 	}

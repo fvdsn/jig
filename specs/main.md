@@ -1018,6 +1018,8 @@ jig list [path]
 jig list [path] --archived
 jig tags [path]
 jig tags [path] --archived
+jig tags [path] --tags a,b
+jig tags --id x
 jig info <path>
 jig info <path> --archived
 jig deps <path>
@@ -1025,6 +1027,8 @@ jig deps <path> --archived
 jig deps <path> --reverse
 jig graph [path]
 jig graph [path] --archived
+jig graph [path] --tags a,b
+jig graph --id x
 jig clone [path]
 jig setup [path]
 jig fmt [path]
@@ -1162,7 +1166,7 @@ file  scripts/dev.sh
 
 Lists the tag vocabulary of the entries matching `path`, so `--tags` filter values are discoverable without reading the schema.
 
-If `path` is omitted, the current subtree is used, like other position-relative commands.
+If `path` is omitted, the current subtree is used, like other position-relative commands. `--tags` and `--id` narrow the scope like they do everywhere else, so `jig tags --tags backend` lists the tags that co-occur with `backend`.
 
 Output is one line per tag with the number of entries carrying it (effective tags, so group-inherited tags are counted), sorted by tag.
 
@@ -1227,7 +1231,7 @@ Rules:
 - Dependency edges onto group paths point at the subgraph itself, matching what the schema declares, instead of fanning out to every member.
 - Optional dependencies are dashed (`-.->`); non-optional dependencies are solid (`-->`). Both are always shown.
 - If `path` is provided, the selected repositories are drawn along with any edge targets outside the selection, so no arrow dangles. A group target with no drawn repositories becomes a plain node.
-- Archived repositories follow the usual rule: hidden unless installed or `--archived`.
+- Archived repositories follow the usual rule: hidden unless installed or `--archived`. `--tags` and `--id` select repositories like they do everywhere else.
 - Repositories only; files, dirs, and `onlyWhen` relationships are not part of the graph.
 - Node identifiers are derived from workspace paths with unsafe characters replaced, and Mermaid keywords (such as a path segment named `end`) are escaped.
 - Output is deterministic: subgraphs, nodes, and edges are sorted.

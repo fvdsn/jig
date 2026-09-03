@@ -8,8 +8,7 @@ import (
 )
 
 type TagsOptions struct {
-	Path            string
-	IncludeArchived bool
+	Selector
 }
 
 // Tags lists the tag vocabulary of the selected entries, with the number of
@@ -20,7 +19,7 @@ func Tags(options TagsOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Select(NodeQuery{Path: options.Path, IncludeArchived: options.IncludeArchived})
+	selection, err := ws.Select(options.query())
 	if err != nil {
 		return err
 	}

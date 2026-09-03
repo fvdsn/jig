@@ -155,11 +155,9 @@ func resumeInit(workspaceDir string, options InitOptions, out io.Writer) error {
 // clone error is valid and is saved before the error is returned.
 func cloneIntoWorkspace(ws *Workspace, options InitOptions, out io.Writer) error {
 	cloneErr := clonePathIntoWorkspace(out, ws, CloneOptions{
-		Path:            options.ClonePath,
+		Selector:        Selector{Path: options.ClonePath, IncludeArchived: options.IncludeArchived, Tags: options.Tags},
 		IncludeOptional: options.IncludeOptional,
-		IncludeArchived: options.IncludeArchived,
 		SkipDeps:        options.SkipDeps,
-		Tags:            options.Tags,
 	})
 	if err := saveState(ws.Root, ws.State); err != nil {
 		return err

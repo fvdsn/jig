@@ -3,25 +3,19 @@ package jig
 import "io"
 
 type PullOptions struct {
-	Path            string
-	Id              string // selects one entry by identity instead of a path
-	IncludeArchived bool
-	Tags            []string
+	Selector
 }
 
 func Pull(options PullOptions, out io.Writer) error {
-	return runGitInInstalled(out, NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags}, "pull", "pulled", "pull", "--ff-only")
+	return runGitInInstalled(out, options.query(), "pull", "pulled", "pull", "--ff-only")
 }
 
 type FetchOptions struct {
-	Path            string
-	Id              string // selects one entry by identity instead of a path
-	IncludeArchived bool
-	Tags            []string
+	Selector
 }
 
 func Fetch(options FetchOptions, out io.Writer) error {
-	return runGitInInstalled(out, NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags}, "fetch", "fetched", "fetch")
+	return runGitInInstalled(out, options.query(), "fetch", "fetched", "fetch")
 }
 
 // runGitInInstalled runs one git command across the installed repositories

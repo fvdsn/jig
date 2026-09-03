@@ -62,17 +62,17 @@ func TestDepsReverseListsDirectDependents(t *testing.T) {
 	// path "platform", frontend is transitive and must not appear. Optional
 	// (tools/debug) and uninstalled archived (legacy/old) dependents are
 	// hidden by default.
-	got := deps(DependenciesOptions{Path: "platform/auth", Reverse: true})
+	got := deps(DependenciesOptions{Selector: Selector{Path: "platform/auth"}, Reverse: true})
 	if want := "platform/billing\nservices/checkout\n"; got != want {
 		t.Fatalf("reverse deps = %q, want %q", got, want)
 	}
 
 	// --with-optional-deps and --archived mirror the forward flags.
-	got = deps(DependenciesOptions{Path: "platform/auth", Reverse: true, IncludeOptional: true})
+	got = deps(DependenciesOptions{Selector: Selector{Path: "platform/auth"}, Reverse: true, IncludeOptional: true})
 	if want := "platform/billing\nservices/checkout\ntools/debug\n"; got != want {
 		t.Fatalf("reverse deps with optional = %q, want %q", got, want)
 	}
-	got = deps(DependenciesOptions{Path: "platform/auth", Reverse: true, IncludeArchived: true})
+	got = deps(DependenciesOptions{Selector: Selector{Path: "platform/auth", IncludeArchived: true}, Reverse: true})
 	if want := "legacy/old\nplatform/billing\nservices/checkout\n"; got != want {
 		t.Fatalf("reverse deps with archived = %q, want %q", got, want)
 	}
@@ -80,12 +80,12 @@ func TestDepsReverseListsDirectDependents(t *testing.T) {
 	// A group target asks who depends on anything in the group. Intra-group
 	// dependents count when the edge points at a different repo, but a
 	// repo's own edge into its group does not list it as its own dependent.
-	got = deps(DependenciesOptions{Path: "platform", Reverse: true})
+	got = deps(DependenciesOptions{Selector: Selector{Path: "platform"}, Reverse: true})
 	if want := "platform/billing\nservices/checkout\n"; got != want {
 		t.Fatalf("reverse deps of group = %q, want %q", got, want)
 	}
 
-	got = deps(DependenciesOptions{Path: "services/checkout", Reverse: true})
+	got = deps(DependenciesOptions{Selector: Selector{Path: "services/checkout"}, Reverse: true})
 	if want := "services/frontend\n"; got != want {
 		t.Fatalf("reverse deps of checkout = %q, want %q", got, want)
 	}

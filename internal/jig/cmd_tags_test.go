@@ -50,7 +50,7 @@ func TestTagsListsTagVocabulary(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := Tags(TagsOptions{IncludeArchived: true}, &out); err != nil {
+	if err := Tags(TagsOptions{Selector: Selector{IncludeArchived: true}}, &out); err != nil {
 		t.Fatal(err)
 	}
 	want = "backend     3\n" +
@@ -63,7 +63,7 @@ func TestTagsListsTagVocabulary(t *testing.T) {
 
 	// A path argument scopes the vocabulary to the subtree.
 	out.Reset()
-	if err := Tags(TagsOptions{Path: "tools"}, &out); err != nil {
+	if err := Tags(TagsOptions{Selector: Selector{Path: "tools"}}, &out); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := out.String(), "go  1\n"; got != want {

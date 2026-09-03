@@ -43,7 +43,7 @@ func TestListSupportsPathAndArchivedFlag(t *testing.T) {
 	t.Chdir(root)
 
 	var out bytes.Buffer
-	if err := List(ListOptions{Path: "services/", Width: -1}, &out); err != nil {
+	if err := List(ListOptions{Selector: Selector{Path: "services/"}, Width: -1}, &out); err != nil {
 		t.Fatal(err)
 	}
 	got := out.String()
@@ -56,7 +56,7 @@ func TestListSupportsPathAndArchivedFlag(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := List(ListOptions{Path: "services/", IncludeArchived: true, Width: -1}, &out); err != nil {
+	if err := List(ListOptions{Selector: Selector{Path: "services/", IncludeArchived: true}, Width: -1}, &out); err != nil {
 		t.Fatal(err)
 	}
 	got = out.String()
