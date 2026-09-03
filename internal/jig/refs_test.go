@@ -214,22 +214,11 @@ func TestSelectByIdIgnoresPositionAndArchived(t *testing.T) {
   }
 }`)
 
-	oldWd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
 	// Selection by id is not scoped by the working directory.
 	if err := os.MkdirAll(root+"/elsewhere", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chdir(root + "/elsewhere"); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := os.Chdir(oldWd); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	t.Chdir(root + "/elsewhere")
 
 	var out bytes.Buffer
 	if err := List(ListOptions{Id: "current", Width: -1}, &out); err != nil {
@@ -263,18 +252,7 @@ func TestQueryPathAcceptsSubtreeMarker(t *testing.T) {
   }
 }`)
 
-	oldWd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(root); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := os.Chdir(oldWd); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	t.Chdir(root)
 
 	var out bytes.Buffer
 	if err := List(ListOptions{Path: "services/*", Width: -1}, &out); err != nil {

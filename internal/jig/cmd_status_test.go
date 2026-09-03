@@ -35,18 +35,7 @@ func TestStatusSkipsArchivedMissingEntriesUnlessIncluded(t *testing.T) {
   }
 }`)
 
-	oldWd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(root); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := os.Chdir(oldWd); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	t.Chdir(root)
 
 	var out bytes.Buffer
 	if err := Status(StatusOptions{}, &out); err != nil {

@@ -36,18 +36,7 @@ func TestPushAcrossInstalledRepos(t *testing.T) {
 	gitIn(t, root, "clone", "-q", remoteA, localA)
 	gitIn(t, root, "clone", "-q", remoteB, localB)
 
-	oldWd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(root); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := os.Chdir(oldWd); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	t.Chdir(root)
 
 	push := func(options PushOptions) string {
 		t.Helper()

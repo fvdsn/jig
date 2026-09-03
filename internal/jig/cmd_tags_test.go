@@ -34,18 +34,7 @@ func TestTagsListsTagVocabulary(t *testing.T) {
   }
 }`)
 
-	oldWd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(root); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := os.Chdir(oldWd); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	t.Chdir(root)
 
 	// Counts match what filtering on each tag selects, groups included;
 	// tags of uninstalled archived entries are hidden.

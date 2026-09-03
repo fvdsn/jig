@@ -765,4 +765,3 @@ func TestLocalSourceValidation(t *testing.T) {
 		}
 	}
 }
-

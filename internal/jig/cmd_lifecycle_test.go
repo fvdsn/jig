@@ -67,18 +67,7 @@ func TestLifecycleRunsCommandsAcrossRepos(t *testing.T) {
 		gitIn(t, root, "clone", "-q", filepath.Join(root, "remote-"+name+".git"), filepath.Join(root, "services", name))
 	}
 
-	oldWd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(root); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := os.Chdir(oldWd); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	t.Chdir(root)
 
 	// lint runs each repo's own command in its checkout; the repo without
 	// one is counted, not failed.
@@ -142,18 +131,7 @@ func TestSetupRunsInDependencyOrder(t *testing.T) {
 	gitIn(t, root, "clone", "-q", remoteApp, filepath.Join(root, "app"))
 	gitIn(t, root, "clone", "-q", remoteLib, filepath.Join(root, "lib"))
 
-	oldWd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(root); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := os.Chdir(oldWd); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	t.Chdir(root)
 
 	var out bytes.Buffer
 	if err := Setup(LifecycleOptions{}, &out); err != nil {

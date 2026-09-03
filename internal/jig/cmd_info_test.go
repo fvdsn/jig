@@ -2,7 +2,6 @@ package jig
 
 import (
 	"bytes"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -23,18 +22,7 @@ func TestInfoIncludesArchivedNodeWhenRequestedOrInstalled(t *testing.T) {
   }
 }`)
 
-	oldWd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(root); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := os.Chdir(oldWd); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	t.Chdir(root)
 
 	var out bytes.Buffer
 	if err := Info(InfoOptions{Path: "services/old"}, &out); err == nil {
@@ -79,18 +67,7 @@ func TestInfoOrdersMixedGroupEntriesByPath(t *testing.T) {
   }
 }`)
 
-	oldWd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(root); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := os.Chdir(oldWd); err != nil {
-			t.Fatal(err)
-		}
-	}()
+	t.Chdir(root)
 
 	var out bytes.Buffer
 	if err := Info(InfoOptions{Path: "services"}, &out); err != nil {
