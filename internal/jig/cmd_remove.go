@@ -74,7 +74,7 @@ func Remove(options RemoveOptions, out io.Writer) error {
 	}
 	if len(failures) > 0 {
 		printGroup(out, "not-removed", failures)
-		return errors.New("some entries were not removed")
+		return fmt.Errorf("%d entries not removed", len(failures))
 	}
 	return nil
 }
