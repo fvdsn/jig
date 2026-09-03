@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+- Fixes: `jig sync --id X` without a path now materializes the entry
+  instead of silently ignoring the selector; `jig setup` orders
+  through repositories that have no setup command; a `$dir` whose
+  sources are all gated off converges to not existing (and is removed
+  on deactivation) like a `$file`; turning `executable` off takes
+  effect on a written file; read-only commands fail on a corrupt or
+  newer state file instead of reporting an empty workspace; a tree
+  path defined both nested and as a slash key is a validation error;
+  a `$dir` merge that rejects a source entry no longer hangs; two jig
+  processes can no longer both steal a stale mirror lock; `jig deps`
+  no longer lists a conditional root as its own dependency; `jig
+  status` lists stale entries in path order; `jig diff` exits non-zero
+  when a repository was skipped; `jig update` detects a no-op under
+  any locale and reports git's fast-forward error; a moved repository
+  is reported once; Mermaid node ids stay distinct.
+- `jig graph` and `jig tags` accept `--tags` and `--id` like every
+  other scoped command.
+- `jig info` on a group prints `path:` and `type: group` like the
+  other kinds; `executable:` appears only when set.
+- Applying a plan announces each skipped entry where it would have
+  reported and lists the reasons in one `skipped:` group at the end,
+  like the other commands; the git verbs announce a failed repository
+  as it happens and show progress on a terminal; summary errors are
+  worded uniformly (`pull: 2 repositories skipped`, `3 entries
+  skipped`, `1 entries not removed`).
+- A legacy root `.jig.json` produces the layout-no-longer-supported
+  error the spec describes.
+
 ## v2.4.1 — 2026-09-02
 
 - Schema version 3 (breaking): the local-source and `optional`
