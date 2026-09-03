@@ -137,6 +137,37 @@ func TestResolveDependenciesDoesNotIncludeRootInCycle(t *testing.T) {
 	}
 }
 
+// A conditional root whose condition is satisfied by its own dependencies
+// must not re-enter the plan through R3 when the roots are excluded, or
+// jig deps would list the repository as its own dependency.
+func TestResolveDependenciesExcludesConditionalRoot(t *testing.T) {
+	def := testDefinition(t, `{
+  "version": 3,
+  "tree": {
+    "platform/auth": { "$repo": { "git": "git@example.com:auth.git" } },
+    "tools/x": {
+      "$repo": {
+        "git": "git@example.com:x.git",
+        "onlyWhen": { "path": "platform/*" },
+        "dependsOn": [{ "path": "platform/auth" }]
+      }
+    }
+  }
+}`)
+	model, err := flattenDefinition(def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := resolvePlan(&model, []string{"tools/x"}, planOptions{IncludeRoots: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"platform/auth"}
+	if !reflect.DeepEqual(plan.Repos, want) {
+		t.Fatalf("deps of a conditional root = %#v, want %#v", plan.Repos, want)
+	}
+}
+
 func TestResolvePlanForGroupDeduplicatesDependencies(t *testing.T) {
 	def := testDefinition(t, `{
   "version": 3,

@@ -188,6 +188,11 @@ func (p *planner) activateConditionalRepos() bool {
 		if len(entry.Conditions) == 0 {
 			continue
 		}
+		// A root is in the plan by R1 or deliberately kept out of it (jig
+		// deps); its own condition never re-enters it as a dependency.
+		if p.rootIDs[entry.Identity] {
+			continue
+		}
 		if archivedExcluded(entry, p.opts.Installed, p.opts.IncludeArchived) {
 			continue
 		}
