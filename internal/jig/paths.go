@@ -86,9 +86,6 @@ func samePath(a string, b string) bool {
 }
 
 func pruneEmptyParents(root string, relDir string) {
-	if relDir == "." || relDir == "" {
-		return
-	}
 	for {
 		if relDir == "." || relDir == "" {
 			return

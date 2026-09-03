@@ -76,8 +76,8 @@ func (p *progress) render() {
 	}
 	sort.Strings(names)
 	line := fmt.Sprintf("[%d/%d] %s", p.done, p.total, strings.Join(names, " "))
-	if len(line) >= p.width {
-		line = line[:p.width-1]
+	if runes := []rune(line); len(runes) >= p.width {
+		line = string(runes[:p.width-1])
 	}
 	fmt.Fprint(p.out, "\r\033[K"+line)
 }

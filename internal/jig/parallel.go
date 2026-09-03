@@ -2,13 +2,14 @@ package jig
 
 import "sync"
 
-// gitWorkers bounds how many git processes run concurrently.
-const gitWorkers = 16
+// maxWorkers bounds how many entries the parallel passes work on at once;
+// most of that work is a git process per entry.
+const maxWorkers = 16
 
 // forEachParallel runs fn(i) for every i in [0, n) across a bounded pool of
 // goroutines and waits for all of them. fn must only write to per-index data.
 func forEachParallel(n int, fn func(int)) {
-	workers := gitWorkers
+	workers := maxWorkers
 	if n < workers {
 		workers = n
 	}
