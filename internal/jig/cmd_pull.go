@@ -1,11 +1,6 @@
 package jig
 
-import (
-	"fmt"
-	"io"
-	"strings"
-	"sync"
-)
+import "io"
 
 type PullOptions struct {
 	Path            string
@@ -15,7 +10,7 @@ type PullOptions struct {
 }
 
 func Pull(options PullOptions, out io.Writer) error {
-	return runGitInInstalled(out, NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags}, "pulled", "pull", "--ff-only")
+	return runGitInInstalled(out, NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags}, "pull", "pulled", "pull", "--ff-only")
 }
 
 type FetchOptions struct {
@@ -26,50 +21,22 @@ type FetchOptions struct {
 }
 
 func Fetch(options FetchOptions, out io.Writer) error {
-	return runGitInInstalled(out, NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags}, "fetched", "fetch")
+	return runGitInInstalled(out, NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags}, "fetch", "fetched", "fetch")
 }
 
-// runGitInInstalled runs a git command across the installed repositories
-// matching the query, in parallel, printing one <verb>: line per success as
-// it completes and a skipped group for failures.
-func runGitInInstalled(out io.Writer, query NodeQuery, verb string, gitArgs ...string) error {
+// runGitInInstalled runs one git command across the installed repositories
+// matching the query, reporting each success with the given verb.
+func runGitInInstalled(out io.Writer, query NodeQuery, command string, verb string, gitArgs ...string) error {
 	ws, err := loadWorkspace(false)
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Select(query)
+	repos, err := selectInstalledRepos(ws, query)
 	if err != nil {
 		return err
 	}
-
-	type candidate struct {
-		repoPath string
-		local    string
-	}
-	var candidates []candidate
-	for _, entry := range selection.ofKind(EntryRepo) {
-		if local, ok := installedPath(ws.Root, &ws.Model, &ws.State, entry.Path); ok {
-			candidates = append(candidates, candidate{entry.Path, local})
-		}
-	}
-
-	var mu sync.Mutex
-	var skipped []string
-	forEachParallel(len(candidates), func(i int) {
-		if _, err := git(candidates[i].local, gitArgs...); err != nil {
-			msg := strings.ReplaceAll(strings.TrimSpace(err.Error()), "\n", "\n  ")
-			mu.Lock()
-			skipped = append(skipped, fmt.Sprintf("%s: %s", candidates[i].repoPath, msg))
-			mu.Unlock()
-			return
-		}
-		mu.Lock()
-		fmt.Fprintf(out, "%s: %s\n", verb, candidates[i].repoPath)
-		mu.Unlock()
+	return runInRepos(out, repos, repoRun{Verb: command, Label: "skipped"}, func(repo installedRepo) (string, string, error) {
+		_, err := git(repo.Local, gitArgs...)
+		return verb, "", err
 	})
-	printGroup(out, "skipped", skipped)
-	if len(skipped) > 0 {
-		return fmt.Errorf("%d repositories were skipped", len(skipped))
-	}
-	return nil
 }

@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 )
 
 // The lifecycle verbs — setup, fmt, lint, test — are a fixed vocabulary of
@@ -63,81 +62,47 @@ func runLifecycle(verb string, options LifecycleOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Select(NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
+	installed, err := selectInstalledRepos(ws, NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
 	if err != nil {
 		return err
 	}
-
-	type candidate struct {
-		repoPath string
-		local    string
-		command  string
-	}
-	var candidates []candidate
+	commands := map[string]string{}
+	var repos []installedRepo
 	withoutCommand := 0
-	for _, entry := range selection.ofKind(EntryRepo) {
-		local, ok := installedPath(ws.Root, &ws.Model, &ws.State, entry.Path)
-		if !ok {
-			continue
-		}
+	for _, repo := range installed {
+		entry, _ := ws.Model.entry(repo.Path, EntryRepo)
 		command := lifecycleCommand(entry.Repo, verb)
 		if command == "" {
 			withoutCommand++
 			continue
 		}
-		candidates = append(candidates, candidate{entry.Path, local, command})
+		commands[repo.Path] = command
+		repos = append(repos, repo)
 	}
 
-	var mu sync.Mutex
-	var failed []string
-	tracker := newProgress(len(candidates))
-	run := func(i int) {
-		tracker.start(candidates[i].repoPath)
-		output, err := runRepoCommand(candidates[i].local, candidates[i].command)
-		tracker.finish(candidates[i].repoPath)
-		mu.Lock()
-		defer mu.Unlock()
-		if err != nil {
-			msg := err.Error()
-			if output != "" {
-				msg += "\n" + output
-			}
-			msg = strings.ReplaceAll(strings.TrimSpace(msg), "\n", "\n  ")
-			failed = append(failed, fmt.Sprintf("%s: %s", candidates[i].repoPath, msg))
-			// Failures surface immediately like successes do; the detailed
-			// output follows in the failed group once everything finished.
-			tracker.println(out, "failed: "+candidates[i].repoPath)
-			return
-		}
-		tracker.println(out, fmt.Sprintf("%s: %s", verb, candidates[i].repoPath))
-	}
+	run := repoRun{Verb: verb, Label: "failed"}
 	if verb == "setup" {
 		// A repository's setup may rely on its dependencies being set up
 		// (a shared package built, a database created), so setup runs
 		// sequentially in dependency order. The checking verbs are
 		// independent and run in parallel.
-		paths := make([]string, len(candidates))
-		index := map[string]int{}
-		for i, c := range candidates {
-			paths[i] = c.repoPath
-			index[c.repoPath] = i
+		paths := make([]string, len(repos))
+		for i, repo := range repos {
+			paths[i] = repo.Path
 		}
-		for _, repoPath := range dependencyOrder(&ws.Model, paths) {
-			run(index[repoPath])
-		}
-	} else {
-		forEachParallel(len(candidates), run)
+		run.Order = dependencyOrder(&ws.Model, paths)
 	}
-
-	tracker.close()
 	if withoutCommand > 0 {
 		fmt.Fprintf(out, "%d repositories define no %s command\n", withoutCommand, verb)
 	}
-	printGroup(out, "failed", failed)
-	if len(failed) > 0 {
-		return fmt.Errorf("%s failed in %d repositories", verb, len(failed))
-	}
-	return nil
+	return runInRepos(out, repos, run, func(repo installedRepo) (string, string, error) {
+		output, err := runRepoCommand(repo.Local, commands[repo.Path])
+		if err != nil && output != "" {
+			// The failure group carries the command's output.
+			err = fmt.Errorf("%s\n%s", err, output)
+		}
+		return verb, "", err
+	})
 }
 
 // runRepoCommand runs a schema-declared lifecycle command in the checkout

@@ -2,10 +2,8 @@ package jig
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"strings"
-	"sync"
 )
 
 type PushOptions struct {
@@ -26,40 +24,14 @@ func Push(options PushOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Select(NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
+	repos, err := selectInstalledRepos(ws, NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
 	if err != nil {
 		return err
 	}
-
-	type candidate struct {
-		repoPath string
-		local    string
-	}
-	var candidates []candidate
-	for _, entry := range selection.ofKind(EntryRepo) {
-		if local, ok := installedPath(ws.Root, &ws.Model, &ws.State, entry.Path); ok {
-			candidates = append(candidates, candidate{entry.Path, local})
-		}
-	}
-
-	var mu sync.Mutex
-	var skipped []string
-	forEachParallel(len(candidates), func(i int) {
-		verb, err := pushRepo(candidates[i].local, options.SetUpstream)
-		mu.Lock()
-		defer mu.Unlock()
-		if err != nil {
-			msg := strings.ReplaceAll(strings.TrimSpace(err.Error()), "\n", "\n  ")
-			skipped = append(skipped, fmt.Sprintf("%s: %s", candidates[i].repoPath, msg))
-			return
-		}
-		fmt.Fprintf(out, "%s: %s\n", verb, candidates[i].repoPath)
+	return runInRepos(out, repos, repoRun{Verb: "push", Label: "skipped"}, func(repo installedRepo) (string, string, error) {
+		verb, err := pushRepo(repo.Local, options.SetUpstream)
+		return verb, "", err
 	})
-	printGroup(out, "skipped", skipped)
-	if len(skipped) > 0 {
-		return fmt.Errorf("%d repositories were skipped", len(skipped))
-	}
-	return nil
 }
 
 // pushRepo pushes one repository's current branch and returns the report

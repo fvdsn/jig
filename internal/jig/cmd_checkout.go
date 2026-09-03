@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"sync"
 )
 
 type CheckoutOptions struct {
@@ -35,51 +34,23 @@ func Checkout(options CheckoutOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Select(NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
+	repos, err := selectInstalledRepos(ws, NodeQuery{Path: options.Path, Id: options.Id, IncludeArchived: options.IncludeArchived, Tags: options.Tags})
 	if err != nil {
 		return err
 	}
-
-	type candidate struct {
-		repoPath string
-		local    string
-	}
-	var candidates []candidate
-	for _, entry := range selection.ofKind(EntryRepo) {
-		if local, ok := installedPath(ws.Root, &ws.Model, &ws.State, entry.Path); ok {
-			candidates = append(candidates, candidate{entry.Path, local})
-		}
-	}
-
-	var mu sync.Mutex
-	var skipped []string
-	forEachParallel(len(candidates), func(i int) {
-		branch, suffix := options.Branch, ""
-		var err error
+	return runInRepos(out, repos, repoRun{Verb: "checkout", Label: "skipped"}, func(repo installedRepo) (string, string, error) {
+		branch, note := options.Branch, ""
 		if options.Default {
 			// The target differs per repository, so the report names it.
-			if branch, err = defaultBranch(candidates[i].local); err == nil {
-				suffix = " (" + branch + ")"
+			resolved, err := defaultBranch(repo.Local)
+			if err != nil {
+				return "", "", err
 			}
+			branch, note = resolved, "("+resolved+")"
 		}
-		var verb string
-		if err == nil {
-			verb, err = checkoutRepo(candidates[i].local, branch, options.Create)
-		}
-		mu.Lock()
-		defer mu.Unlock()
-		if err != nil {
-			msg := strings.ReplaceAll(strings.TrimSpace(err.Error()), "\n", "\n  ")
-			skipped = append(skipped, fmt.Sprintf("%s: %s", candidates[i].repoPath, msg))
-			return
-		}
-		fmt.Fprintf(out, "%s: %s%s\n", verb, candidates[i].repoPath, suffix)
+		verb, err := checkoutRepo(repo.Local, branch, options.Create)
+		return verb, note, err
 	})
-	printGroup(out, "skipped", skipped)
-	if len(skipped) > 0 {
-		return fmt.Errorf("%d repositories were skipped", len(skipped))
-	}
-	return nil
 }
 
 // checkoutRepo switches one repository and returns the report verb. Creating
