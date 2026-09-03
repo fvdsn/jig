@@ -1,6 +1,7 @@
 package jig
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -13,9 +14,9 @@ import (
 // hash, dir manifest) follows it instead of being reported stale.
 func readoptRenamedIdentities(out io.Writer, model *Model, state *State) {
 	var messages []string
-	messages = append(messages, readoptRepos(model, state)...)
-	messages = append(messages, readoptFiles(model, state)...)
-	messages = append(messages, readoptDirs(model, state)...)
+	for _, kind := range stateKinds {
+		messages = append(messages, readoptKind(model, state, kind)...)
+	}
 	printGroup(out, "readopted", messages)
 }
 
@@ -31,100 +32,31 @@ func definedPathToIdentity(model *Model, kind EntryKind) map[string]string {
 	return result
 }
 
-func readoptRepos(model *Model, state *State) []string {
-	defined := identityToPath(model, EntryRepo)
-	pathToID := definedPathToIdentity(model, EntryRepo)
-	var messages []string
+func readoptKind(model *Model, state *State, kind EntryKind) []string {
+	defined := identityToPath(model, kind)
+	pathToID := definedPathToIdentity(model, kind)
+	records := state.records(kind)
 	moves := map[string]string{}
-	for identity, stateRepo := range state.Repos {
+	for identity, rel := range records {
 		if _, ok := defined[identity]; ok {
 			continue
 		}
-		newID, ok := pathToID[stateRepo.Path]
+		newID, ok := pathToID[rel]
 		if !ok {
 			continue
 		}
-		if existing, taken := state.Repos[newID]; taken {
-			// An earlier sync already adopted the checkout under the new
-			// identity; the old record is a leftover duplicate.
-			if existing.Path == stateRepo.Path {
-				moves[identity] = newID
-			}
+		// An earlier sync may already have adopted the checkout under the
+		// new identity; then the old record is a leftover duplicate only
+		// when it names the same path.
+		if existingPath, taken := records[newID]; taken && existingPath != rel {
 			continue
 		}
 		moves[identity] = newID
 	}
-	for oldID, newID := range moves {
-		record := state.Repos[oldID]
-		delete(state.Repos, oldID)
-		if _, taken := state.Repos[newID]; !taken {
-			state.Repos[newID] = record
-		}
-		messages = append(messages, fmt.Sprintf("%s (%s -> %s)", record.Path, oldID, newID))
-	}
-	return messages
-}
-
-func readoptFiles(model *Model, state *State) []string {
-	defined := identityToPath(model, EntryFile)
-	pathToID := definedPathToIdentity(model, EntryFile)
 	var messages []string
-	moves := map[string]string{}
-	for identity, stateFile := range state.Files {
-		if _, ok := defined[identity]; ok {
-			continue
-		}
-		newID, ok := pathToID[stateFile.Path]
-		if !ok {
-			continue
-		}
-		if existing, taken := state.Files[newID]; taken {
-			if existing.Path == stateFile.Path {
-				moves[identity] = newID
-			}
-			continue
-		}
-		moves[identity] = newID
-	}
 	for oldID, newID := range moves {
-		record := state.Files[oldID]
-		delete(state.Files, oldID)
-		if _, taken := state.Files[newID]; !taken {
-			state.Files[newID] = record
-		}
-		messages = append(messages, fmt.Sprintf("%s (%s -> %s)", record.Path, oldID, newID))
-	}
-	return messages
-}
-
-func readoptDirs(model *Model, state *State) []string {
-	defined := identityToPath(model, EntryDir)
-	pathToID := definedPathToIdentity(model, EntryDir)
-	var messages []string
-	moves := map[string]string{}
-	for identity, stateDir := range state.Dirs {
-		if _, ok := defined[identity]; ok {
-			continue
-		}
-		newID, ok := pathToID[stateDir.Path]
-		if !ok {
-			continue
-		}
-		if existing, taken := state.Dirs[newID]; taken {
-			if existing.Path == stateDir.Path {
-				moves[identity] = newID
-			}
-			continue
-		}
-		moves[identity] = newID
-	}
-	for oldID, newID := range moves {
-		record := state.Dirs[oldID]
-		delete(state.Dirs, oldID)
-		if _, taken := state.Dirs[newID]; !taken {
-			state.Dirs[newID] = record
-		}
-		messages = append(messages, fmt.Sprintf("%s (%s -> %s)", record.Path, oldID, newID))
+		state.adopt(kind, oldID, newID)
+		messages = append(messages, fmt.Sprintf("%s (%s -> %s)", records[oldID], oldID, newID))
 	}
 	return messages
 }
@@ -138,85 +70,55 @@ func readoptDirs(model *Model, state *State) []string {
 func pruneStale(out io.Writer, root string, model *Model, state *State) {
 	var pruned, kept []string
 	owned := definedEntryPaths(model, state)
-
-	definedRepos := identityToPath(model, EntryRepo)
-	for identity, stateRepo := range state.Repos {
-		if _, ok := definedRepos[identity]; ok {
-			continue
+	for _, kind := range stateKinds {
+		defined := identityToPath(model, kind)
+		for identity, rel := range state.records(kind) {
+			if _, ok := defined[identity]; ok {
+				continue
+			}
+			if !recordInstalled(root, kind, rel) {
+				state.drop(kind, identity)
+				pruned = append(pruned, identity+" (no longer defined, not installed)")
+				continue
+			}
+			if owned[rel] {
+				state.drop(kind, identity)
+				pruned = append(pruned, fmt.Sprintf("%s (state only: %s is owned by a defined entry)", identity, rel))
+				continue
+			}
+			if err := deleteStaleRecord(root, state, kind, identity); err != nil {
+				kept = append(kept, rel+": "+err.Error())
+				continue
+			}
+			state.drop(kind, identity)
+			pruned = append(pruned, rel)
 		}
-		abs := filepath.Join(root, stateRepo.Path)
-		if !isGitRepo(abs) {
-			delete(state.Repos, identity)
-			pruned = append(pruned, identity+" (no longer defined, not installed)")
-			continue
-		}
-		if owned[stateRepo.Path] {
-			delete(state.Repos, identity)
-			pruned = append(pruned, fmt.Sprintf("%s (state only: %s is owned by a defined entry)", identity, stateRepo.Path))
-			continue
-		}
-		if origin, err := gitOrigin(abs); err != nil || origin != stateRepo.Git {
-			kept = append(kept, stateRepo.Path+": origin does not match the recorded URL")
-			continue
-		}
-		if err := deleteTrackedRepo(root, stateRepo.Path, false); err != nil {
-			kept = append(kept, stateRepo.Path+": "+err.Error())
-			continue
-		}
-		delete(state.Repos, identity)
-		pruned = append(pruned, stateRepo.Path)
 	}
-
-	definedFiles := identityToPath(model, EntryFile)
-	for identity, stateFile := range state.Files {
-		if _, ok := definedFiles[identity]; ok {
-			continue
-		}
-		abs := filepath.Join(root, stateFile.Path)
-		if !pathEntryExists(abs) {
-			delete(state.Files, identity)
-			pruned = append(pruned, identity+" (no longer defined, not installed)")
-			continue
-		}
-		if owned[stateFile.Path] {
-			delete(state.Files, identity)
-			pruned = append(pruned, fmt.Sprintf("%s (state only: %s is owned by a defined entry)", identity, stateFile.Path))
-			continue
-		}
-		if _, err := deleteTrackedFile(root, stateFile.Path, stateFile, refuseModified); err != nil {
-			kept = append(kept, stateFile.Path+": "+err.Error())
-			continue
-		}
-		delete(state.Files, identity)
-		pruned = append(pruned, stateFile.Path)
-	}
-
-	definedDirs := identityToPath(model, EntryDir)
-	for identity, stateDir := range state.Dirs {
-		if _, ok := definedDirs[identity]; ok {
-			continue
-		}
-		abs := filepath.Join(root, stateDir.Path)
-		if !pathEntryExists(abs) {
-			delete(state.Dirs, identity)
-			pruned = append(pruned, identity+" (no longer defined, not installed)")
-			continue
-		}
-		if owned[stateDir.Path] {
-			delete(state.Dirs, identity)
-			pruned = append(pruned, fmt.Sprintf("%s (state only: %s is owned by a defined entry)", identity, stateDir.Path))
-			continue
-		}
-		if _, err := deleteTrackedDir(root, stateDir.Path, stateDir, refuseModified); err != nil {
-			kept = append(kept, stateDir.Path+": "+err.Error())
-			continue
-		}
-		delete(state.Dirs, identity)
-		pruned = append(pruned, stateDir.Path)
-	}
-
 	printGroup(out, "pruned", pruned)
 	printGroup(out, "kept", kept)
+}
+
+// deleteStaleRecord takes a stale record off disk under the shared safety
+// rules. A repository is additionally kept when its origin no longer matches
+// the recorded URL: it is not the checkout the record describes.
+func deleteStaleRecord(root string, state *State, kind EntryKind, identity string) error {
+	switch kind {
+	case EntryRepo:
+		record := state.Repos[identity]
+		if origin, err := gitOrigin(filepath.Join(root, record.Path)); err != nil || origin != record.Git {
+			return errors.New("origin does not match the recorded URL")
+		}
+		return deleteTrackedRepo(root, record.Path, false)
+	case EntryFile:
+		record := state.Files[identity]
+		_, err := deleteTrackedFile(root, record.Path, record, refuseModified)
+		return err
+	case EntryDir:
+		record := state.Dirs[identity]
+		_, err := deleteTrackedDir(root, record.Path, record, refuseModified)
+		return err
+	}
+	return nil
 }
 
 // definedEntryPaths returns every workspace path currently owned by a
@@ -225,27 +127,16 @@ func pruneStale(out io.Writer, root string, model *Model, state *State) {
 func definedEntryPaths(model *Model, state *State) map[string]bool {
 	owned := map[string]bool{}
 	for path, entry := range model.Entries {
-		switch entry.Kind {
-		case EntryRepo, EntryFile, EntryDir:
+		if entry.Kind != EntryGroup {
 			owned[path] = true
 		}
 	}
-	definedRepos := identityToPath(model, EntryRepo)
-	for identity, stateRepo := range state.Repos {
-		if _, ok := definedRepos[identity]; ok {
-			owned[stateRepo.Path] = true
-		}
-	}
-	definedFiles := identityToPath(model, EntryFile)
-	for identity, stateFile := range state.Files {
-		if _, ok := definedFiles[identity]; ok {
-			owned[stateFile.Path] = true
-		}
-	}
-	definedDirs := identityToPath(model, EntryDir)
-	for identity, stateDir := range state.Dirs {
-		if _, ok := definedDirs[identity]; ok {
-			owned[stateDir.Path] = true
+	for _, kind := range stateKinds {
+		defined := identityToPath(model, kind)
+		for identity, rel := range state.records(kind) {
+			if _, ok := defined[identity]; ok {
+				owned[rel] = true
+			}
 		}
 	}
 	return owned

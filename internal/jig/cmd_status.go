@@ -284,22 +284,12 @@ func dirStatusLine(ws *Workspace, entry Entry, activeDirs map[string]bool) (stat
 
 func staleStatusLines(ws *Workspace) []statusLine {
 	var lines []statusLine
-	repoPaths := repoIdentityToPath(&ws.Model)
-	for identity, stateRepo := range ws.State.Repos {
-		if _, ok := repoPaths[identity]; !ok {
-			lines = append(lines, statusLine{glyphConflict, stateRepo.Path, "", "stale: no longer defined"})
-		}
-	}
-	filePaths := fileIdentityToPath(&ws.Model)
-	for identity, stateFile := range ws.State.Files {
-		if _, ok := filePaths[identity]; !ok {
-			lines = append(lines, statusLine{glyphConflict, stateFile.Path, "", "stale: no longer defined"})
-		}
-	}
-	dirPaths := identityToPath(&ws.Model, EntryDir)
-	for identity, stateDir := range ws.State.Dirs {
-		if _, ok := dirPaths[identity]; !ok {
-			lines = append(lines, statusLine{glyphConflict, stateDir.Path, "", "stale: no longer defined"})
+	for _, kind := range stateKinds {
+		defined := identityToPath(&ws.Model, kind)
+		for identity, rel := range ws.State.records(kind) {
+			if _, ok := defined[identity]; !ok {
+				lines = append(lines, statusLine{glyphConflict, rel, "", "stale: no longer defined"})
+			}
 		}
 	}
 	return lines

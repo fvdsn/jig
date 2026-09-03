@@ -473,20 +473,6 @@ func mergeArchive(stream io.Reader, dirAbs string, oldManifest map[string]string
 	}
 }
 
-func installedDirIdentitySet(root string, model *Model, state *State) map[string]bool {
-	installed := map[string]bool{}
-	dirIdentityToPath := identityToPath(model, EntryDir)
-	for identity, stateDir := range state.Dirs {
-		if _, ok := dirIdentityToPath[identity]; !ok {
-			continue
-		}
-		if pathExists(filepath.Join(root, stateDir.Path)) {
-			installed[identity] = true
-		}
-	}
-	return installed
-}
-
 // mergeFileIntoDir applies one source file to the merged directory under the
 // manifest rules: paths already claimed by a source materialized earlier are
 // shadowed, untouched files are overwritten, locally modified files kept.

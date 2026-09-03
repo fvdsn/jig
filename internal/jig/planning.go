@@ -213,7 +213,7 @@ func evidenceSet(model *Model, activeRepos map[string]bool, installedIdentities 
 		evidence[repoPath] = true
 	}
 	if len(installedIdentities) > 0 {
-		identityToPath := repoIdentityToPath(model)
+		identityToPath := identityToPath(model, EntryRepo)
 		for identity := range installedIdentities {
 			if repoPath, ok := identityToPath[identity]; ok {
 				evidence[repoPath] = true

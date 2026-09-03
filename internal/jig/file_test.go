@@ -463,7 +463,7 @@ func TestInstalledFileIdentitySetRequiresTrackedExistingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := installedFileIdentitySet(root, &model, &state)
+	got := installedArtifactIdentitySet(root, &model, &state, EntryFile)
 	if !got["tracked"] {
 		t.Fatalf("expected tracked file to be installed: %#v", got)
 	}

@@ -110,7 +110,7 @@ func ensureRepo(root string, entry Entry, stateRepo StateRepo, hasState bool, al
 // as the record of intent, so a checkout whose directory was deleted still
 // counts and gets restored by sync; jig rm is the way to uninstall.
 func desiredDefinedRepos(root string, model *Model, state *State) []string {
-	identityToPath := repoIdentityToPath(model)
+	identityToPath := identityToPath(model, EntryRepo)
 	resultSet := map[string]bool{}
 	for identity := range installedRepoIdentitySet(root, model, state) {
 		resultSet[identityToPath[identity]] = true
@@ -140,7 +140,7 @@ func installedPath(root string, model *Model, state *State, repoPath string) (st
 
 func installedRepoIdentitySet(root string, model *Model, state *State) map[string]bool {
 	installed := map[string]bool{}
-	identityToPath := repoIdentityToPath(model)
+	identityToPath := identityToPath(model, EntryRepo)
 	for identity, stateRepo := range state.Repos {
 		if _, ok := identityToPath[identity]; !ok {
 			continue

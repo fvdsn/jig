@@ -397,20 +397,6 @@ func ensureLinkFile(out io.Writer, root string, model *Model, state *State, file
 	return nil
 }
 
-func installedFileIdentitySet(root string, model *Model, state *State) map[string]bool {
-	installed := map[string]bool{}
-	identityToPath := fileIdentityToPath(model)
-	for identity, stateFile := range state.Files {
-		if _, ok := identityToPath[identity]; !ok {
-			continue
-		}
-		if pathEntryExists(filepath.Join(root, stateFile.Path)) {
-			installed[identity] = true
-		}
-	}
-	return installed
-}
-
 func fileSHA256(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

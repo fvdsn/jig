@@ -2,6 +2,7 @@ package jig
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -258,8 +259,8 @@ func (ws *Workspace) installedNodes() InstalledNodes {
 	if ws.installed == nil {
 		ws.installed = &InstalledNodes{
 			Repos: installedRepoIdentitySet(ws.Root, &ws.Model, &ws.State),
-			Files: installedFileIdentitySet(ws.Root, &ws.Model, &ws.State),
-			Dirs:  installedDirIdentitySet(ws.Root, &ws.Model, &ws.State),
+			Files: installedArtifactIdentitySet(ws.Root, &ws.Model, &ws.State, EntryFile),
+			Dirs:  installedArtifactIdentitySet(ws.Root, &ws.Model, &ws.State, EntryDir),
 		}
 	}
 	return *ws.installed
@@ -461,10 +462,16 @@ func identityToPath(model *Model, kind EntryKind) map[string]string {
 	return result
 }
 
-func repoIdentityToPath(model *Model) map[string]string {
-	return identityToPath(model, EntryRepo)
-}
-
-func fileIdentityToPath(model *Model) map[string]string {
-	return identityToPath(model, EntryFile)
+// installedArtifactIdentitySet reports the tracked files or dirs present on
+// disk (a dangling link included: it is still jig's, so it counts as
+// installed for rm and status).
+func installedArtifactIdentitySet(root string, model *Model, state *State, kind EntryKind) map[string]bool {
+	installed := map[string]bool{}
+	defined := identityToPath(model, kind)
+	for identity, rel := range state.records(kind) {
+		if _, ok := defined[identity]; ok && pathEntryExists(filepath.Join(root, rel)) {
+			installed[identity] = true
+		}
+	}
+	return installed
 }
