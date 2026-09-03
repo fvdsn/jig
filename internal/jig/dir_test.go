@@ -5,8 +5,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func gitIn(t *testing.T, dir string, args ...string) {
@@ -525,6 +527,41 @@ func TestDirWithAllSourcesGatedOff(t *testing.T) {
 	}
 	if _, tracked := state.Dirs["skills"]; tracked {
 		t.Fatal("expected state entry dropped for the abandoned directory")
+	}
+}
+
+// A source tree entry whose name jig refuses to write is a definition
+// error, and stopping the merge mid-stream must not leave git archive
+// blocked on the pipe: the archive continues past the bad entry with more
+// data than a pipe buffers.
+func TestEnsureDirRejectsUnsafeNamesWithoutHanging(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a backslash cannot appear in a file name on Windows")
+	}
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	source := filepath.Join(root, "source")
+	testFileSource(t, source, map[string]string{
+		`tree/a\b.txt`: "unsafe\n",
+		"tree/zzz.txt": strings.Repeat("x", 256*1024),
+	})
+
+	state := emptyState()
+	model := Model{Entries: map[string]Entry{
+		"out": {Path: "out", Identity: "out", Kind: EntryDir, Dir: &Dir{Src: SrcList{{Src: source + "#tree"}}}},
+	}}
+	resolveLinkPaths(&model)
+	done := make(chan error, 1)
+	go func() {
+		done <- ensureDir(ioDiscard{}, root, &model, &state, "out", true, newFileFetcher(), nil, nil)
+	}()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "unsafe path") {
+			t.Fatalf("expected an unsafe path error, got %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("ensureDir hung after rejecting the entry")
 	}
 }
 

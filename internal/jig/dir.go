@@ -435,13 +435,26 @@ func materializeTree(mirror string, treeOID string, dirAbs string, oldManifest m
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	defer cmd.Wait()
+	if err := mergeArchive(stdout, dirAbs, oldManifest, manifest, counts); err != nil {
+		// Stopping mid-stream leaves git blocked on a pipe nobody reads;
+		// kill it so Wait returns instead of hanging.
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return err
+	}
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("git archive: %s", err)
+	}
+	return nil
+}
 
-	reader := tar.NewReader(stdout)
+// mergeArchive merges every regular file of a tar stream into dirAbs.
+func mergeArchive(stream io.Reader, dirAbs string, oldManifest map[string]string, manifest map[string]string, counts *dirCounts) error {
+	reader := tar.NewReader(stream)
 	for {
 		header, err := reader.Next()
 		if err == io.EOF {
-			break
+			return nil
 		}
 		if err != nil {
 			return err
@@ -458,10 +471,6 @@ func materializeTree(mirror string, treeOID string, dirAbs string, oldManifest m
 			return err
 		}
 	}
-	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("git archive: %s", err)
-	}
-	return nil
 }
 
 func installedDirIdentitySet(root string, model *Model, state *State) map[string]bool {
