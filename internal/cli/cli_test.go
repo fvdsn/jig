@@ -97,7 +97,7 @@ func TestCheckoutDefaultExcludesBranchAndCreate(t *testing.T) {
 
 func TestPerCommandHelp(t *testing.T) {
 	var out bytes.Buffer
-	if err := Run([]string{"clone", "--help"}, &out, io.Discard); err != nil {
+	if err := Run([]string{"clone", "--help"}, &out); err != nil {
 		t.Fatalf("clone --help: %v", err)
 	}
 	if !strings.Contains(out.String(), "usage: jig clone [path]") {
@@ -105,19 +105,19 @@ func TestPerCommandHelp(t *testing.T) {
 	}
 
 	out.Reset()
-	if err := Run([]string{"help", "rm"}, &out, io.Discard); err != nil {
+	if err := Run([]string{"help", "rm"}, &out); err != nil {
 		t.Fatalf("help rm: %v", err)
 	}
 	if !strings.Contains(out.String(), "usage: jig rm <path>...") {
 		t.Fatalf("help rm output:\n%s", out.String())
 	}
 
-	if err := Run([]string{"help", "nonsense"}, &out, io.Discard); err == nil {
+	if err := Run([]string{"help", "nonsense"}, &out); err == nil {
 		t.Fatal("expected error for unknown help topic")
 	}
 
 	// Usage errors derive from the same table.
-	err := Run([]string{"clone", "a", "b"}, io.Discard, io.Discard)
+	err := Run([]string{"clone", "a", "b"}, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "usage: jig clone [path]") {
 		t.Fatalf("usage error = %v", err)
 	}

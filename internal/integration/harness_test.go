@@ -103,7 +103,7 @@ func (w *world) jig(dir string, args ...string) (string, error) {
 		}
 	}()
 	var out bytes.Buffer
-	runErr := cli.Run(args, &out, &out)
+	runErr := cli.Run(args, &out)
 	w.t.Logf("$ jig %s\n%s", strings.Join(args, " "), out.String())
 	return out.String(), runErr
 }

@@ -11,7 +11,9 @@ import (
 	"github.com/fvdsn/jig/internal/jig"
 )
 
-func Run(args []string, out io.Writer, _ io.Writer) error {
+// Run executes one command line, writing its output to out. Progress lines
+// and the diff pager go to the process stderr and terminal directly.
+func Run(args []string, out io.Writer) error {
 	if len(args) == 0 {
 		printUsage(out)
 		return nil
@@ -270,7 +272,7 @@ var commandDocs = []commandDoc{
 		[]string{"Validate the current workspace schema, or a schema file given by path."}},
 	{"list",
 		[]string{"list [path] [--archived] [--tags a,b] [--meta key[=value]] [--id x]"},
-		[]string{"List groups, repositories, and files defined in the schema."}},
+		[]string{"List groups, repositories, files, and dirs defined in the schema."}},
 	{"tags",
 		[]string{"tags [path] [--archived] [--tags a,b] [--id x]"},
 		[]string{"List the tags carried by entries matching a path, with entry counts."}},
@@ -321,7 +323,7 @@ var commandDocs = []commandDoc{
 		[]string{"Switch installed repositories to a branch; -b creates it, --default switches each repo to its remote's default branch. Repos where the switch would lose local changes are skipped."}},
 	{"rm",
 		[]string{"rm <path>... [-r|--recursive] [-f|--force]"},
-		[]string{"Uninstall repositories or files: delete the checkout and stop tracking it. -r removes groups, -f overrides dirty/unpushed checks."}},
+		[]string{"Uninstall repositories, files, or dirs: delete the checkout and stop tracking it. -r removes groups, -f overrides dirty/unpushed checks."}},
 	{"status",
 		[]string{"status [path] [--all] [--archived] [--tags a,b] [--id x]"},
 		[]string{"Show the state of installed entries; repos never installed are only counted unless --all is given."}},
@@ -340,7 +342,7 @@ var commandDocs = []commandDoc{
 	{"cache",
 		[]string{
 			"cache",
-			"cache clean [--unused <days>]",
+			"cache clean [--unused <days>[d]]",
 		},
 		[]string{
 			"Show the clone cache location, mirror count, and size.",
