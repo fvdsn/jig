@@ -65,7 +65,7 @@ func TestEnsureLinkFileCreatesRelativeSymlink(t *testing.T) {
 	}}
 	resolveLinkPaths(&model)
 
-	if err := ensureFile(ioDiscard{}, root, &model, &state, "bin/dev", true, newFileFetcher(), nil, nil); err != nil {
+	if err := newMaterializer(ioDiscard{}, root, &model, &state, newFileFetcher(), nil, nil, true).ensureFile("bin/dev"); err != nil {
 		t.Fatal(err)
 	}
 	target, err := os.Readlink(filepath.Join(root, "bin", "dev"))
@@ -97,7 +97,7 @@ func TestEnsureFilePreservesLocalModification(t *testing.T) {
 	}}
 	resolveLinkPaths(&model)
 
-	err := ensureFile(ioDiscard{}, root, &model, &state, "scripts/dev.sh", true, newFileFetcher(), nil, nil)
+	err := newMaterializer(ioDiscard{}, root, &model, &state, newFileFetcher(), nil, nil, true).ensureFile("scripts/dev.sh")
 	if err == nil || err.Error() != "locally modified" {
 		t.Fatalf("expected locally modified error, got %v", err)
 	}
@@ -117,7 +117,7 @@ func TestEnsureFilePicksUpSourceChanges(t *testing.T) {
 	resolveLinkPaths(&model)
 	ensure := func() string {
 		var out bytes.Buffer
-		if err := ensureFile(&out, root, &model, &state, "docs/readme.md", true, newFileFetcher(), nil, nil); err != nil {
+		if err := newMaterializer(&out, root, &model, &state, newFileFetcher(), nil, nil, true).ensureFile("docs/readme.md"); err != nil {
 			t.Fatalf("ensureFile: %v", err)
 		}
 		return out.String()
@@ -154,7 +154,7 @@ func TestEnsureFilePicksUpSourceChanges(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "docs", "readme.md"), []byte("edited\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	err = ensureFile(ioDiscard{}, root, &model, &state, "docs/readme.md", true, newFileFetcher(), nil, nil)
+	err = newMaterializer(ioDiscard{}, root, &model, &state, newFileFetcher(), nil, nil, true).ensureFile("docs/readme.md")
 	if err == nil || err.Error() != "locally modified" {
 		t.Fatalf("expected locally modified error, got %v", err)
 	}
@@ -195,7 +195,7 @@ func TestEnsureFileExecutableFollowsSchema(t *testing.T) {
 	resolveLinkPaths(&model)
 	ensure := func() string {
 		var out bytes.Buffer
-		if err := ensureFile(&out, root, &model, &state, "bin/dev", true, newFileFetcher(), nil, nil); err != nil {
+		if err := newMaterializer(&out, root, &model, &state, newFileFetcher(), nil, nil, true).ensureFile("bin/dev"); err != nil {
 			t.Fatalf("ensureFile: %v", err)
 		}
 		return out.String()
@@ -246,7 +246,7 @@ func TestEnsureFileConcatenatesMultipleSources(t *testing.T) {
 	resolveLinkPaths(&model)
 	ensure := func() string {
 		var out bytes.Buffer
-		if err := ensureFile(&out, root, &model, &state, "AGENTS.md", true, newFileFetcher(), nil, nil); err != nil {
+		if err := newMaterializer(&out, root, &model, &state, newFileFetcher(), nil, nil, true).ensureFile("AGENTS.md"); err != nil {
 			t.Fatalf("ensureFile: %v", err)
 		}
 		return out.String()
@@ -299,7 +299,7 @@ func TestFileSourcesGatedByOnlyWhen(t *testing.T) {
 	resolveLinkPaths(&model)
 	ensure := func(activeRepos map[string]bool) string {
 		var out bytes.Buffer
-		if err := ensureFile(&out, root, &model, &state, "AGENTS.md", true, newFileFetcher(), activeRepos, nil); err != nil {
+		if err := newMaterializer(&out, root, &model, &state, newFileFetcher(), activeRepos, nil, true).ensureFile("AGENTS.md"); err != nil {
 			t.Fatalf("ensureFile: %v", err)
 		}
 		return out.String()
@@ -349,7 +349,7 @@ func TestFileWithoutActiveSourcesIsNotGenerated(t *testing.T) {
 	resolveLinkPaths(&model)
 	ensure := func(activeRepos map[string]bool) string {
 		var out bytes.Buffer
-		if err := ensureFile(&out, root, &model, &state, "AGENTS.md", true, newFileFetcher(), activeRepos, nil); err != nil {
+		if err := newMaterializer(&out, root, &model, &state, newFileFetcher(), activeRepos, nil, true).ensureFile("AGENTS.md"); err != nil {
 			t.Fatalf("ensureFile: %v", err)
 		}
 		return out.String()
@@ -503,7 +503,7 @@ func TestFileCopyMaterializesTargetSources(t *testing.T) {
 	// The copy is a real file carrying the target's executable bit, without
 	// the target installed.
 	var out bytes.Buffer
-	if err := ensureFile(&out, root, &copyModel, &state, "bin/dev", true, newFileFetcher(), nil, nil); err != nil {
+	if err := newMaterializer(&out, root, &copyModel, &state, newFileFetcher(), nil, nil, true).ensureFile("bin/dev"); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "wrote-file: bin/dev") {
@@ -522,11 +522,11 @@ func TestFileCopyMaterializesTargetSources(t *testing.T) {
 
 	// copy -> link: the clean jig-written file is replaced by the symlink
 	// (the target must exist for a link).
-	if err := ensureFile(ioDiscard{}, root, &linkModel, &state, "scripts/dev.sh", true, newFileFetcher(), nil, nil); err != nil {
+	if err := newMaterializer(ioDiscard{}, root, &linkModel, &state, newFileFetcher(), nil, nil, true).ensureFile("scripts/dev.sh"); err != nil {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if err := ensureFile(&out, root, &linkModel, &state, "bin/dev", true, newFileFetcher(), nil, nil); err != nil {
+	if err := newMaterializer(&out, root, &linkModel, &state, newFileFetcher(), nil, nil, true).ensureFile("bin/dev"); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "linked-file: bin/dev") {
@@ -538,7 +538,7 @@ func TestFileCopyMaterializesTargetSources(t *testing.T) {
 
 	// link -> copy: the jig-owned symlink is replaced by a real file again.
 	out.Reset()
-	if err := ensureFile(&out, root, &copyModel, &state, "bin/dev", true, newFileFetcher(), nil, nil); err != nil {
+	if err := newMaterializer(&out, root, &copyModel, &state, newFileFetcher(), nil, nil, true).ensureFile("bin/dev"); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "wrote-file: bin/dev") {
@@ -599,14 +599,14 @@ func TestFileLinkToCopyConversionAcrossMove(t *testing.T) {
 	resolveLinkPaths(&copyModel)
 	state := emptyState()
 
-	if err := ensureFile(ioDiscard{}, root, &linkModel, &state, "scripts/dev.sh", true, newFileFetcher(), nil, nil); err != nil {
+	if err := newMaterializer(ioDiscard{}, root, &linkModel, &state, newFileFetcher(), nil, nil, true).ensureFile("scripts/dev.sh"); err != nil {
 		t.Fatal(err)
 	}
-	if err := ensureFile(ioDiscard{}, root, &linkModel, &state, "bin/dev", true, newFileFetcher(), nil, nil); err != nil {
+	if err := newMaterializer(ioDiscard{}, root, &linkModel, &state, newFileFetcher(), nil, nil, true).ensureFile("bin/dev"); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := ensureFile(&out, root, &copyModel, &state, "tools/dev", true, newFileFetcher(), nil, nil); err != nil {
+	if err := newMaterializer(&out, root, &copyModel, &state, newFileFetcher(), nil, nil, true).ensureFile("tools/dev"); err != nil {
 		t.Fatalf("moved link -> copy: %v", err)
 	}
 	newAbs := filepath.Join(root, "tools", "dev")
@@ -638,7 +638,7 @@ func TestEnsureFileSkipsUnavailableSources(t *testing.T) {
 	resolveLinkPaths(&model)
 	ensure := func() string {
 		var out bytes.Buffer
-		if err := ensureFile(&out, root, &model, &state, "AGENTS.md", true, newFileFetcher(), nil, nil); err != nil {
+		if err := newMaterializer(&out, root, &model, &state, newFileFetcher(), nil, nil, true).ensureFile("AGENTS.md"); err != nil {
 			t.Fatalf("ensureFile: %v", err)
 		}
 		return out.String()
@@ -721,7 +721,7 @@ func TestEnsureFileLocalSources(t *testing.T) {
 	resolveLinkPaths(&model)
 	ensure := func() string {
 		var out bytes.Buffer
-		if err := ensureFile(&out, root, &model, &state, "AGENTS.md", true, newFileFetcher(), nil, nil); err != nil {
+		if err := newMaterializer(&out, root, &model, &state, newFileFetcher(), nil, nil, true).ensureFile("AGENTS.md"); err != nil {
 			t.Fatalf("ensureFile: %v", err)
 		}
 		return out.String()

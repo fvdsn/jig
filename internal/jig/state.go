@@ -155,6 +155,30 @@ func (state *State) adopt(kind EntryKind, oldID string, newID string) {
 	}
 }
 
+// artifactRecord returns the recorded path and link target of a file or
+// dir record.
+func (state *State) artifactRecord(kind EntryKind, identity string) (path string, link string, ok bool) {
+	switch kind {
+	case EntryFile:
+		record, ok := state.Files[identity]
+		return record.Path, record.Link, ok
+	case EntryDir:
+		record, ok := state.Dirs[identity]
+		return record.Path, record.Link, ok
+	}
+	return "", "", false
+}
+
+// setLinkRecord records a file or dir as a link to another entry.
+func (state *State) setLinkRecord(kind EntryKind, identity string, path string, link string) {
+	switch kind {
+	case EntryFile:
+		state.Files[identity] = StateFile{Path: path, Link: link}
+	case EntryDir:
+		state.Dirs[identity] = StateDir{Path: path, Link: link}
+	}
+}
+
 // recordInstalled reports whether a record of the kind is present on disk
 // at its recorded path: a checkout for a repo, any entry (a dangling link
 // included, it is still jig's to remove) for a file or dir.

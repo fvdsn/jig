@@ -49,7 +49,7 @@ func TestEnsureDirLifecycle(t *testing.T) {
 	resolveLinkPaths(&model)
 	ensure := func() string {
 		var out bytes.Buffer
-		if err := ensureDir(&out, root, &model, &state, "tools/scripts", true, newFileFetcher(), nil, nil); err != nil {
+		if err := newMaterializer(&out, root, &model, &state, newFileFetcher(), nil, nil, true).ensureDir("tools/scripts"); err != nil {
 			t.Fatalf("ensureDir: %v", err)
 		}
 		return out.String()
@@ -157,7 +157,7 @@ func TestEnsureDirMergesMultipleSources(t *testing.T) {
 	resolveLinkPaths(&model)
 	ensure := func() string {
 		var out bytes.Buffer
-		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, newFileFetcher(), nil, nil); err != nil {
+		if err := newMaterializer(&out, root, &model, &state, newFileFetcher(), nil, nil, true).ensureDir(".agents/skills"); err != nil {
 			t.Fatalf("ensureDir: %v", err)
 		}
 		return out.String()
@@ -238,7 +238,7 @@ func TestEnsureDirSkipsUnavailableSources(t *testing.T) {
 	resolveLinkPaths(&model)
 	ensure := func() string {
 		var out bytes.Buffer
-		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, newFileFetcher(), nil, nil); err != nil {
+		if err := newMaterializer(&out, root, &model, &state, newFileFetcher(), nil, nil, true).ensureDir(".agents/skills"); err != nil {
 			t.Fatalf("ensureDir: %v", err)
 		}
 		return out.String()
@@ -307,7 +307,7 @@ func TestEnsureDirErrorsWhenNoSourceResolves(t *testing.T) {
 	resolveLinkPaths(&model)
 
 	var out bytes.Buffer
-	err := ensureDir(&out, root, &model, &state, ".agents/skills", true, newFileFetcher(), nil, nil)
+	err := newMaterializer(&out, root, &model, &state, newFileFetcher(), nil, nil, true).ensureDir(".agents/skills")
 	if err == nil || !strings.Contains(err.Error(), badSrc) {
 		t.Fatalf("err = %v, want mention of failing source %s", err, badSrc)
 	}
@@ -344,7 +344,7 @@ func TestEnsureDirKeepsForeignSymlinks(t *testing.T) {
 	resolveLinkPaths(&model)
 	ensure := func() string {
 		var out bytes.Buffer
-		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, newFileFetcher(), nil, nil); err != nil {
+		if err := newMaterializer(&out, root, &model, &state, newFileFetcher(), nil, nil, true).ensureDir(".agents/skills"); err != nil {
 			t.Fatalf("ensureDir: %v", err)
 		}
 		return out.String()
@@ -421,7 +421,7 @@ func TestDirSourcesGatedByOnlyWhen(t *testing.T) {
 	resolveLinkPaths(&model)
 	ensure := func(activeRepos map[string]bool) string {
 		var out bytes.Buffer
-		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, newFileFetcher(), activeRepos, nil); err != nil {
+		if err := newMaterializer(&out, root, &model, &state, newFileFetcher(), activeRepos, nil, true).ensureDir(".agents/skills"); err != nil {
 			t.Fatalf("ensureDir: %v", err)
 		}
 		return out.String()
@@ -476,7 +476,7 @@ func TestDirWithAllSourcesGatedOff(t *testing.T) {
 	resolveLinkPaths(&model)
 	ensure := func(activeRepos map[string]bool) string {
 		var out bytes.Buffer
-		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, newFileFetcher(), activeRepos, nil); err != nil {
+		if err := newMaterializer(&out, root, &model, &state, newFileFetcher(), activeRepos, nil, true).ensureDir(".agents/skills"); err != nil {
 			t.Fatalf("ensureDir: %v", err)
 		}
 		return out.String()
@@ -516,7 +516,7 @@ func TestDirWithAllSourcesGatedOff(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dirAbs, "billing.md"), []byte("edited\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := ensure(nil); !strings.Contains(got, "1 modified files left untracked") {
+	if got := ensure(nil); !strings.Contains(got, "1 modified file left untracked") {
 		t.Fatalf("modified deactivation run = %q, want left untracked", got)
 	}
 	if data, _ := os.ReadFile(filepath.Join(dirAbs, "billing.md")); string(data) != "edited\n" {
@@ -553,7 +553,7 @@ func TestEnsureDirRejectsUnsafeNamesWithoutHanging(t *testing.T) {
 	resolveLinkPaths(&model)
 	done := make(chan error, 1)
 	go func() {
-		done <- ensureDir(ioDiscard{}, root, &model, &state, "out", true, newFileFetcher(), nil, nil)
+		done <- newMaterializer(ioDiscard{}, root, &model, &state, newFileFetcher(), nil, nil, true).ensureDir("out")
 	}()
 	select {
 	case err := <-done:
@@ -588,11 +588,11 @@ func TestDirLinksCreateSymlinksToTargetDir(t *testing.T) {
 	}}
 	resolveLinkPaths(&model)
 	fetcher := newFileFetcher()
-	if err := ensureDir(ioDiscard{}, root, &model, &state, ".agents/skills", true, fetcher, nil, nil); err != nil {
+	if err := newMaterializer(ioDiscard{}, root, &model, &state, fetcher, nil, nil, true).ensureDir(".agents/skills"); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := ensureDir(&out, root, &model, &state, ".opencode/skills", true, fetcher, nil, nil); err != nil {
+	if err := newMaterializer(&out, root, &model, &state, fetcher, nil, nil, true).ensureDir(".opencode/skills"); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "linked-dir: .opencode/skills") {
@@ -611,7 +611,7 @@ func TestDirLinksCreateSymlinksToTargetDir(t *testing.T) {
 	}
 	// Second run is a no-op.
 	out.Reset()
-	if err := ensureDir(&out, root, &model, &state, ".opencode/skills", true, fetcher, nil, nil); err != nil {
+	if err := newMaterializer(&out, root, &model, &state, fetcher, nil, nil, true).ensureDir(".opencode/skills"); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "present-dir:") {
@@ -675,7 +675,7 @@ func TestDirCopyMaterializesTargetSources(t *testing.T) {
 
 	// The copy materializes a real directory without the target installed.
 	var out bytes.Buffer
-	if err := ensureDir(&out, root, &model, &state, ".claude/skills", true, fetcher, nil, nil); err != nil {
+	if err := newMaterializer(&out, root, &model, &state, fetcher, nil, nil, true).ensureDir(".claude/skills"); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "wrote-dir: .claude/skills (1 added)") {
@@ -696,7 +696,7 @@ func TestDirCopyMaterializesTargetSources(t *testing.T) {
 	gitIn(t, remote, "add", "-A")
 	gitIn(t, remote, "commit", "-qm", "v2")
 	out.Reset()
-	if err := ensureDir(&out, root, &model, &state, ".claude/skills", true, newFileFetcher(), nil, nil); err != nil {
+	if err := newMaterializer(&out, root, &model, &state, newFileFetcher(), nil, nil, true).ensureDir(".claude/skills"); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "updated-dir: .claude/skills (1 updated)") {
@@ -744,10 +744,10 @@ func TestDirCopyLinkTransitions(t *testing.T) {
 	aliasAbs := filepath.Join(root, ".claude", "skills")
 
 	// Materialize as a link first.
-	if err := ensureDir(ioDiscard{}, root, &linkModel, &state, ".agents/skills", true, fetcher, nil, nil); err != nil {
+	if err := newMaterializer(ioDiscard{}, root, &linkModel, &state, fetcher, nil, nil, true).ensureDir(".agents/skills"); err != nil {
 		t.Fatal(err)
 	}
-	if err := ensureDir(ioDiscard{}, root, &linkModel, &state, ".claude/skills", true, fetcher, nil, nil); err != nil {
+	if err := newMaterializer(ioDiscard{}, root, &linkModel, &state, fetcher, nil, nil, true).ensureDir(".claude/skills"); err != nil {
 		t.Fatal(err)
 	}
 	if !isSymlink(aliasAbs) {
@@ -756,7 +756,7 @@ func TestDirCopyLinkTransitions(t *testing.T) {
 
 	// link -> copy: the jig-owned symlink is replaced by a real directory.
 	var out bytes.Buffer
-	if err := ensureDir(&out, root, &copyModel, &state, ".claude/skills", true, fetcher, nil, nil); err != nil {
+	if err := newMaterializer(&out, root, &copyModel, &state, fetcher, nil, nil, true).ensureDir(".claude/skills"); err != nil {
 		t.Fatal(err)
 	}
 	if isSymlink(aliasAbs) {
@@ -771,7 +771,7 @@ func TestDirCopyLinkTransitions(t *testing.T) {
 	if err := os.WriteFile(subFile, []byte("edited\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := ensureDir(ioDiscard{}, root, &linkModel, &state, ".claude/skills", true, fetcher, nil, nil); err == nil ||
+	if err := newMaterializer(ioDiscard{}, root, &linkModel, &state, fetcher, nil, nil, true).ensureDir(".claude/skills"); err == nil ||
 		!strings.Contains(err.Error(), "locally modified") {
 		t.Fatalf("modified copy -> link err = %v", err)
 	}
@@ -781,7 +781,7 @@ func TestDirCopyLinkTransitions(t *testing.T) {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if err := ensureDir(&out, root, &linkModel, &state, ".claude/skills", true, fetcher, nil, nil); err != nil {
+	if err := newMaterializer(&out, root, &linkModel, &state, fetcher, nil, nil, true).ensureDir(".claude/skills"); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "linked-dir: .claude/skills") {
@@ -844,7 +844,7 @@ func TestEnsureDirLocalSources(t *testing.T) {
 	resolveLinkPaths(&model)
 	ensure := func() string {
 		var out bytes.Buffer
-		if err := ensureDir(&out, root, &model, &state, ".agents/skills", true, newFileFetcher(), nil, nil); err != nil {
+		if err := newMaterializer(&out, root, &model, &state, newFileFetcher(), nil, nil, true).ensureDir(".agents/skills"); err != nil {
 			t.Fatalf("ensureDir: %v", err)
 		}
 		return out.String()

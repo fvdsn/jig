@@ -146,19 +146,19 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, insta
 			skip(plan.Repos[i], result.Err)
 		}
 	})
-	fetcher := newFileFetcher()
 	activeRepos := map[string]bool{}
 	for _, repoPath := range plan.Repos {
 		activeRepos[repoPath] = true
 	}
-	fetcher.prefetchMirrors(activeSourceURLs(&ws.Model, plan, activeRepos, installedRepos))
+	m := newMaterializer(out, ws.Root, &ws.Model, &ws.State, newFileFetcher(), activeRepos, installedRepos, opts.Sync)
+	m.fetcher.prefetchMirrors(activeSourceURLs(m.model, plan, m.evidence))
 	for _, filePath := range plan.Files {
-		if err := ensureFile(out, ws.Root, &ws.Model, &ws.State, filePath, opts.Sync, fetcher, activeRepos, installedRepos); err != nil {
+		if err := m.ensureFile(filePath); err != nil {
 			skip(filePath, err)
 		}
 	}
 	for _, dirPath := range plan.Dirs {
-		if err := ensureDir(out, ws.Root, &ws.Model, &ws.State, dirPath, opts.Sync, fetcher, activeRepos, installedRepos); err != nil {
+		if err := m.ensureDir(dirPath); err != nil {
 			skip(dirPath, err)
 		}
 	}
@@ -172,50 +172,29 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, insta
 // activeSourceURLs collects the distinct source repository URLs the plan's
 // file and dir entries are about to fetch, honoring per-source conditions,
 // so their mirrors can be freshened in parallel up front.
-func activeSourceURLs(model *Model, plan plan, activeRepos map[string]bool, installedRepos map[string]bool) []string {
+func activeSourceURLs(model *Model, plan plan, evidence map[string]bool) []string {
 	urls := map[string]bool{}
-	add := func(sources SrcList, parse func(string) (fileSrc, error)) {
-		for _, source := range sources {
-			if source.OnlyWhen != nil && !conditionMatches(*source.OnlyWhen, activeRepos, installedRepos, model) {
+	add := func(kind EntryKind, paths []string, parse func(string) (fileSrc, error)) {
+		for _, path := range paths {
+			entry, ok := model.entry(path, kind)
+			if !ok || entry.isLink() {
 				continue
 			}
-			if parsed, err := parse(source.Src); err == nil {
-				urls[parsed.GitURL] = true
+			sources, err := effectiveSources(model, entry)
+			if err != nil {
+				continue
+			}
+			for _, source := range sources {
+				if source.OnlyWhen != nil && !conditionMetIn(model, evidence, *source.OnlyWhen) {
+					continue
+				}
+				if parsed, err := parse(source.Src); err == nil {
+					urls[parsed.GitURL] = true
+				}
 			}
 		}
 	}
-	for _, filePath := range plan.Files {
-		if entry, ok := model.entry(filePath, EntryFile); ok && entry.File.Link == nil {
-			add(effectiveFileSrc(model, entry.File), parseFileSrc)
-		}
-	}
-	for _, dirPath := range plan.Dirs {
-		if entry, ok := model.entry(dirPath, EntryDir); ok && entry.Dir.Link == nil {
-			add(effectiveDirSrc(model, entry.Dir), parseDirSrc)
-		}
-	}
+	add(EntryFile, plan.Files, parseFileSrc)
+	add(EntryDir, plan.Dirs, parseDirSrc)
 	return sortedKeys(urls)
-}
-
-// effectiveFileSrc returns the sources a file entry materializes from: its
-// own for a src entry, the target's for a copy entry.
-func effectiveFileSrc(model *Model, file *File) SrcList {
-	if file.Copy != nil {
-		if target, ok := model.entry(file.copyPath, EntryFile); ok {
-			return target.File.Src
-		}
-		return nil
-	}
-	return file.Src
-}
-
-// effectiveDirSrc mirrors effectiveFileSrc for $dir entries.
-func effectiveDirSrc(model *Model, dir *Dir) SrcList {
-	if dir.Copy != nil {
-		if target, ok := model.entry(dir.copyPath, EntryDir); ok {
-			return target.Dir.Src
-		}
-		return nil
-	}
-	return dir.Src
 }

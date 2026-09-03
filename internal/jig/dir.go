@@ -13,69 +13,43 @@ import (
 )
 
 // ensureDir materializes a $dir entry: a whole subtree of a source
-// repository. State keeps the source tree id plus a manifest of every file
-// written, so updates overwrite only untouched files, deletions remove only
-// untouched files, and user files inside the directory are never touched.
-func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath string, allowMove bool, fetcher *fileFetcher, activeRepos map[string]bool, installedRepos map[string]bool) error {
-	entry, _ := model.entry(dirPath, EntryDir)
+// repository, or the merge of several. State keeps the source tree ids plus
+// a manifest of every file written, so updates overwrite only untouched
+// files, deletions remove only untouched files, and user files inside the
+// directory are never touched.
+func (m *materializer) ensureDir(dirPath string) error {
+	entry, _ := m.model.entry(dirPath, EntryDir)
 	dir := entry.Dir
 	if dir.Link != nil {
-		return ensureLinkDir(out, root, model, state, dirPath, allowMove)
+		return m.ensureLink(entry)
 	}
-	// A copy entry materializes its target's sources as a real directory, so
-	// the contents match the target's by construction without requiring the
-	// target to be installed.
-	srcs := dir.Src
-	if dir.Copy != nil {
-		target, ok := model.entry(dir.copyPath, EntryDir)
-		if !ok {
-			return fmt.Errorf("copy target is not defined: %s", describeRef(*dir.Copy))
-		}
-		srcs = target.Dir.Src
+	srcs, err := effectiveSources(m.model, entry)
+	if err != nil {
+		return err
 	}
-	stateDir, hasState := state.Dirs[entry.Identity]
-	expectedRel := entry.Path
-	expectedAbs := filepath.Join(root, expectedRel)
+	expectedAbs := m.abs(entry.Path)
 
-	if hasState && stateDir.Path != expectedRel {
-		oldAbs := filepath.Join(root, stateDir.Path)
-		if pathExists(oldAbs) {
-			if !allowMove {
-				return fmt.Errorf("already written at %s; run jig sync to move it", stateDir.Path)
-			}
-			message, err := moveInstalledPath(root, dirPath, stateDir.Path, expectedRel, "moved-dir")
-			if err != nil {
-				return err
-			}
-			fmt.Fprintln(out, message)
-			stateDir.Path = expectedRel
-			state.Dirs[entry.Identity] = stateDir
-		} else {
-			delete(state.Dirs, entry.Identity)
-			hasState = false
-		}
-	}
-
-	// A symlink at the path is not a directory jig materialized; writing
-	// through it would land in the target. The one exception is a jig-owned
-	// link being converted to a copy: the recorded symlink is replaced by
-	// the materialized directory.
-	if isSymlink(expectedAbs) {
-		if !hasState || stateDir.Link == "" {
-			return fmt.Errorf("existing path is a symlink: %s", expectedRel)
-		}
-		if err := os.Remove(expectedAbs); err != nil {
+	record, hasState := m.state.Dirs[entry.Identity]
+	if hasState {
+		if hasState, err = m.relocate(entry, record.Path); err != nil {
 			return err
 		}
-		delete(state.Dirs, entry.Identity)
-		stateDir, hasState = StateDir{}, false
+		if hasState {
+			record.Path = entry.Path
+			m.state.Dirs[entry.Identity] = record
+		}
+	}
+	if m.allGatedOff(srcs) {
+		return m.ensureWithoutSources(entry, hasState)
+	}
+	if cleared, err := m.clearOwnedLink(entry, hasState && record.Link != ""); err != nil {
+		return err
+	} else if cleared {
+		record, hasState = StateDir{}, false
 	}
 
-	// Resolve every source before touching the workspace. A source that
-	// fails to resolve (unreachable repository, subtree missing upstream)
-	// is excluded from this run's merge and reported, so one broken
-	// source does not block the whole directory. A malformed source spec
-	// stays fatal: it is a definition bug, not an availability problem.
+	// A local directory source's content digest stands in for a git tree
+	// id.
 	type resolvedSource struct {
 		mirror string
 		tree   string
@@ -83,49 +57,31 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 	}
 	var sources []resolvedSource
 	var treeOIDs []string
-	var activeSrcs []string
-	var unavailable []string
-	for _, dirSource := range srcs {
-		// A per-source onlyWhen gates just this source's tree in the merge.
-		if dirSource.OnlyWhen != nil && !conditionMatches(*dirSource.OnlyWhen, activeRepos, installedRepos, model) {
-			continue
-		}
-		// A local directory source: a content digest stands in for the git
-		// tree id. An absent optional source is gated off (the merge
-		// converges without it); an absent required one is unavailable.
-		if dirSource.Dir != "" {
-			localAbs, err := expandLocalSource(dirSource.Dir)
+	resolved, err := m.resolveSources(srcs, func(source SrcEntry) (string, error) {
+		if source.Dir != "" {
+			localAbs, err := expandLocalSource(source.Dir)
 			if err != nil {
-				return err
+				return "", definitionError{err}
 			}
 			digest, err := localTreeDigest(localAbs)
 			if err != nil {
-				if dirSource.Optional {
-					continue
-				}
-				unavailable = append(unavailable, fmt.Sprintf("source %s unavailable: %s", dirSource.Dir, shortError(err)))
-				continue
+				return "", err
 			}
 			sources = append(sources, resolvedSource{local: localAbs, tree: digest})
 			treeOIDs = append(treeOIDs, digest)
-			activeSrcs = append(activeSrcs, "dir:"+dirSource.Dir)
-			continue
+			return "dir:" + source.Dir, nil
 		}
-		parsed, err := parseDirSrc(dirSource.Src)
+		parsed, err := parseDirSrc(source.Src)
 		if err != nil {
-			return fmt.Errorf("source %s: %s", dirSource.Src, shortError(err))
+			return "", definitionError{err}
 		}
-		mirror, err := fetcher.mirror(parsed.GitURL)
+		mirror, err := m.fetcher.mirror(parsed.GitURL)
 		if err != nil {
-			if dirSource.Optional {
-				continue
-			}
-			unavailable = append(unavailable, fmt.Sprintf("source %s unavailable: %s", dirSource.Src, shortError(err)))
-			continue
+			return "", err
 		}
 		srcPath, err := resolveSrcPath(mirror, parsed)
 		if err != nil {
-			return fmt.Errorf("source %s: %s", dirSource.Src, shortError(err))
+			return "", definitionError{err}
 		}
 		treeRef := "HEAD^{tree}"
 		if srcPath != "" {
@@ -133,54 +89,44 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 		}
 		treeOut, err := git(mirror, "rev-parse", treeRef)
 		if err != nil {
-			if dirSource.Optional {
-				continue
-			}
-			unavailable = append(unavailable, fmt.Sprintf("source %s unavailable: subtree not found: %s", dirSource.Src, shortError(err)))
-			continue
+			return "", fmt.Errorf("subtree not found: %s", shortError(err))
 		}
 		treeOID := strings.TrimSpace(treeOut)
 		if objType, err := git(mirror, "cat-file", "-t", treeOID); err != nil || strings.TrimSpace(objType) != "tree" {
-			if dirSource.Optional {
-				continue
-			}
-			unavailable = append(unavailable, fmt.Sprintf("source %s unavailable: %s is not a directory in the source repository", dirSource.Src, srcPath))
-			continue
+			return "", fmt.Errorf("%s is not a directory in the source repository", srcPath)
 		}
 		sources = append(sources, resolvedSource{mirror: mirror, tree: treeOID})
 		treeOIDs = append(treeOIDs, treeOID)
-		activeSrcs = append(activeSrcs, dirSource.Src)
+		return source.Src, nil
+	})
+	if err != nil {
+		return err
 	}
-	// Every source gated off (or optional and absent) leaves nothing to
-	// materialize: the entry converges to not existing.
-	if len(sources) == 0 && len(unavailable) == 0 {
-		return ensureDirWithoutSources(out, root, state, entry, dirPath, stateDir, hasState)
+	if resolved.none() {
+		return m.ensureWithoutSources(entry, hasState)
 	}
-	srcKey := strings.Join(activeSrcs, " ")
+	srcKey := resolved.srcKey()
 	combinedTree := strings.Join(treeOIDs, "+")
-	note := ""
-	if len(unavailable) > 0 {
-		note = " (" + strings.Join(unavailable, "; ") + ")"
-	}
+	note := resolved.note()
 
 	// With no source resolvable there is nothing to materialize: an
 	// already-written directory is left as is, a missing one is an error.
 	if len(sources) == 0 {
 		if hasState && pathExists(expectedAbs) {
-			fmt.Fprintf(out, "present-dir: %s%s\n", dirPath, note)
+			fmt.Fprintf(m.out, "present-dir: %s%s\n", dirPath, note)
 			return nil
 		}
-		return fmt.Errorf("%s", strings.Join(unavailable, "; "))
+		return resolved.unavailableError()
 	}
 
-	if hasState && stateDir.Src == srcKey && stateDir.Tree == combinedTree && manifestClean(expectedAbs, stateDir.Files) {
-		fmt.Fprintf(out, "present-dir: %s%s\n", dirPath, note)
+	if hasState && record.Src == srcKey && record.Tree == combinedTree && manifestClean(expectedAbs, record.Files) {
+		fmt.Fprintf(m.out, "present-dir: %s%s\n", dirPath, note)
 		return nil
 	}
 
 	oldManifest := map[string]string{}
 	if hasState {
-		oldManifest = stateDir.Files
+		oldManifest = record.Files
 	}
 	newManifest := map[string]string{}
 	var counts dirCounts
@@ -207,7 +153,7 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 		if _, stillThere := newManifest[rel]; stillThere {
 			continue
 		}
-		if len(unavailable) > 0 {
+		if len(resolved.unavailable) > 0 {
 			newManifest[rel] = oldHash
 			continue
 		}
@@ -224,150 +170,16 @@ func ensureDir(out io.Writer, root string, model *Model, state *State, dirPath s
 			if err := os.Remove(target); err != nil {
 				return err
 			}
-			pruneEmptyParents(root, filepath.Dir(filepath.Join(expectedRel, filepath.FromSlash(rel))))
+			pruneEmptyParents(m.root, filepath.Dir(filepath.Join(entry.Path, filepath.FromSlash(rel))))
 			counts.deleted++
 		} else {
 			counts.abandoned++
 		}
 	}
 
-	state.Dirs[entry.Identity] = StateDir{Path: expectedRel, Src: srcKey, Tree: combinedTree, Files: newManifest}
-	fmt.Fprintln(out, dirMessage(dirPath, hasState, counts)+note)
+	m.state.Dirs[entry.Identity] = StateDir{Path: entry.Path, Src: srcKey, Tree: combinedTree, Files: newManifest}
+	fmt.Fprintln(m.out, dirMessage(dirPath, hasState, counts)+note)
 	return nil
-}
-
-// ensureDirWithoutSources converges a dir entry whose sources are all gated
-// off: nothing is materialized, and the untouched files of a previously
-// written directory are removed. Locally modified files are kept but
-// abandoned as untracked, like $file deactivation and like the modified
-// files of a single deactivated source.
-func ensureDirWithoutSources(out io.Writer, root string, state *State, entry Entry, dirPath string, stateDir StateDir, hasState bool) error {
-	if !hasState {
-		fmt.Fprintf(out, "inactive-dir: %s (no active sources)\n", dirPath)
-		return nil
-	}
-	kept, err := deleteTrackedDir(root, entry.Path, stateDir, abandonModified)
-	if err != nil {
-		return err
-	}
-	delete(state.Dirs, entry.Identity)
-	switch {
-	case kept > 0:
-		fmt.Fprintf(out, "inactive-dir: %s (no active sources; %d modified files left untracked)\n", dirPath, kept)
-	case len(stateDir.Files) > 0:
-		fmt.Fprintf(out, "removed-dir: %s (no active sources)\n", dirPath)
-	default:
-		fmt.Fprintf(out, "inactive-dir: %s (no active sources)\n", dirPath)
-	}
-	return nil
-}
-
-// ensureLinkDir creates a relative symlink to another $dir entry, mirroring
-// link files.
-func ensureLinkDir(out io.Writer, root string, model *Model, state *State, dirPath string, allowMove bool) error {
-	entry, _ := model.entry(dirPath, EntryDir)
-	dir := entry.Dir
-	targetEntry, ok := model.entry(dir.linkPath, EntryDir)
-	if !ok {
-		return fmt.Errorf("link target is not defined: %s", describeRef(*dir.Link))
-	}
-	if !pathExists(filepath.Join(root, targetEntry.Path)) {
-		return fmt.Errorf("link target is missing: %s", targetEntry.Path)
-	}
-
-	stateDir, hasState := state.Dirs[entry.Identity]
-	expectedRel := entry.Path
-	expectedAbs := filepath.Join(root, expectedRel)
-	expectedTarget, err := relativeSymlinkTarget(expectedRel, targetEntry.Path)
-	if err != nil {
-		return err
-	}
-
-	if hasState && stateDir.Path != expectedRel {
-		oldAbs := filepath.Join(root, stateDir.Path)
-		if pathEntryExists(oldAbs) {
-			if !allowMove {
-				return fmt.Errorf("already written at %s; run jig sync to move it", stateDir.Path)
-			}
-			message, err := moveInstalledPath(root, dirPath, stateDir.Path, expectedRel, "moved-dir")
-			if err != nil {
-				return err
-			}
-			fmt.Fprintln(out, message)
-		} else {
-			delete(state.Dirs, entry.Identity)
-			hasState = false
-		}
-	}
-
-	if pathEntryExists(expectedAbs) {
-		info, err := os.Lstat(expectedAbs)
-		if err != nil {
-			return err
-		}
-		switch {
-		case info.Mode()&os.ModeSymlink != 0:
-			currentTarget, err := os.Readlink(expectedAbs)
-			if err != nil {
-				return err
-			}
-			if currentTarget == expectedTarget {
-				state.Dirs[entry.Identity] = StateDir{Path: expectedRel, Link: dir.linkPath}
-				fmt.Fprintf(out, "present-dir: %s\n", dirPath)
-				return nil
-			}
-			if !hasState || stateDir.Link == "" {
-				return fmt.Errorf("existing symlink has different target")
-			}
-			if err := os.Remove(expectedAbs); err != nil {
-				return err
-			}
-		case hasState && stateDir.Link == "" && len(stateDir.Files) > 0:
-			// Converting a copy (or src) entry to a link: a fully untouched
-			// materialization is replaced by the symlink; modified or
-			// untracked files block the conversion.
-			if !manifestClean(expectedAbs, stateDir.Files) {
-				return fmt.Errorf("locally modified files; refusing to replace with a symlink: %s", expectedRel)
-			}
-			for rel := range stateDir.Files {
-				if err := os.Remove(filepath.Join(expectedAbs, filepath.FromSlash(rel))); err != nil {
-					return err
-				}
-			}
-			removeEmptyDirTree(expectedAbs)
-			if pathEntryExists(expectedAbs) {
-				return fmt.Errorf("directory was not fully cleared (untracked files remain, or a removal failed); refusing to replace with a symlink: %s", expectedRel)
-			}
-		default:
-			return fmt.Errorf("expected symlink path exists and is not a symlink: %s", expectedRel)
-		}
-	}
-
-	if err := os.MkdirAll(filepath.Dir(expectedAbs), 0o755); err != nil {
-		return err
-	}
-	if err := makeSymlink(expectedTarget, expectedAbs); err != nil {
-		return err
-	}
-	state.Dirs[entry.Identity] = StateDir{Path: expectedRel, Link: dir.linkPath}
-	fmt.Fprintf(out, "linked-dir: %s\n", dirPath)
-	return nil
-}
-
-// removeEmptyDirTree removes path and its subdirectories bottom-up as far as
-// they are empty; anything non-empty is left in place for the caller to
-// inspect.
-func removeEmptyDirTree(path string) {
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			removeEmptyDirTree(filepath.Join(path, entry.Name()))
-		}
-	}
-	_ = os.Remove(path)
 }
 
 type dirCounts struct {

@@ -139,6 +139,17 @@ func (d *Dir) targetPath() string {
 	return d.copyPath
 }
 
+// isLink reports whether a file or dir entry is a symlink to another entry.
+func (entry Entry) isLink() bool {
+	switch entry.Kind {
+	case EntryFile:
+		return entry.File.Link != nil
+	case EntryDir:
+		return entry.Dir.Link != nil
+	}
+	return false
+}
+
 // targetPath returns the tree path a file or dir entry aliases through link
 // or copy; "" for a src entry and for the other kinds.
 func (entry Entry) targetPath() string {

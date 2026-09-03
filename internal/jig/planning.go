@@ -266,12 +266,6 @@ func conditionMetIn(model *Model, evidence map[string]bool, condition Condition)
 	}
 }
 
-// conditionMatches reports whether a single condition holds against active
-// and installed repositories; used by per-source dir gating.
-func conditionMatches(condition Condition, activeRepos map[string]bool, installedIdentities map[string]bool, model *Model) bool {
-	return conditionMetIn(model, evidenceSet(model, activeRepos, installedIdentities), condition)
-}
-
 // artifactsActive computes the active files or dirs for the given repository
 // evidence. Link chains are resolved by a memoized walk: a link entry is
 // active only when its whole chain is; cycles (rejected by validation)

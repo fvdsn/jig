@@ -30,13 +30,13 @@ func TestActiveSourceURLsHonorsPerSourceConditions(t *testing.T) {
 
 	// Without billing active, gated sources stay out; the shared config and
 	// skills repos are collected once each and links contribute nothing.
-	got := activeSourceURLs(&model, p, nil, nil)
+	got := activeSourceURLs(&model, p, evidenceSet(&model, nil, nil))
 	want := []string{"git@example.com:config.git", "git@example.com:skills.git"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("urls = %#v, want %#v", got, want)
 	}
 
-	got = activeSourceURLs(&model, p, map[string]bool{"billing/api": true}, nil)
+	got = activeSourceURLs(&model, p, evidenceSet(&model, map[string]bool{"billing/api": true}, nil))
 	want = []string{
 		"git@example.com:billing-docs.git",
 		"git@example.com:billing-skills.git",
@@ -76,7 +76,7 @@ func TestPrefetchMirrorsServesLaterFetches(t *testing.T) {
 	}}
 	resolveLinkPaths(&model)
 	var out strings.Builder
-	if err := ensureFile(&out, root, &model, &state, "AGENTS.md", true, fetcher, nil, nil); err != nil {
+	if err := newMaterializer(&out, root, &model, &state, fetcher, nil, nil, true).ensureFile("AGENTS.md"); err != nil {
 		t.Fatalf("ensureFile: %v", err)
 	}
 	if !strings.Contains(out.String(), "wrote-file:") {
