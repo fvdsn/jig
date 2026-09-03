@@ -161,7 +161,8 @@ func (p *planner) expandDependencies(repoPath string) error {
 			if archivedExcluded(match, p.opts.Installed, p.opts.IncludeArchived) {
 				continue
 			}
-			if dep.Optional && !p.opts.IncludeOptional && !(p.opts.IncludeInstalledOptional && p.opts.Installed[match.Identity]) {
+			keptOptional := p.opts.IncludeOptional || p.opts.IncludeInstalledOptional && p.opts.Installed[match.Identity]
+			if dep.Optional && !keptOptional {
 				continue
 			}
 			if p.rootIDs[match.Identity] {

@@ -213,23 +213,22 @@ func writeJSON(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
+	discard := func(err error) error {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
 		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return discard(err)
 	}
 	if err := tmp.Chmod(0o644); err != nil {
-		tmp.Close()
-		os.Remove(tmp.Name())
-		return err
+		return discard(err)
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmp.Name())
-		return err
+		return discard(err)
 	}
 	if err := os.Rename(tmp.Name(), path); err != nil {
-		os.Remove(tmp.Name())
-		return err
+		return discard(err)
 	}
 	return nil
 }

@@ -44,7 +44,7 @@ func TestStatusMergesStaleEntriesByPath(t *testing.T) {
 		}
 		got := out.String()
 		a, b, c := strings.Index(got, "a/stale.txt"), strings.Index(got, "b/repo"), strings.Index(got, "c/stale.txt")
-		if a < 0 || b < 0 || c < 0 || !(a < b && b < c) {
+		if a < 0 || b < 0 || c < 0 || a > b || b > c {
 			t.Fatalf("expected a/stale.txt, b/repo, c/stale.txt in path order, got:\n%s", got)
 		}
 		if first == "" {

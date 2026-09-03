@@ -1,0 +1,12 @@
+version: "2"
+linters:
+  default: standard
+  settings:
+    errcheck:
+      # Output to a writer is never checked in jig: a failed print cannot
+      # be reported anywhere better. Best-effort cleanup calls are written
+      # with an explicit `_ =` instead of being excluded here.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln

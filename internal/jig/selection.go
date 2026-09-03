@@ -386,14 +386,6 @@ func (selection NodeSelection) exact(kind EntryKind) (Entry, bool) {
 	return Entry{}, false
 }
 
-func (selection NodeSelection) exactRepo() (Entry, bool) {
-	return selection.exact(EntryRepo)
-}
-
-func (selection NodeSelection) exactFile() (Entry, bool) {
-	return selection.exact(EntryFile)
-}
-
 func (selection NodeSelection) exactGroup() (Entry, bool) {
 	return selection.exact(EntryGroup)
 }

@@ -52,5 +52,5 @@ clean:
     rm -rf bin
     go clean
 
-# Build, lint, and test — the full pre-commit sweep
+# Build, lint, and test — the full pre-commit sweep (CI runs the same)
 all: build lint test

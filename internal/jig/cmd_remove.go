@@ -52,7 +52,8 @@ func Remove(options RemoveOptions, out io.Writer) error {
 			failures = append(failures, fmt.Sprintf("%s: nothing installed matches", rawPath))
 			continue
 		}
-		if !options.Recursive && !(len(matches) == 1 && matches[0].Path == selection.Path) {
+		exact := len(matches) == 1 && matches[0].Path == selection.Path
+		if !options.Recursive && !exact {
 			failures = append(failures, fmt.Sprintf("%s: matches %d entries; use -r to remove them all", rawPath, len(matches)))
 			continue
 		}

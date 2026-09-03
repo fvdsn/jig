@@ -140,7 +140,7 @@ func startDiffPager(terminal *os.File) (io.WriteCloser, func(), error) {
 		return nil, nil, err
 	}
 	wait := func() {
-		pagerIn.Close()
+		_ = pagerIn.Close()
 		_ = cmd.Wait()
 	}
 	return pagerIn, wait, nil

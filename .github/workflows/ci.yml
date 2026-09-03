@@ -21,6 +21,9 @@ jobs:
         run: test -z "$(gofmt -l .)" || (echo "unformatted files:"; gofmt -l .; exit 1)
       - name: vet
         run: go vet ./...
+      - name: lint
+        if: runner.os == 'Linux'
+        uses: golangci/golangci-lint-action@v8
       - name: test
         run: go test -race ./...
         env:

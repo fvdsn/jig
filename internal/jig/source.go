@@ -294,7 +294,7 @@ func fetchGitFileDirect(parsed fileSrc) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(tmp)
+	defer func() { _ = os.RemoveAll(tmp) }()
 	repoDir := filepath.Join(tmp, "repo")
 	if _, err := git("", "clone", "--quiet", "--depth", "1", parsed.GitURL, repoDir); err != nil {
 		return nil, err

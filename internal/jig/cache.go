@@ -124,7 +124,7 @@ func ensureMirror(root string, gitURL string) (string, error) {
 		return "", err
 	}
 	if _, err := git("", "clone", "--mirror", gitURL, dir); err != nil {
-		os.RemoveAll(dir)
+		_ = os.RemoveAll(dir)
 		return "", err
 	}
 	touchLastUsed(dir)
@@ -137,7 +137,7 @@ func cloneRepo(gitURL string, targetAbs string) error {
 	if err := cloneViaCache(gitURL, targetAbs); err == nil {
 		return nil
 	}
-	os.RemoveAll(targetAbs)
+	_ = os.RemoveAll(targetAbs)
 	_, err := git("", "clone", gitURL, targetAbs)
 	return err
 }
@@ -148,11 +148,11 @@ func cloneViaCache(gitURL string, targetAbs string) error {
 		return err
 	}
 	if _, err := git("", "clone", dir, targetAbs); err != nil {
-		os.RemoveAll(targetAbs)
+		_ = os.RemoveAll(targetAbs)
 		return err
 	}
 	if _, err := git(targetAbs, "remote", "set-url", "origin", gitURL); err != nil {
-		os.RemoveAll(targetAbs)
+		_ = os.RemoveAll(targetAbs)
 		return err
 	}
 	return nil
