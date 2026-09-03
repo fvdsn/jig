@@ -78,8 +78,7 @@ func Init(options InitOptions, out io.Writer) error {
 	if len(validation.Errors) > 0 {
 		return validation.asError("invalid schema")
 	}
-	model, err := flattenDefinition(def)
-	if err != nil {
+	if _, err := flattenDefinition(def); err != nil {
 		return err
 	}
 
@@ -92,20 +91,12 @@ func Init(options InitOptions, out io.Writer) error {
 
 	fmt.Fprintf(out, "initialized workspace at %s\n", workspaceDir)
 	if options.Clone {
-		ws := Workspace{Root: workspaceDir, Config: Config{Version: 1, Schema: schemaPath}, Def: *def, Model: model, State: emptyState()}
-		cloneOptions := CloneOptions{
-			Path:            options.ClonePath,
-			IncludeOptional: options.IncludeOptional,
-			IncludeArchived: options.IncludeArchived,
-			SkipDeps:        options.SkipDeps,
-			Tags:            options.Tags,
-		}
-		cloneErr := clonePathIntoWorkspace(out, &ws, cloneOptions)
-		// State accumulated before a clone error is valid and must be kept.
-		if err := saveState(workspaceDir, ws.State); err != nil {
+		ws, err := loadWorkspaceAt(workspaceDir, "", true)
+		if err != nil {
 			return err
 		}
-		if cloneErr != nil {
+		defer ws.Close()
+		if cloneErr := cloneIntoWorkspace(ws, options, out); cloneErr != nil {
 			// A fresh workspace is usable even when fetching the starter
 			// skill fails (offline); jig sync retries later.
 			if options.SourceArg != "" {
@@ -157,6 +148,12 @@ func resumeInit(workspaceDir string, options InitOptions, out io.Writer) error {
 	if !options.Clone {
 		return nil
 	}
+	return cloneIntoWorkspace(ws, options, out)
+}
+
+// cloneIntoWorkspace runs init's --clone step. State accumulated before a
+// clone error is valid and is saved before the error is returned.
+func cloneIntoWorkspace(ws *Workspace, options InitOptions, out io.Writer) error {
 	cloneErr := clonePathIntoWorkspace(out, ws, CloneOptions{
 		Path:            options.ClonePath,
 		IncludeOptional: options.IncludeOptional,
@@ -164,8 +161,7 @@ func resumeInit(workspaceDir string, options InitOptions, out io.Writer) error {
 		SkipDeps:        options.SkipDeps,
 		Tags:            options.Tags,
 	})
-	// State accumulated before a clone error is valid and must be kept.
-	if err := saveState(workspaceDir, ws.State); err != nil {
+	if err := saveState(ws.Root, ws.State); err != nil {
 		return err
 	}
 	return cloneErr
