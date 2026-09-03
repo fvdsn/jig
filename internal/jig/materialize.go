@@ -131,10 +131,18 @@ func excludeArchivedFiles(model *Model, base plan, installed map[string]bool) pl
 	return base
 }
 
-// applyPlan materializes the plan, reporting every entry that could not be
-// brought to its desired state as skipped. Anything skipped makes the
-// command fail, so scripts and agents see partial failures in the exit code.
+// applyPlan materializes the plan. An entry that cannot be brought to its
+// desired state is announced as skipped where it would have reported, then
+// listed with its reason in a skipped group at the end; anything skipped
+// makes the command fail, so scripts and agents see partial failures in
+// the exit code.
 func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, installedRepos map[string]bool) error {
+	var skipped []string
+	skip := func(path string, err error) {
+		skipped = append(skipped, fmt.Sprintf("%s: %s", path, err))
+		fmt.Fprintf(out, "skipped: %s\n", path)
+	}
+
 	// Repositories are independent of each other, so the git work runs in
 	// parallel; each result is applied to state and printed as it completes,
 	// so long runs show progress instead of a report at the end.
@@ -142,7 +150,6 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, insta
 	for i, repoPath := range plan.Repos {
 		entries[i], _ = ws.Model.entry(repoPath, EntryRepo)
 	}
-	skipped := 0
 	var mu sync.Mutex
 	forEachParallel(len(plan.Repos), func(i int) {
 		mu.Lock()
@@ -161,8 +168,7 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, insta
 			fmt.Fprintln(out, message)
 		}
 		if result.Err != nil {
-			skipped++
-			fmt.Fprintf(out, "skipped:\n  %s: %s\n", plan.Repos[i], result.Err)
+			skip(plan.Repos[i], result.Err)
 		}
 	})
 	fetcher := newFileFetcher()
@@ -173,18 +179,17 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, insta
 	fetcher.prefetchMirrors(activeSourceURLs(&ws.Model, plan, activeRepos, installedRepos))
 	for _, filePath := range plan.Files {
 		if err := ensureFile(out, ws.Root, &ws.Model, &ws.State, filePath, opts.Sync, fetcher, activeRepos, installedRepos); err != nil {
-			skipped++
-			fmt.Fprintf(out, "skipped:\n  %s: %s\n", filePath, err)
+			skip(filePath, err)
 		}
 	}
 	for _, dirPath := range plan.Dirs {
 		if err := ensureDir(out, ws.Root, &ws.Model, &ws.State, dirPath, opts.Sync, fetcher, activeRepos, installedRepos); err != nil {
-			skipped++
-			fmt.Fprintf(out, "skipped:\n  %s: %s\n", dirPath, err)
+			skip(dirPath, err)
 		}
 	}
-	if skipped > 0 {
-		return fmt.Errorf("%d entries were skipped", skipped)
+	printGroup(out, "skipped", skipped)
+	if len(skipped) > 0 {
+		return fmt.Errorf("%d entries skipped", len(skipped))
 	}
 	return nil
 }
