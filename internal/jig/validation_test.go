@@ -76,3 +76,18 @@ func TestFileLinkRequiresDefinedTarget(t *testing.T) {
 		t.Fatal("expected validation error")
 	}
 }
+
+// A schema without a tree is reported once, by the flattening step, not
+// again by a separate pre-check.
+func TestValidateReportsMissingTreeOnce(t *testing.T) {
+	result := validateDefinition(testDefinition(t, `{"version": 3}`))
+	count := 0
+	for _, msg := range result.Errors {
+		if msg == "missing tree" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("missing tree reported %d times in %#v, want once", count, result.Errors)
+	}
+}

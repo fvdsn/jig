@@ -20,9 +20,6 @@ func validateDefinition(def *Definition) validationResult {
 	} else if def.Version != 3 {
 		result.Errors = append(result.Errors, "unsupported or missing version")
 	}
-	if def.Tree == nil {
-		result.Errors = append(result.Errors, "missing tree")
-	}
 	if def.Source != nil {
 		if def.Source.Type != "git" {
 			result.Errors = append(result.Errors, "source.type must be git")
