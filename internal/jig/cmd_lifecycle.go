@@ -173,10 +173,13 @@ func shellPath() string {
 	return "sh"
 }
 
-// dependencyOrder orders the given repositories so dependencies come before
-// their dependents, restricted to the given set. A depth-first postorder
-// walk visits dependencies first and breaks cycles by skipping repositories
-// already visited.
+// dependencyOrder sorts repoPaths so that every repository comes after the
+// repositories it depends on. The walk follows the model's full dependency
+// graph, not only edges between the given repositories, so a dependency
+// chain through a repository outside the set (one without a setup command,
+// or not installed) still orders the two ends correctly. Only the given
+// repositories appear in the result; cycles are broken by skipping
+// repositories already visited.
 func dependencyOrder(model *Model, repoPaths []string) []string {
 	inSet := map[string]bool{}
 	for _, path := range repoPaths {
@@ -196,12 +199,12 @@ func dependencyOrder(model *Model, repoPaths []string) []string {
 		}
 		for _, dep := range entry.Repo.DependsOn {
 			for _, match := range model.resolveRepoRef(dep.Ref) {
-				if inSet[match.Path] {
-					visit(match.Path)
-				}
+				visit(match.Path)
 			}
 		}
-		order = append(order, repoPath)
+		if inSet[repoPath] {
+			order = append(order, repoPath)
+		}
 	}
 	for _, path := range repoPaths {
 		visit(path)

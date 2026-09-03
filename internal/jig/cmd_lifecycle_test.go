@@ -114,21 +114,27 @@ func TestLifecycleRunsCommandsAcrossRepos(t *testing.T) {
 func TestSetupRunsInDependencyOrder(t *testing.T) {
 	root := t.TempDir()
 	remoteApp := testBareRemote(t, root, "remote-app")
+	remoteMid := testBareRemote(t, root, "remote-mid")
 	remoteLib := testBareRemote(t, root, "remote-lib")
-	// app depends on lib: lib's setup must run first even though app sorts
-	// first alphabetically.
+	// app depends on lib through mid, which has no setup command of its
+	// own: lib's setup must still run first even though app sorts first
+	// alphabetically.
 	writeTestWorkspace(t, root, fmt.Sprintf(`{
   "version": 3,
   "tree": {
     "app": {
-      "$repo": { "git": %q, "setup": "echo app >> ../order.log", "dependsOn": [{ "path": "lib" }] }
+      "$repo": { "git": %q, "setup": "echo app >> ../order.log", "dependsOn": [{ "path": "mid" }] }
+    },
+    "mid": {
+      "$repo": { "git": %q, "dependsOn": [{ "path": "lib" }] }
     },
     "lib": {
       "$repo": { "git": %q, "setup": "echo lib >> ../order.log" }
     }
   }
-}`, remoteApp, remoteLib))
+}`, remoteApp, remoteMid, remoteLib))
 	gitIn(t, root, "clone", "-q", remoteApp, filepath.Join(root, "app"))
+	gitIn(t, root, "clone", "-q", remoteMid, filepath.Join(root, "mid"))
 	gitIn(t, root, "clone", "-q", remoteLib, filepath.Join(root, "lib"))
 
 	t.Chdir(root)
