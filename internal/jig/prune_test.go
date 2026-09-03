@@ -159,3 +159,50 @@ func TestSyncPruneDeletesStaleEntriesSafely(t *testing.T) {
 		t.Fatal("expected old identity to be gone")
 	}
 }
+
+// A stale $dir is pruned only while every manifest file is untouched; a
+// modified file keeps the whole directory, like jig rm without --force.
+func TestSyncPruneKeepsModifiedStaleDirs(t *testing.T) {
+	root := t.TempDir()
+	model, err := flattenDefinition(testDefinition(t, `{"version": 3, "tree": {"keep": {"$repo": {"git": "git@example.com:keep.git"}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(rel, content string) {
+		t.Helper()
+		path := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("stale/a.md", "a\n")
+	write("stale/sub/b.md", "b\n")
+	state := emptyState()
+	state.Dirs["stale"] = StateDir{Path: "stale", Src: "x", Tree: "x", Files: map[string]string{
+		"a.md":     sha256Hex([]byte("a\n")),
+		"sub/b.md": sha256Hex([]byte("b\n")),
+	}}
+
+	write("stale/sub/b.md", "edited\n")
+	var out bytes.Buffer
+	pruneStale(&out, root, &model, &state)
+	if !strings.Contains(out.String(), "kept:\n  stale: 1 locally modified files") {
+		t.Fatalf("modified run = %q, want the dir kept", out.String())
+	}
+	if _, tracked := state.Dirs["stale"]; !tracked || !pathExists(filepath.Join(root, "stale", "a.md")) {
+		t.Fatal("expected the modified stale dir left intact and tracked")
+	}
+
+	write("stale/sub/b.md", "b\n")
+	out.Reset()
+	pruneStale(&out, root, &model, &state)
+	if !strings.Contains(out.String(), "pruned:\n  stale") {
+		t.Fatalf("untouched run = %q, want the dir pruned", out.String())
+	}
+	if _, tracked := state.Dirs["stale"]; tracked || pathExists(filepath.Join(root, "stale")) {
+		t.Fatal("expected the untouched stale dir removed and untracked")
+	}
+}

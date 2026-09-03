@@ -1,6 +1,9 @@
 package jig
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestValidateDefinitionDuplicateIdentity(t *testing.T) {
 	def := testDefinition(t, `{
@@ -89,5 +92,32 @@ func TestValidateReportsMissingTreeOnce(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("missing tree reported %d times in %#v, want once", count, result.Errors)
+	}
+}
+
+// A dependency cycle between repositories is a warning (setup still runs,
+// in a best-effort order); a link cycle between files is an error, since
+// no link could ever resolve.
+func TestValidateDetectsCycles(t *testing.T) {
+	result := validateDefinition(testDefinition(t, `{
+  "version": 3,
+  "tree": {
+    "a": { "$repo": { "git": "git@example.com:a.git", "dependsOn": [{ "path": "b" }] } },
+    "b": { "$repo": { "git": "git@example.com:b.git", "dependsOn": [{ "path": "a" }] } },
+    "x.md": { "$file": { "link": { "path": "y.md" } } },
+    "y.md": { "$file": { "link": { "path": "x.md" } } }
+  }
+}`))
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "dependency cycle detected: a -> b -> a") {
+		t.Fatalf("warnings = %#v, want one dependency cycle", result.Warnings)
+	}
+	found := false
+	for _, msg := range result.Errors {
+		if strings.HasPrefix(msg, "file link cycle detected:") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("errors = %#v, want a file link cycle", result.Errors)
 	}
 }
