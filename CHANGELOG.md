@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v2.5.0 — 2026-09-07
 
 - Fixes: `jig sync --id X` without a path now materializes the entry
   instead of silently ignoring the selector; `jig setup` orders
