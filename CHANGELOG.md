@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- The clone pass of `jig init --clone`, `jig clone`, and `jig sync`,
+  and the mirror prefetch for file and dir sources, show the
+  transient progress line the git verbs have, so a long clone no
+  longer looks stuck on the last completed line.
+
 ## v2.5.1 — 2026-09-21
 
 - Fixes: interrupting a jig command (ctrl-c, SIGTERM) removes the

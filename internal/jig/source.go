@@ -249,10 +249,14 @@ func (f *fileFetcher) mirror(gitURL string) (string, error) {
 // the existing per-entry handling.
 func (f *fileFetcher) prefetchMirrors(gitURLs []string) {
 	results := make([]mirrorResult, len(gitURLs))
+	tracker := newProgress(len(gitURLs))
 	forEachParallel(len(gitURLs), func(i int) {
+		tracker.start(gitURLs[i])
 		dir, err := freshMirror(gitURLs[i])
+		tracker.finish(gitURLs[i])
 		results[i] = mirrorResult{dir, err}
 	})
+	tracker.close()
 	for i, gitURL := range gitURLs {
 		f.mirrors[gitURL] = results[i]
 	}

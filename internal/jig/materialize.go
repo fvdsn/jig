@@ -125,12 +125,17 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, insta
 	for i, repoPath := range plan.Repos {
 		entries[i], _ = ws.Model.entry(repoPath, EntryRepo)
 	}
+	// A clone can run for minutes with nothing to report, so a transient
+	// status line names the repositories in flight, like the git verbs do.
+	tracker := newProgress(len(plan.Repos))
 	var mu sync.Mutex
 	forEachParallel(len(plan.Repos), func(i int) {
 		mu.Lock()
 		stateRepo, hasState := ws.State.Repos[entries[i].Identity]
 		mu.Unlock()
+		tracker.start(plan.Repos[i])
 		result := ensureRepo(ws.Root, entries[i], stateRepo, hasState, opts.Sync)
+		tracker.finish(plan.Repos[i])
 		mu.Lock()
 		defer mu.Unlock()
 		if result.Remove {
@@ -140,12 +145,14 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, insta
 			ws.State.Repos[entries[i].Identity] = *result.StateRepo
 		}
 		for _, message := range result.Messages {
-			fmt.Fprintln(out, message)
+			tracker.println(out, message)
 		}
 		if result.Err != nil {
-			skip(plan.Repos[i], result.Err)
+			skipped = append(skipped, fmt.Sprintf("%s: %s", plan.Repos[i], result.Err))
+			tracker.println(out, "skipped: "+plan.Repos[i])
 		}
 	})
+	tracker.close()
 	activeRepos := map[string]bool{}
 	for _, repoPath := range plan.Repos {
 		activeRepos[repoPath] = true
