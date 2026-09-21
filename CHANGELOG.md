@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v2.5.2 — 2026-09-21
 
 - The clone pass of `jig init --clone`, `jig clone`, and `jig sync`,
   and the mirror prefetch for file and dir sources, show the
