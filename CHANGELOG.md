@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Fixes: interrupting a jig command (ctrl-c, SIGTERM) removes the
+  workspace and mirror lock files it holds, so the next command no
+  longer reports a stale lock.
+
 ## v2.5.0 — 2026-09-07
 
 - Fixes: `jig sync --id X` without a path now materializes the entry
