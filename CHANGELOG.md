@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v2.5.1 — 2026-09-21
 
 - Fixes: interrupting a jig command (ctrl-c, SIGTERM) removes the
   workspace and mirror lock files it holds, so the next command no
