@@ -197,7 +197,7 @@ CLI path arguments and pathless commands are interpreted relative to the directo
 - A pathless command uses the current subtree as its selection. At the workspace root this selects everything, preserving root behavior.
 - Path arguments resolve like filesystem paths: `.` is the current subtree, `..` climbs, and a leading `/` anchors to the workspace root. A resolved path escaping the workspace is an error.
 - A path below a repository or dir entry addresses that entry, the way git finds its repository from any directory inside a checkout: pathless commands run from `services/checkout/src` address `services/checkout`, and so does `jig info ../src` from there. Groups are plain directories and keep subtree semantics. A moved checkout answers to its defined path.
-- The commands that act on checkouts (`sync`, `setup`, `fmt`, `lint`, `test`, `pull`, `fetch`, `push`, `checkout`, `status`, `diff`) take no path and no selector flags: their scope is the current subtree, and `cd` narrows it. Only the schema commands, whose subjects may not exist on disk yet (`list`, `tags`, `info`, `deps`, `graph`, `clone`, and `init --clone`), take paths, `--id`, `--tags`, and `--archived`. `rm` takes the paths to remove as its arguments. `sync --prune` requires the workspace root.
+- The commands that act on checkouts (`sync`, `setup`, `fmt`, `lint`, `test`, `pull`, `fetch`, `push`, `checkout`, `status`, `diff`, `git`) take no path and no selector flags: their scope is the current subtree, and `cd` narrows it. Only the schema commands, whose subjects may not exist on disk yet (`list`, `tags`, `info`, `deps`, `graph`, `clone`, and `init --clone`), take paths, `--id`, `--tags`, and `--archived`. `rm` takes the paths to remove as its arguments. `sync --prune` requires the workspace root.
 - Resolution is CLI-side only: schema paths are unchanged and still reject `.`, `..`, and leading `/`.
 - Reported paths remain workspace-relative regardless of where the command runs.
 
@@ -1039,6 +1039,7 @@ jig pull
 jig push [-u]
 jig checkout [-b] <branch>
 jig checkout --default
+jig git <git args...>
 jig status [--all]
 jig diff [--stat]
 jig update
@@ -1355,6 +1356,19 @@ Switches each installed repository to its own remote default branch. This exists
 - Since the target branch differs per repository, report lines name it: `switched: services/api (main)`.
 - Repositories whose default branch cannot be resolved (no `origin`, remote unreachable) are reported under `skipped`; switching rules and safety are otherwise identical to the branch form.
 - `--default` replaces the `<branch>` positional and is incompatible with `-b`; combining them is a usage error.
+
+### `jig git <git args...>`
+
+Runs one git command, verbatim, in every installed repository under the current directory. Selection matches `jig pull`. Every token after `git` belongs to git: the command takes no flags of its own, so no separator is needed, and only `jig git -h` or `jig git --help` in first position asks for jig's help.
+
+The curated verbs exist where workspace semantics matter — ff-only pulls, never-forced pushes, checkouts that skip repositories that would lose work, dependency-ordered setup, the merged diff. Everything else git does (`switch`, `rebase`, `reset`, `stash`, `log`, `branch`, `remote`, `tag`, `cherry-pick`, …) goes through `jig git`, and the bar for a new curated verb is that git alone cannot give the workspace semantics it needs.
+
+Rules:
+
+- Raw git: none of the safety of the curated verbs applies. `jig git reset --hard` does exactly that in every repository in scope.
+- Repositories run in parallel; output is captured and reported in path order, one report per repository: `<path>: <output>`, with continuation lines indented by two spaces like the failure groups of the other verbs. A repository that prints nothing reports `done`.
+- Captured output means git runs non-interactively: `GIT_TERMINAL_PROMPT=0` makes credential prompts fail instead of hang, and editor-opening commands (`commit` without `-m`, `rebase -i`) are out of scope. When stdout is a terminal, git runs with `color.ui=always` so the user's color configuration applies as it would in a single repository.
+- A repository whose git exits non-zero is listed under `failed` with its exit status after the reports, and the command exits non-zero.
 
 ### `jig rm <path>...`
 

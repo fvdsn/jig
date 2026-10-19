@@ -22,6 +22,14 @@ func Run(args []string, out io.Writer) error {
 	if args[0] == "help" && len(args) > 1 {
 		return printCommandHelp(out, args[1])
 	}
+	// Everything after `jig git` belongs to git, so only a help flag in
+	// first position asks for jig's help there.
+	if args[0] == "git" {
+		if len(args) > 1 && wantsHelp(args[1:2]) {
+			return printCommandHelp(out, "git")
+		}
+		return cmdGit(args[1:], out)
+	}
 	if _, known := commandDocFor(args[0]); known && wantsHelp(args[1:]) {
 		return printCommandHelp(out, args[0])
 	}
@@ -313,6 +321,12 @@ var commandDocs = []commandDoc{
 			"checkout --default",
 		},
 		[]string{"Switch the installed repositories to a branch; -b creates it, --default switches each repo to its remote's default branch. Repos where the switch would lose local changes are skipped."}},
+	{"git",
+		[]string{"git <git args...>"},
+		[]string{
+			"Run a git command verbatim in the installed repositories; everything after git belongs to git.",
+			"Raw git: none of the safety of the verbs above applies, and output is captured, so interactive commands do not work.",
+		}},
 	{"rm",
 		[]string{"rm <path>... [-r|--recursive] [-f|--force]"},
 		[]string{"Uninstall repositories, files, or dirs: delete the checkout and stop tracking it. -r removes groups, -f overrides dirty/unpushed checks."}},
@@ -648,6 +662,13 @@ func cmdCheckout(args []string, out io.Writer) error {
 		Default: parsed.Flags["--default"],
 		Create:  parsed.Flags["-b"],
 	}, out)
+}
+
+func cmdGit(args []string, out io.Writer) error {
+	if len(args) == 0 {
+		return usageError("git")
+	}
+	return jig.Git(args, out)
 }
 
 func cmdRemove(args []string, out io.Writer) error {

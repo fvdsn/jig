@@ -14,6 +14,9 @@
   clone` for that.
 - A path below a repository or dir entry addresses that entry, the
   way git finds its repository from any directory inside a checkout.
+- `jig git <git args...>` runs any git command verbatim in the
+  installed repositories in scope, one report per repository in path
+  order; it is raw git with none of the safety of the curated verbs.
 
 ## v2.6.0 — 2026-10-19
 

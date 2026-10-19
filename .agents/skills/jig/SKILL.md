@@ -456,7 +456,7 @@ Keys must be non-empty, must not start with `$`, and must not contain spaces, co
 
 Commands are aware of where they run inside the workspace:
 
-- The commands that act on checkouts (`sync`, `setup`, `fmt`, `lint`, `test`, `pull`, `fetch`, `push`, `checkout`, `status`, `diff`) take no path and no selector flags. Their scope is the current directory: the whole workspace from the root, one subtree from a group directory (`jig status` in `services/` reports only entries under `services`), one repository from anywhere inside its checkout. `cd` is the selector.
+- The commands that act on checkouts (`sync`, `setup`, `fmt`, `lint`, `test`, `pull`, `fetch`, `push`, `checkout`, `status`, `diff`, `git`) take no path and no selector flags. Their scope is the current directory: the whole workspace from the root, one subtree from a group directory (`jig status` in `services/` reports only entries under `services`), one repository from anywhere inside its checkout. `cd` is the selector.
 - The schema commands (`list`, `tags`, `info`, `deps`, `graph`, `clone`) select entries that may not be on disk yet, so they take a path, `--tags`, `--id`, and `--archived`. Pathless, they scope to the current subtree too.
 - Path arguments resolve like filesystem paths against the current directory: `.`, `..`, `../other`, and a leading `/` anchoring to the workspace root (`jig info /platform/auth`). Escaping the workspace is an error. A path below a repository addresses that repository.
 - `jig sync` converges what is installed in the current subtree and never materializes an entry that was not cloned; `jig clone <path>` adds entries. `sync --prune` must run from the workspace root.
@@ -670,6 +670,15 @@ jig checkout --default
 ```
 
 `-b` creates the branch at each repository's current HEAD, or just switches when it already exists. `--default` switches each repository to its own remote default branch (main, master, …). Repositories already on the branch report `present`. Checkouts are never forced: a repository where git refuses the switch (uncommitted changes that would be overwritten) is reported under `skipped` and left untouched.
+
+Run any other git command verbatim in every installed repository in scope. Everything after `git` belongs to git, so there is no separator; each repository reports `<path>: <output>` in path order, silent ones report `done`, and failures are listed under `failed` with their exit status. This is raw git with none of the safety of the verbs above (`jig git reset --hard` means it), and output is captured, so interactive commands (`rebase -i`, `commit` without `-m`) do not work:
+
+```sh
+jig git stash                       # in every repo in scope
+jig git switch -c feature-x         # the same as jig checkout -b, without the safety net
+jig git log --oneline -3
+cd services/checkout && jig git rebase origin/main   # one repo, from inside it
+```
 
 Uninstall repositories or files (deletes the checkout and stops tracking it; `-r` for groups, `-f` to override the dirty/unpushed safety checks):
 

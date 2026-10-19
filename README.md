@@ -51,6 +51,7 @@ jig checkout -b fix-x           # branch across repos, edit away…
 jig fmt && jig lint && jig test # …then check every repo, each with its own tooling
 jig push -u                     # publish across repos
 jig checkout --default          # …and back to each repo's own default branch
+jig git stash                   # anything else git does, verbatim, in every repo in scope
 jig rm services/checkout        # uninstall
 ```
 
@@ -74,12 +75,13 @@ jig rm services/checkout        # uninstall
 | `checkout --default` | Switch each installed repo to its own remote default branch (main, master, …) |
 | `status` | One line per installed entry — branch, dirt counts, ahead/behind — plus a summary |
 | `diff` | Uncommitted changes across installed repos as one workspace-wide diff, through your git pager and colors (`--stat` for one line per dirty repo) |
+| `git <git args...>` | Run any git command verbatim across installed repos; raw git, no safety net, one report per repo |
 | `rm <path>...` | Uninstall: delete the checkout and stop tracking it |
 | `update` | Fast-forward the schema from its remote without touching checkouts — review changes, then apply with `sync` |
 | `validate [file]` | Validate the schema — also usable in the schema repo's CI |
 | `cache [clean]` | Inspect or prune the clone cache |
 
-Two kinds of commands. The schema commands (`list`, `tags`, `info`, `deps`, `graph`, `clone`) select entries that may not be on disk yet, so they take a path (one entry or a whole subtree), `--tags a,b` (entries carrying all listed tags), `--id <id>` (exactly one entry by stable identity), and `--archived`. `jig tags` lists the tags in scope with entry counts, so filter values are discoverable without reading the schema. Everything else acts on what is installed under the current directory and takes no selector at all: `cd` is the selector.
+Two kinds of commands. The schema commands (`list`, `tags`, `info`, `deps`, `graph`, `clone`) select entries that may not be on disk yet, so they take a path (one entry or a whole subtree), `--tags a,b` (entries carrying all listed tags), `--id <id>` (exactly one entry by stable identity), and `--archived`. `jig tags` lists the tags in scope with entry counts, so filter values are discoverable without reading the schema. Everything else acts on what is installed under the current directory and takes no selector at all: `cd` is the selector. That is also why `jig git` needs no separator: every token after `git` belongs to git.
 
 Commands are position-aware: `jig status` in `services/` shows just your services, `jig pull` anywhere inside a checkout pulls just that repo, and path arguments resolve like filesystem paths — `.`, `..`, and a leading `/` for the workspace root all work.
 

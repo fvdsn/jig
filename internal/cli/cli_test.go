@@ -151,3 +151,18 @@ func TestUsageStringsMatchCommandFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestGitForwardsEverythingAfterGit(t *testing.T) {
+	// Only a help flag in first position is jig's; `jig git` alone is a
+	// usage error.
+	var out bytes.Buffer
+	if err := Run([]string{"git", "--help"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "usage: jig git <git args...>") {
+		t.Fatalf("git help = %q", out.String())
+	}
+	if err := Run([]string{"git"}, io.Discard); err == nil || !strings.Contains(err.Error(), "usage:") {
+		t.Fatalf("jig git = %v, want usage error", err)
+	}
+}
