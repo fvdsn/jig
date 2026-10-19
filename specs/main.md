@@ -196,6 +196,7 @@ CLI path arguments and pathless commands are interpreted relative to the directo
 
 - A pathless command uses the current subtree as its selection. At the workspace root this selects everything, preserving root behavior.
 - Path arguments resolve like filesystem paths: `.` is the current subtree, `..` climbs, and a leading `/` anchors to the workspace root. A resolved path escaping the workspace is an error.
+- A path below a repository or dir entry addresses that entry, the way git finds its repository from any directory inside a checkout: pathless commands run from `services/checkout/src` address `services/checkout`, and so does `jig info ../src` from there. Groups are plain directories and keep subtree semantics. A moved checkout answers to its defined path.
 - Pathless `sync` converges installed entries within the current subtree only; an explicit path (including `.`) materializes the selection as before. `sync --prune` requires the workspace root.
 - Resolution is CLI-side only: schema paths are unchanged and still reject `.`, `..`, and leading `/`.
 - Reported paths remain workspace-relative regardless of where the command runs.

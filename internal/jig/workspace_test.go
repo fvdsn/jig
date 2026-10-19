@@ -58,3 +58,36 @@ func TestWorkspaceSubdir(t *testing.T) {
 		}
 	}
 }
+
+// A path below a repository or dir entry addresses that entry, like git
+// finds its repository from any directory inside it; groups keep their
+// prefix semantics, and a moved checkout answers to its defined path.
+func TestResolvePathBelowAnEntry(t *testing.T) {
+	ws := &Workspace{
+		Model: Model{Entries: map[string]Entry{
+			"services":          {Path: "services", Identity: "services", Kind: EntryGroup},
+			"services/checkout": {Path: "services/checkout", Identity: "checkout", Kind: EntryRepo},
+			"services/moved":    {Path: "services/moved", Identity: "moved", Kind: EntryRepo},
+			".agents/skills":    {Path: ".agents/skills", Identity: "skills", Kind: EntryDir},
+		}},
+		State: State{Repos: map[string]StateRepo{"moved": {Path: "legacy/old-name"}}},
+	}
+	cases := []struct{ subdir, arg, want string }{
+		{"services/checkout/src", "", "services/checkout"},
+		{"services/checkout/src/deep", "", "services/checkout"},
+		{"services/checkout", "", "services/checkout"},
+		{"services/checkout/src", "..", "services/checkout"},
+		{"services/checkout/src", "../..", "services"},
+		{"services/scratch", "", "services/scratch"},
+		{".agents/skills/jig", "", ".agents/skills"},
+		{"legacy/old-name/cmd", "", "services/moved"},
+		{"", "services/checkout/src", "services/checkout"},
+	}
+	for _, c := range cases {
+		ws.Subdir = c.subdir
+		got, err := ws.ResolvePath(c.arg)
+		if err != nil || got != c.want {
+			t.Errorf("subdir=%q arg=%q: got %q, %v; want %q", c.subdir, c.arg, got, err, c.want)
+		}
+	}
+}

@@ -81,7 +81,7 @@ jig rm services/checkout        # uninstall
 
 Most commands accept `--tags a,b` (entries carrying all listed tags), `--archived`, and paths that address a single entry or a whole subtree. `jig tags` lists the tags in scope with entry counts, so filter values are discoverable without reading the schema.
 
-Commands are position-aware: run from a subdirectory, pathless commands scope to that subtree (inside a checkout, they address that one repo), and path arguments resolve like filesystem paths — `.`, `..`, and a leading `/` for the workspace root all work. `jig status` in `services/` shows just your services; `jig pull` inside a checkout pulls just it.
+Commands are position-aware: run from a subdirectory, pathless commands scope to that subtree (anywhere inside a checkout, they address that one repo), and path arguments resolve like filesystem paths — `.`, `..`, and a leading `/` for the workspace root all work. `jig status` in `services/` shows just your services; `jig pull` inside a checkout pulls just it.
 
 Selection mirrors the schema's reference selectors: a path positional (node and subtree, `services/*` also accepted), `--id <id>` for exactly one entry by stable identity (position-independent, includes archived), and `--tags a,b` for repos carrying all the tags.
 

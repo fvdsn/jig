@@ -153,13 +153,15 @@ func workspaceSubdir(root string, cwd string) (string, error) {
 // ResolvePath interprets a CLI path argument relative to the directory the
 // command runs in: an empty path means the current subtree, "." and ".."
 // work like filesystem paths, and a leading "/" anchors to the workspace
-// root. The result is a workspace path ("" for the whole workspace).
+// root. A path below a repository or dir entry addresses that entry, the
+// way git finds its repository from any directory inside it. The result is
+// a workspace path ("" for the whole workspace).
 func (ws *Workspace) ResolvePath(arg string) (string, error) {
 	var resolved string
 	if strings.HasPrefix(arg, "/") {
 		resolved = path.Clean(strings.TrimPrefix(arg, "/"))
 	} else if arg == "" {
-		return ws.Subdir, nil
+		resolved = ws.Subdir
 	} else {
 		resolved = path.Join(ws.Subdir, arg)
 	}
@@ -169,7 +171,29 @@ func (ws *Workspace) ResolvePath(arg string) (string, error) {
 	if resolved == ".." || strings.HasPrefix(resolved, "../") {
 		return "", fmt.Errorf("path %q is outside the workspace", arg)
 	}
-	return resolved, nil
+	return ws.enclosingEntryPath(resolved), nil
+}
+
+// enclosingEntryPath returns the path of the repository or dir entry that
+// contains the workspace path, or the path itself when none does. Groups
+// are plain directories and keep prefix matching, so only checkouts and
+// materialized dirs absorb the paths below them. A moved checkout is
+// addressed by its defined path.
+func (ws *Workspace) enclosingEntryPath(resolved string) string {
+	definedPath := identityToPath(&ws.Model, EntryRepo)
+	for dir := path.Dir(resolved); dir != "." && dir != "/"; dir = path.Dir(dir) {
+		if entry, ok := ws.Model.Entries[dir]; ok && (entry.Kind == EntryRepo || entry.Kind == EntryDir) {
+			return dir
+		}
+		for identity, stateRepo := range ws.State.Repos {
+			if stateRepo.Path == dir {
+				if defined, ok := definedPath[identity]; ok {
+					return defined
+				}
+			}
+		}
+	}
+	return resolved
 }
 
 func loadConfig(root string) (Config, error) {
