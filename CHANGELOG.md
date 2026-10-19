@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v3.0.0 — 2026-10-19
 
 - Breaking: the commands that act on checkouts (`sync`, `setup`,
   `fmt`, `lint`, `test`, `pull`, `fetch`, `push`, `checkout`, `status`,
