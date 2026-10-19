@@ -49,8 +49,9 @@ func mirrorDir(root string, gitURL string) string {
 	return filepath.Join(root, name+"-"+hex.EncodeToString(sum[:6])+".git")
 }
 
-// lockMirror serializes mirror creation and updates across processes. Locks
-// older than ten minutes are considered abandoned and stolen.
+// lockMirror serializes mirror creation and updates across processes. A
+// lock whose holder no longer runs is stolen; one that records no holder
+// (a crash before the pid was written) is stolen after ten minutes.
 func lockMirror(dir string) (func(), error) {
 	lockPath := dir + ".lock"
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0o755); err != nil {
@@ -65,14 +66,7 @@ func lockMirror(dir string) (func(), error) {
 		if !errors.Is(err, os.ErrExist) {
 			return nil, err
 		}
-		if info, statErr := os.Stat(lockPath); statErr == nil && time.Since(info.ModTime()) > 10*time.Minute {
-			// Steal by renaming first: only one waiter's rename can succeed,
-			// so two waiters that both saw the stale lock cannot each remove
-			// it and have the second removal delete the first's fresh lock.
-			stolen := fmt.Sprintf("%s.stale-%d", lockPath, os.Getpid())
-			if os.Rename(lockPath, stolen) == nil {
-				_ = os.Remove(stolen)
-			}
+		if stealDeadLock(lockPath) || stealAgedLock(lockPath) {
 			continue
 		}
 		if time.Now().After(deadline) {
@@ -102,10 +96,37 @@ func mirrorLastUsed(dir string) time.Time {
 	return time.Time{}
 }
 
+// stealAgedLock removes a mirror lock that records no holder once it is
+// older than ten minutes, and reports whether it did. Only a holderless lock
+// is judged by age: a live holder can legitimately run a mirror clone that
+// long.
+func stealAgedLock(lockPath string) bool {
+	if _, ok := lockHolder(lockPath); ok {
+		return false
+	}
+	info, err := os.Stat(lockPath)
+	if err != nil || time.Since(info.ModTime()) <= 10*time.Minute {
+		return false
+	}
+	// Steal by renaming first: only one waiter's rename can succeed, so two
+	// waiters that both saw the stale lock cannot each remove it and have
+	// the second removal delete the first's fresh lock.
+	stolen := fmt.Sprintf("%s.stale-%d", lockPath, os.Getpid())
+	if os.Rename(lockPath, stolen) != nil {
+		return false
+	}
+	_ = os.Remove(stolen)
+	return true
+}
+
 // tryLockMirror acquires the mirror lock without waiting; ok is false when
-// another process holds it.
+// another process holds it. A lock left by a dead holder is taken over.
 func tryLockMirror(dir string) (func(), bool) {
-	release, err := createLockFile(dir + ".lock")
+	lockPath := dir + ".lock"
+	release, err := createLockFile(lockPath)
+	if errors.Is(err, os.ErrExist) && stealDeadLock(lockPath) {
+		release, err = createLockFile(lockPath)
+	}
 	return release, err == nil
 }
 

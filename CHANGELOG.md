@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Fixes: a workspace or mirror lock left behind by a jig process that
+  no longer runs (killed, crashed, or its terminal closed) is taken
+  over instead of being reported as stale; the lock error names the
+  holder pid. A mirror lock whose holder is alive is no longer stolen
+  after ten minutes; only a holderless one is. A hangup (closing the
+  terminal) releases the held locks like an interrupt does.
+
 ## v2.5.2 — 2026-09-21
 
 - The clone pass of `jig init --clone`, `jig clone`, and `jig sync`,
