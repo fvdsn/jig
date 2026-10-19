@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v2.6.0 — 2026-10-19
 
 - Fixes: a workspace or mirror lock left behind by a jig process that
   no longer runs (killed, crashed, or its terminal closed) is taken
