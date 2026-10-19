@@ -204,9 +204,10 @@ func (entry Entry) hasAllTags(tags []string) bool {
 	return true
 }
 
-// Selector is the entry selection every command shares: a path or an id,
-// narrowed by tags, with archived entries opted in. The CLI maps the path
-// positional, --id, --tags, and --archived onto it.
+// Selector is the entry selection the schema commands share: a path or an
+// id, narrowed by tags, with archived entries opted in. The CLI maps the
+// path positional, --id, --tags, and --archived onto it. Commands that act
+// on checkouts take no selector: their scope is the directory they run in.
 type Selector struct {
 	Path            string
 	ID              string // selects one entry by identity instead of a path

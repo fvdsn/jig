@@ -15,8 +15,8 @@ type installedRepo struct {
 
 // selectInstalledRepos resolves a query to the matching repositories that
 // are installed, in schema order.
-func selectInstalledRepos(ws *Workspace, query NodeQuery) ([]installedRepo, error) {
-	selection, err := ws.Select(query)
+func selectInstalledRepos(ws *Workspace) ([]installedRepo, error) {
+	selection, err := ws.Select(NodeQuery{})
 	if err != nil {
 		return nil, err
 	}

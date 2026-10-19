@@ -7,13 +7,12 @@ import (
 )
 
 type CheckoutOptions struct {
-	Selector
 	Branch  string
 	Create  bool // create the branch (git checkout -b) when it does not exist
 	Default bool // switch each repository to its remote's default branch
 }
 
-// Checkout switches installed repositories matching the query to a branch,
+// Checkout switches the installed repositories in the current scope to a branch,
 // mirroring git checkout across the workspace. Safety is git's own: a plain
 // (non-forced) checkout never discards local changes, so repositories where
 // the switch would lose work fail and are reported as skipped.
@@ -31,7 +30,7 @@ func Checkout(options CheckoutOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	repos, err := selectInstalledRepos(ws, options.query())
+	repos, err := selectInstalledRepos(ws)
 	if err != nil {
 		return err
 	}

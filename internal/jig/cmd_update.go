@@ -9,7 +9,6 @@ import (
 )
 
 type UpdateOptions struct {
-	Selector
 	Sync            bool
 	IncludeOptional bool
 	SkipDeps        bool // sync only the selected repos, without their dependencies
@@ -31,7 +30,6 @@ func Update(options UpdateOptions, out io.Writer) error {
 	}
 	if options.Sync {
 		return syncWorkspace(out, ws, SyncOptions{
-			Selector:        options.Selector,
 			IncludeOptional: options.IncludeOptional,
 			SkipDeps:        options.SkipDeps,
 			Prune:           options.Prune,

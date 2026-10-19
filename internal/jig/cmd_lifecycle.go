@@ -17,26 +17,22 @@ import (
 // the user invokes the matching command, never as a side effect of clone,
 // sync, or update.
 
-type LifecycleOptions struct {
-	Selector
-}
-
 // Setup runs each repository's setup command in dependency order, so a
 // fresh clone can be brought to a usable state in one command.
-func Setup(options LifecycleOptions, out io.Writer) error {
-	return runLifecycle("setup", options, out)
+func Setup(out io.Writer) error {
+	return runLifecycle("setup", out)
 }
 
-func Fmt(options LifecycleOptions, out io.Writer) error {
-	return runLifecycle("fmt", options, out)
+func Fmt(out io.Writer) error {
+	return runLifecycle("fmt", out)
 }
 
-func Lint(options LifecycleOptions, out io.Writer) error {
-	return runLifecycle("lint", options, out)
+func Lint(out io.Writer) error {
+	return runLifecycle("lint", out)
 }
 
-func Test(options LifecycleOptions, out io.Writer) error {
-	return runLifecycle("test", options, out)
+func Test(out io.Writer) error {
+	return runLifecycle("test", out)
 }
 
 func lifecycleCommand(repo *Repo, verb string) string {
@@ -54,12 +50,12 @@ func lifecycleCommand(repo *Repo, verb string) string {
 	}
 }
 
-func runLifecycle(verb string, options LifecycleOptions, out io.Writer) error {
+func runLifecycle(verb string, out io.Writer) error {
 	ws, err := loadWorkspace(false)
 	if err != nil {
 		return err
 	}
-	installed, err := selectInstalledRepos(ws, options.query())
+	installed, err := selectInstalledRepos(ws)
 	if err != nil {
 		return err
 	}

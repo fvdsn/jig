@@ -11,7 +11,6 @@ import (
 )
 
 type DiffOptions struct {
-	Selector
 	Stat bool // one summary line per dirty repository instead of the patch
 }
 
@@ -31,13 +30,13 @@ func Diff(options DiffOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	selection, err := ws.Select(options.query())
+	selection, err := ws.Select(NodeQuery{})
 	if err != nil {
 		return err
 	}
 	repos := selection.repoPaths()
 	if len(repos) == 0 {
-		return noEntriesMatchError(&ws.Model, "repositories", selection.Path, options.Tags)
+		return noEntriesMatchError(&ws.Model, "repositories", selection.Path, nil)
 	}
 
 	onTerminal := false

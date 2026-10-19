@@ -456,9 +456,10 @@ Keys must be non-empty, must not start with `$`, and must not contain spaces, co
 
 Commands are aware of where they run inside the workspace:
 
-- Pathless commands scope to the subtree of the current directory: `jig status` in `services/` reports only entries under `services`. Inside a repository checkout, pathless `status`, `pull`, and `checkout` address that one repository.
-- Path arguments resolve like filesystem paths against the current directory: `.`, `..`, `../other`, and a leading `/` anchoring to the workspace root (`jig info /platform/auth`). Escaping the workspace is an error.
-- Pathless `jig sync` in a subtree converges only what is installed there; `jig sync .` (an explicit path) materializes the whole subtree. `sync --prune` must run from the workspace root.
+- The commands that act on checkouts (`sync`, `setup`, `fmt`, `lint`, `test`, `pull`, `fetch`, `push`, `checkout`, `status`, `diff`) take no path and no selector flags. Their scope is the current directory: the whole workspace from the root, one subtree from a group directory (`jig status` in `services/` reports only entries under `services`), one repository from anywhere inside its checkout. `cd` is the selector.
+- The schema commands (`list`, `tags`, `info`, `deps`, `graph`, `clone`) select entries that may not be on disk yet, so they take a path, `--tags`, `--id`, and `--archived`. Pathless, they scope to the current subtree too.
+- Path arguments resolve like filesystem paths against the current directory: `.`, `..`, `../other`, and a leading `/` anchoring to the workspace root (`jig info /platform/auth`). Escaping the workspace is an error. A path below a repository addresses that repository.
+- `jig sync` converges what is installed in the current subtree and never materializes an entry that was not cloned; `jig clone <path>` adds entries. `sync --prune` must run from the workspace root.
 - Output always shows full workspace paths.
 
 ## Safe Paths
@@ -513,19 +514,18 @@ jig tags services
 jig tags --archived
 ```
 
-Filter by tags. `--tags a,b` keeps only entries carrying all the listed tags and works on `list`, `info`, `deps`, `clone`, `sync`, `pull`, `fetch`, `checkout`, and `status`. Dependencies of a selected repository are always included, tagged or not:
+Filter by tags. `--tags a,b` keeps only entries carrying all the listed tags and works on the schema commands: `list`, `tags`, `info`, `deps`, `graph`, and `clone`. Dependencies of a selected repository are always included, tagged or not:
 
 ```sh
 jig list --tags backend
 jig clone services --tags backend,go
-jig status --tags frontend
 ```
 
-Select one entry by its stable id with `--id` on the same commands (plus the lifecycle verbs and `push`). It mirrors the schema's `{"id": ...}` selector: position-independent, includes archived entries, and cannot be combined with a path or `--tags`:
+Select one entry by its stable id with `--id` on the same commands. It mirrors the schema's `{"id": ...}` selector: position-independent, includes archived entries, and cannot be combined with a path or `--tags`:
 
 ```sh
 jig info --id auth-service
-jig pull --id checkout-service
+jig clone --id checkout-service
 ```
 
 Path arguments select the node and everything under it; the explicit subtree form `services/*` is also accepted and equivalent.
@@ -604,25 +604,19 @@ Clone uninstalled archived repositories and files too:
 jig clone services --archived
 ```
 
-Sync installed repositories and active files:
+Sync the installed repositories and active files under the current directory (run it inside `platform/` to converge that subtree only):
 
 ```sh
 jig sync
 ```
 
-Sync a specific path:
-
-```sh
-jig sync platform
-```
-
 Sync without pulling in dependencies (`--no-deps` also works on `clone` and `init --clone`):
 
 ```sh
-jig sync platform --no-deps
+jig sync --no-deps
 ```
 
-Sync and delete entries that were removed from the schema (whole workspace only, cannot be combined with a path or `--tags`):
+Sync and delete entries that were removed from the schema (whole workspace only, run from the root):
 
 ```sh
 jig sync --prune
@@ -632,11 +626,7 @@ Pruning applies the same safety rules as `jig rm`: dirty or unpushed repositorie
 
 Renaming an entry's `id` in the schema is safe: sync readopts the existing checkout under the new identity (reported as `readopted`) instead of treating it as stale.
 
-Sync uninstalled archived repositories and files too:
-
-```sh
-jig sync --archived
-```
+Sync never installs anything new: a repository added to the schema is reported by the update step and materialized with `jig clone <path>`.
 
 Run each repository's schema-declared lifecycle commands. This is how to work across many repos of mixed technologies without knowing each one's tooling: the schema maps the fixed verb (`setup`, `fmt`, `lint`, `test`) to each repo's own command, and jig runs it in every installed repo in scope. Repos without the command are counted, not failed. `setup` runs in dependency order to make fresh checkouts usable; the others run in parallel. Failures report the command's output and exit non-zero:
 
@@ -644,8 +634,7 @@ Run each repository's schema-declared lifecycle commands. This is how to work ac
 jig setup            # after clone: make the workspace runnable
 jig fmt              # after bulk edits: run every repo's formatter
 jig lint             # run every repo's checks, whatever they are
-jig test services    # run the tests of one subtree
-jig test --tags go   # run the tests of all go repos
+cd services && jig test   # run the tests of one subtree
 ```
 
 Jig never runs these automatically — not on clone, sync, or update.
@@ -654,22 +643,19 @@ Pull installed repositories (fast-forward only):
 
 ```sh
 jig pull
-jig pull platform
-jig pull --archived
+cd platform && jig pull
 ```
 
 Fetch installed repositories without touching working trees:
 
 ```sh
 jig fetch
-jig fetch platform
 ```
 
 Push the current branch of installed repositories (never forced; rejected pushes are reported as skipped):
 
 ```sh
 jig push
-jig push services
 jig push -u
 ```
 
@@ -679,11 +665,11 @@ Switch installed repositories to a branch, mirroring `git checkout`:
 
 ```sh
 jig checkout main
-jig checkout -b feature-x services
-jig checkout -b feature-x --tags backend
+jig checkout -b feature-x
+jig checkout --default
 ```
 
-`-b` creates the branch at each repository's current HEAD, or just switches when it already exists. Repositories already on the branch report `present`. Checkouts are never forced: a repository where git refuses the switch (uncommitted changes that would be overwritten) is reported under `skipped` and left untouched.
+`-b` creates the branch at each repository's current HEAD, or just switches when it already exists. `--default` switches each repository to its own remote default branch (main, master, …). Repositories already on the branch report `present`. Checkouts are never forced: a repository where git refuses the switch (uncommitted changes that would be overwritten) is reported under `skipped` and left untouched.
 
 Uninstall repositories or files (deletes the checkout and stops tracking it; `-r` for groups, `-f` to override the dirty/unpushed safety checks):
 
@@ -699,8 +685,7 @@ Show workspace status:
 
 ```sh
 jig status
-jig status services
-jig status --archived
+jig status --all
 ```
 
 Status reports installed entries only; repos never installed are counted in the summary (pass `--all` to list them). Each line shows a glyph, path, branch, and notes; dirty repos spell out their counts, e.g. `dirty (14 changed, 3 untracked)`. Repositories with an upstream report ahead/behind commit counts (computed locally; run `jig fetch` first for fresh counts). `jig fetch && jig status` gives an overview of what changed across the workspace.
@@ -710,8 +695,7 @@ Show the uncommitted changes behind those dirty notes — one workspace-wide uni
 ```sh
 jig diff                  # the whole patch, like git diff over the tree
 jig diff --stat           # one summary line per dirty repo: path, files, +/-
-jig diff services --stat
-jig diff codabox/core/codabox   # inspect one repo before keeping/discarding
+cd codabox/core/codabox && jig diff   # inspect one repo before keeping/discarding
 ```
 
 Update the schema checkout from its Git remote (fast-forward only), without touching the workspace:

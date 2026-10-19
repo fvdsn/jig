@@ -65,25 +65,23 @@ jig rm services/checkout        # uninstall
 | `deps <path>` | Show a repo's recursive dependencies (`--reverse` for its direct dependents) |
 | `graph [path]` | Print the dependency graph as a Mermaid flowchart |
 | `clone [path]` | Install repos/files matching a path, plus dependencies (`--no-deps` to skip them) |
-| `sync [path]` | Update the schema, then converge the workspace: moves, origins, file updates, restores (`--no-update` skips the fetch, `--prune` deletes what left the schema) |
-| `setup` / `fmt` / `lint` / `test` `[path]` | Run each repo's own schema-declared command behind a standard verb; `setup` runs in dependency order |
-| `pull [path]` | `git pull --ff-only` across installed repos, in parallel |
-| `fetch [path]` | `git fetch` across installed repos, in parallel |
-| `push [-u] [path]` | `git push` (never forced) across installed repos, in parallel; `-u` sets missing upstreams |
-| `checkout [-b] <branch> [path]` | Switch installed repos to a branch (`-b` creates it); never discards local changes |
-| `checkout --default [path]` | Switch each installed repo to its own remote default branch (main, master, …) |
-| `status [path]` | One line per installed entry — branch, dirt counts, ahead/behind — plus a summary |
-| `diff [path]` | Uncommitted changes across installed repos as one workspace-wide diff, through your git pager and colors (`--stat` for one line per dirty repo) |
+| `sync` | Update the schema, then converge the installed checkouts: moves, origins, file updates, restores (`--no-update` skips the fetch, `--prune` deletes what left the schema) |
+| `setup` / `fmt` / `lint` / `test` | Run each repo's own schema-declared command behind a standard verb; `setup` runs in dependency order |
+| `pull` | `git pull --ff-only` across installed repos, in parallel |
+| `fetch` | `git fetch` across installed repos, in parallel |
+| `push [-u]` | `git push` (never forced) across installed repos, in parallel; `-u` sets missing upstreams |
+| `checkout [-b] <branch>` | Switch installed repos to a branch (`-b` creates it); never discards local changes |
+| `checkout --default` | Switch each installed repo to its own remote default branch (main, master, …) |
+| `status` | One line per installed entry — branch, dirt counts, ahead/behind — plus a summary |
+| `diff` | Uncommitted changes across installed repos as one workspace-wide diff, through your git pager and colors (`--stat` for one line per dirty repo) |
 | `rm <path>...` | Uninstall: delete the checkout and stop tracking it |
 | `update` | Fast-forward the schema from its remote without touching checkouts — review changes, then apply with `sync` |
 | `validate [file]` | Validate the schema — also usable in the schema repo's CI |
 | `cache [clean]` | Inspect or prune the clone cache |
 
-Most commands accept `--tags a,b` (entries carrying all listed tags), `--archived`, and paths that address a single entry or a whole subtree. `jig tags` lists the tags in scope with entry counts, so filter values are discoverable without reading the schema.
+Two kinds of commands. The schema commands (`list`, `tags`, `info`, `deps`, `graph`, `clone`) select entries that may not be on disk yet, so they take a path (one entry or a whole subtree), `--tags a,b` (entries carrying all listed tags), `--id <id>` (exactly one entry by stable identity), and `--archived`. `jig tags` lists the tags in scope with entry counts, so filter values are discoverable without reading the schema. Everything else acts on what is installed under the current directory and takes no selector at all: `cd` is the selector.
 
-Commands are position-aware: run from a subdirectory, pathless commands scope to that subtree (anywhere inside a checkout, they address that one repo), and path arguments resolve like filesystem paths — `.`, `..`, and a leading `/` for the workspace root all work. `jig status` in `services/` shows just your services; `jig pull` inside a checkout pulls just it.
-
-Selection mirrors the schema's reference selectors: a path positional (node and subtree, `services/*` also accepted), `--id <id>` for exactly one entry by stable identity (position-independent, includes archived), and `--tags a,b` for repos carrying all the tags.
+Commands are position-aware: `jig status` in `services/` shows just your services, `jig pull` anywhere inside a checkout pulls just that repo, and path arguments resolve like filesystem paths — `.`, `..`, and a leading `/` for the workspace root all work.
 
 ## The schema
 
@@ -121,7 +119,7 @@ A JSON tree where paths are the directory layout. Repos, files, and dirs are lea
 - **`dependsOn`** — cloning a repo brings its dependency closure along (`optional: true` deps only with `--with-optional-deps`).
 - **`onlyWhen`** — conditional entries, active only when some active or installed repository is selected by the reference — e.g. API skills materialize whenever anything tagged `api` is installed.
 - **`archived`** — hidden and skipped by default, kept synced if already installed.
-- **`setup` / `fmt` / `lint` / `test`** — each repo's own lifecycle commands behind four standard verbs, so `jig test --tags go` runs every Go repo's suite without anyone knowing per-repo tooling. Inherited from groups; run only when you invoke them, never automatically.
+- **`setup` / `fmt` / `lint` / `test`** — each repo's own lifecycle commands behind four standard verbs, so `jig test` runs every installed repo's suite without anyone knowing per-repo tooling. Inherited from groups; run only when you invoke them, never automatically.
 - **`meta`** — user-defined string keys and values jig carries but never interprets, e.g. `"meta": { "github-mirror": "git@github.com:acme/auth.git" }` on a GitLab repo with a synced GitHub clone. Shown by `jig info`, filtered with `jig list --meta key[=value]`, inherited per key from groups.
 
 Files and dirs follow the repositories around them: a support file placed inside a group is materialized whenever any repo of that group is installed; root-level files follow the workspace as a whole.

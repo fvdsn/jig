@@ -55,8 +55,8 @@ func TestParseUpdateFlags(t *testing.T) {
 }
 
 func TestUpdateSelectionFlagsRequireSync(t *testing.T) {
-	err := cmdUpdate([]string{"--archived"}, io.Discard)
-	if err == nil || err.Error() != "--no-deps, --with-optional-deps, --archived, and --prune require --sync" {
+	err := cmdUpdate([]string{"--prune"}, io.Discard)
+	if err == nil || err.Error() != "--no-deps, --with-optional-deps, and --prune require --sync" {
 		t.Fatalf("expected --sync requirement, got %v", err)
 	}
 }
@@ -68,8 +68,8 @@ func TestIdSelectorExcludesPathAndTags(t *testing.T) {
 		{"--id", "auth", "services"},
 		{"--id", "auth", "--tags", "go"},
 	} {
-		if err := cmdPull(args, io.Discard); err == nil || !strings.Contains(err.Error(), "usage:") {
-			t.Fatalf("cmdPull(%v) = %v, want usage error", args, err)
+		if err := cmdList(args, io.Discard); err == nil || !strings.Contains(err.Error(), "usage:") {
+			t.Fatalf("cmdList(%v) = %v, want usage error", args, err)
 		}
 	}
 	// info and deps require either a path or --id.
@@ -83,10 +83,12 @@ func TestIdSelectorExcludesPathAndTags(t *testing.T) {
 
 func TestCheckoutDefaultExcludesBranchAndCreate(t *testing.T) {
 	// --default resolves the branch per repository, so a branch positional
-	// or -b alongside it is a usage error.
+	// or -b alongside it is a usage error; so is a path, since the verbs
+	// that act on checkouts scope by directory.
 	for _, args := range [][]string{
 		{"--default", "-b"},
-		{"--default", "feature", "services/a"},
+		{"--default", "feature"},
+		{"feature", "services/a"},
 	} {
 		err := cmdCheckout(args, io.Discard)
 		if err == nil || !strings.Contains(err.Error(), "usage:") {

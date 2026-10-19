@@ -155,11 +155,14 @@ func TestSyncUpdatesSchemaFirst(t *testing.T) {
 	w.assertNotContains(w.mustJig(ws, "sync", "--no-update"), "repo-added")
 
 	// Plain sync updates the schema first, reporting the upstream addition;
-	// a path selection then materializes it.
+	// sync converges what is installed, so clone materializes the addition.
 	w.assertContains(w.mustJig(ws, "sync"), "repo-added:", "services/extra")
-	w.mustJig(ws, "sync", ".")
+	if w.exists("ws", "services", "extra") {
+		t.Fatal("sync materialized an entry that was never cloned")
+	}
+	w.mustJig(ws, "clone", "services/extra")
 	if !w.exists("ws", "services", "extra", ".git") {
-		t.Fatal("expected sync to apply the updated schema")
+		t.Fatal("expected clone to apply the updated schema")
 	}
 
 	// A broken upstream schema is reported; the current schema still syncs.
@@ -490,13 +493,14 @@ func TestSubdirScoping(t *testing.T) {
 	ws := w.path("ws")
 	inA := w.path("ws", "groupa")
 
-	// Pathless status scopes to the subtree; ".." climbs; "/" reaches root.
+	// Status scopes to the subtree; the schema commands take paths, where
+	// ".." climbs and "/" reaches the root.
 	out := w.mustJig(inA, "status")
 	w.assertContains(out, "groupa/app1")
 	w.assertNotContains(out, "groupb/app2")
-	w.assertContains(w.mustJig(inA, "status", ".."), "groupb/app2")
+	w.assertContains(w.mustJig(inA, "list", ".."), "groupb/app2")
 	w.assertContains(w.mustJig(inA, "info", "/groupb/app2"), "identity: app2")
-	if _, err := w.jig(inA, "status", "../.."); err == nil {
+	if _, err := w.jig(inA, "list", "../.."); err == nil {
 		t.Fatal("expected error for a path outside the workspace")
 	}
 
@@ -641,8 +645,8 @@ func TestDiffShowsWorkspaceWideChanges(t *testing.T) {
 	// Status spells out the dirt counts.
 	w.assertContains(w.mustJig(ws, "status"), "dirty (1 changed, 1 untracked)")
 
-	// A path selection scopes the diff.
-	if out := w.mustJig(ws, "diff", "tools"); strings.TrimSpace(out) != "" {
+	// The directory the command runs in scopes the diff.
+	if out := w.mustJig(w.path("ws", "tools"), "diff"); strings.TrimSpace(out) != "" {
 		t.Fatalf("scoped diff = %q, want empty", out)
 	}
 

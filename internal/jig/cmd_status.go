@@ -11,7 +11,6 @@ import (
 )
 
 type StatusOptions struct {
-	Selector
 	All bool // also list defined repos that are not installed
 }
 
@@ -41,15 +40,14 @@ func Status(options StatusOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	query := options.query()
-	selection, err := ws.Select(query)
+	selection, err := ws.Select(NodeQuery{})
 	if err != nil {
 		return err
 	}
 
 	installedNodes := ws.installedNodes()
-	activeFiles := activeFilesForRepoSet(&ws.Model, map[string]bool{}, installedNodes.Repos, installedNodes.Files, options.IncludeArchived)
-	activeDirs := activeDirsForRepoSet(&ws.Model, map[string]bool{}, installedNodes.Repos, installedNodes.Dirs, options.IncludeArchived)
+	activeFiles := activeFilesForRepoSet(&ws.Model, map[string]bool{}, installedNodes.Repos, installedNodes.Files, false)
+	activeDirs := activeDirsForRepoSet(&ws.Model, map[string]bool{}, installedNodes.Repos, installedNodes.Dirs, false)
 
 	type result struct {
 		line         statusLine
@@ -87,7 +85,7 @@ func Status(options StatusOptions, out io.Writer) error {
 		}
 	}
 
-	if selection.Path == "" && len(options.Tags) == 0 {
+	if selection.Path == "" {
 		lines = append(lines, staleStatusLines(ws)...)
 	}
 

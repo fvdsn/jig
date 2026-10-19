@@ -46,17 +46,17 @@ func Run(args []string, out io.Writer) error {
 	case "sync":
 		return cmdSync(args[1:], out)
 	case "setup":
-		return cmdLifecycle("setup", jig.Setup, args[1:], out)
+		return cmdBare("setup", jig.Setup, args[1:], out)
 	case "fmt":
-		return cmdLifecycle("fmt", jig.Fmt, args[1:], out)
+		return cmdBare("fmt", jig.Fmt, args[1:], out)
 	case "lint":
-		return cmdLifecycle("lint", jig.Lint, args[1:], out)
+		return cmdBare("lint", jig.Lint, args[1:], out)
 	case "test":
-		return cmdLifecycle("test", jig.Test, args[1:], out)
+		return cmdBare("test", jig.Test, args[1:], out)
 	case "pull":
-		return cmdPull(args[1:], out)
+		return cmdBare("pull", jig.Pull, args[1:], out)
 	case "fetch":
-		return cmdFetch(args[1:], out)
+		return cmdBare("fetch", jig.Fetch, args[1:], out)
 	case "push":
 		return cmdPush(args[1:], out)
 	case "checkout":
@@ -202,8 +202,10 @@ func selectorFrom(name string, parsed parsedArgs, pathPositionals []string) (jig
 	}, nil
 }
 
-// commandFlags is every scoped command's flag map, so the usage strings in
-// commandDocs can be checked against what the parser accepts.
+// commandFlags is every command's flag map, so the usage strings in
+// commandDocs can be checked against what the parser accepts. The schema
+// commands take the selectors; the commands that act on checkouts take
+// none, since their scope is the directory they run in.
 var commandFlags = map[string]map[string]flagKind{
 	"list":     withSelectorFlags(map[string]flagKind{"--meta": valueFlag}),
 	"tags":     withSelectorFlags(nil),
@@ -211,17 +213,17 @@ var commandFlags = map[string]map[string]flagKind{
 	"deps":     withSelectorFlags(map[string]flagKind{"--reverse": boolFlag, "--with-optional-deps": boolFlag}),
 	"graph":    withSelectorFlags(nil),
 	"clone":    withSelectorFlags(map[string]flagKind{"--with-optional-deps": boolFlag, "--no-deps": boolFlag}),
-	"sync":     withSelectorFlags(map[string]flagKind{"--no-update": boolFlag, "--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--prune": boolFlag}),
-	"setup":    withSelectorFlags(nil),
-	"fmt":      withSelectorFlags(nil),
-	"lint":     withSelectorFlags(nil),
-	"test":     withSelectorFlags(nil),
-	"pull":     withSelectorFlags(nil),
-	"fetch":    withSelectorFlags(nil),
-	"push":     withSelectorFlags(map[string]flagKind{"-u": boolFlag}),
-	"checkout": withSelectorFlags(map[string]flagKind{"-b": boolFlag, "--default": boolFlag}),
-	"status":   withSelectorFlags(map[string]flagKind{"--all": boolFlag}),
-	"diff":     withSelectorFlags(map[string]flagKind{"--stat": boolFlag}),
+	"sync":     {"--no-update": boolFlag, "--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--prune": boolFlag},
+	"setup":    {},
+	"fmt":      {},
+	"lint":     {},
+	"test":     {},
+	"pull":     {},
+	"fetch":    {},
+	"push":     {"-u": boolFlag},
+	"checkout": {"-b": boolFlag, "--default": boolFlag},
+	"status":   {"--all": boolFlag},
+	"diff":     {"--stat": boolFlag},
 }
 
 var initFlags = map[string]flagKind{
@@ -237,16 +239,6 @@ var initFlags = map[string]flagKind{
 func checkDepsFlags(parsed parsedArgs) error {
 	if parsed.Flags["--no-deps"] && parsed.Flags["--with-optional-deps"] {
 		return errors.New("--no-deps and --with-optional-deps are mutually exclusive")
-	}
-	return nil
-}
-
-// checkPruneScope rejects --prune combined with a selection: stale entries
-// are not in the schema, so they have no tags and no defined paths to
-// select on. Pruning is a whole-workspace operation.
-func checkPruneScope(parsed parsedArgs) error {
-	if parsed.Flags["--prune"] && (len(parsed.Positionals) > 0 || parsed.Values["--tags"] != "") {
-		return errors.New("--prune applies to the whole workspace; it cannot be combined with a path or --tags")
 	}
 	return nil
 }
@@ -289,48 +281,48 @@ var commandDocs = []commandDoc{
 		[]string{"clone [path] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b] [--id x]"},
 		[]string{"Clone/materialize all entries, or repositories/files matching a path. --no-deps skips dependencies."}},
 	{"sync",
-		[]string{"sync [path] [--no-update] [--no-deps] [--with-optional-deps] [--archived] [--prune] [--tags a,b] [--id x]"},
+		[]string{"sync [--no-update] [--no-deps] [--with-optional-deps] [--prune]"},
 		[]string{
-			"Update the schema, then clone missing repos, move renamed repos/files, update origins/files, and refresh local state.",
+			"Update the schema, then converge the installed entries under the current directory: clone missing dependencies, move renamed repos/files, update origins/files, and refresh local state.",
 			"--no-update applies the current schema without fetching; --prune deletes entries removed from the schema (dirty/unpushed repos and modified files are kept).",
 		}},
 	{"setup",
-		[]string{"setup [path] [--archived] [--tags a,b] [--id x]"},
+		[]string{"setup"},
 		[]string{"Run each repository's schema-declared setup command in dependency order, making fresh checkouts usable."}},
 	{"fmt",
-		[]string{"fmt [path] [--archived] [--tags a,b] [--id x]"},
-		[]string{"Run each repository's schema-declared fmt command in installed repositories, in parallel."}},
+		[]string{"fmt"},
+		[]string{"Run each repository's schema-declared fmt command in the installed repositories, in parallel."}},
 	{"lint",
-		[]string{"lint [path] [--archived] [--tags a,b] [--id x]"},
-		[]string{"Run each repository's schema-declared lint command in installed repositories, in parallel."}},
+		[]string{"lint"},
+		[]string{"Run each repository's schema-declared lint command in the installed repositories, in parallel."}},
 	{"test",
-		[]string{"test [path] [--archived] [--tags a,b] [--id x]"},
-		[]string{"Run each repository's schema-declared test command in installed repositories, in parallel."}},
+		[]string{"test"},
+		[]string{"Run each repository's schema-declared test command in the installed repositories, in parallel."}},
 	{"pull",
-		[]string{"pull [path] [--archived] [--tags a,b] [--id x]"},
-		[]string{"Run git pull --ff-only in installed repositories matching a path or group."}},
+		[]string{"pull"},
+		[]string{"Run git pull --ff-only in the installed repositories."}},
 	{"fetch",
-		[]string{"fetch [path] [--archived] [--tags a,b] [--id x]"},
-		[]string{"Run git fetch in installed repositories matching a path or group."}},
+		[]string{"fetch"},
+		[]string{"Run git fetch in the installed repositories."}},
 	{"push",
-		[]string{"push [-u] [path] [--archived] [--tags a,b] [--id x]"},
-		[]string{"Run git push (never forced) in installed repositories matching a path or group; -u sets the upstream on branches that have none."}},
+		[]string{"push [-u]"},
+		[]string{"Run git push (never forced) in the installed repositories; -u sets the upstream on branches that have none."}},
 	{"checkout",
 		[]string{
-			"checkout [-b] <branch> [path] [--archived] [--tags a,b] [--id x]",
-			"checkout --default [path] [--archived] [--tags a,b] [--id x]",
+			"checkout [-b] <branch>",
+			"checkout --default",
 		},
-		[]string{"Switch installed repositories to a branch; -b creates it, --default switches each repo to its remote's default branch. Repos where the switch would lose local changes are skipped."}},
+		[]string{"Switch the installed repositories to a branch; -b creates it, --default switches each repo to its remote's default branch. Repos where the switch would lose local changes are skipped."}},
 	{"rm",
 		[]string{"rm <path>... [-r|--recursive] [-f|--force]"},
 		[]string{"Uninstall repositories, files, or dirs: delete the checkout and stop tracking it. -r removes groups, -f overrides dirty/unpushed checks."}},
 	{"status",
-		[]string{"status [path] [--all] [--archived] [--tags a,b] [--id x]"},
-		[]string{"Show the state of installed entries; repos never installed are only counted unless --all is given."}},
+		[]string{"status [--all]"},
+		[]string{"Show the state of the installed entries; repos never installed are only counted unless --all is given."}},
 	{"diff",
-		[]string{"diff [path] [--stat] [--archived] [--tags a,b] [--id x]"},
+		[]string{"diff [--stat]"},
 		[]string{
-			"Show uncommitted changes (staged and unstaged) in installed repositories as one workspace-wide unified diff with workspace-relative paths.",
+			"Show uncommitted changes (staged and unstaged) in the installed repositories as one workspace-wide unified diff with workspace-relative paths.",
 			"--stat prints a one-line summary per dirty repository instead of the patch.",
 		}},
 	{"update",
@@ -416,9 +408,11 @@ func printUsage(out io.Writer) {
 		}
 	}
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Paths identify repositories, files, or groups using slash paths such as services/checkout or platform.")
-	fmt.Fprintln(out, "--tags a,b keeps only entries carrying all the listed tags; tags on groups are inherited by their children.")
+	fmt.Fprintln(out, "The schema commands (list, tags, info, deps, graph, clone) select entries that may not be on disk yet:")
+	fmt.Fprintln(out, "paths identify repositories, files, or groups using slash paths such as services/checkout or platform;")
+	fmt.Fprintln(out, "--tags a,b keeps only entries carrying all the listed tags; tags on groups are inherited by their children;")
 	fmt.Fprintln(out, "--meta key[=value] keeps only entries whose meta carries the key (and, when given, the exact value).")
+	fmt.Fprintln(out, "The other commands act on the installed entries under the current directory; cd to narrow their scope.")
 }
 
 func cmdInit(args []string, out io.Writer) error {
@@ -564,22 +558,14 @@ func cmdClone(args []string, out io.Writer) error {
 }
 
 func cmdSync(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, commandFlags["sync"])
-	if err != nil {
-		return err
-	}
-	selector, err := selectorFrom("sync", parsed, parsed.Positionals)
+	parsed, err := parseBare("sync", args)
 	if err != nil {
 		return err
 	}
 	if err := checkDepsFlags(parsed); err != nil {
 		return err
 	}
-	if err := checkPruneScope(parsed); err != nil {
-		return err
-	}
 	return jig.Sync(jig.SyncOptions{
-		Selector:        selector,
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		SkipDeps:        parsed.Flags["--no-deps"],
 		SkipUpdate:      parsed.Flags["--no-update"],
@@ -587,16 +573,25 @@ func cmdSync(args []string, out io.Writer) error {
 	}, out)
 }
 
-func cmdPull(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, commandFlags["pull"])
+// parseBare parses the arguments of a command that acts on the checkouts
+// under the current directory: its own flags only, no positionals.
+func parseBare(name string, args []string) (parsedArgs, error) {
+	parsed, err := parseArgs(args, commandFlags[name])
 	if err != nil {
+		return parsed, err
+	}
+	if len(parsed.Positionals) > 0 {
+		return parsed, usageError(name)
+	}
+	return parsed, nil
+}
+
+// cmdBare dispatches a command that takes no arguments at all.
+func cmdBare(name string, run func(io.Writer) error, args []string, out io.Writer) error {
+	if _, err := parseBare(name, args); err != nil {
 		return err
 	}
-	selector, err := selectorFrom("pull", parsed, parsed.Positionals)
-	if err != nil {
-		return err
-	}
-	return jig.Pull(jig.PullOptions{Selector: selector}, out)
+	return run(out)
 }
 
 func cmdCache(args []string, out io.Writer) error {
@@ -623,42 +618,12 @@ func cmdCache(args []string, out io.Writer) error {
 	return jig.CacheClean(jig.CacheCleanOptions{UnusedDays: days}, out)
 }
 
-func cmdFetch(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, commandFlags["fetch"])
-	if err != nil {
-		return err
-	}
-	selector, err := selectorFrom("fetch", parsed, parsed.Positionals)
-	if err != nil {
-		return err
-	}
-	return jig.Fetch(jig.FetchOptions{Selector: selector}, out)
-}
-
-// cmdLifecycle parses the shared argument shape of the lifecycle verbs
-// (setup, fmt, lint, test) and dispatches to the given runner.
-func cmdLifecycle(name string, run func(jig.LifecycleOptions, io.Writer) error, args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, commandFlags[name])
-	if err != nil {
-		return err
-	}
-	selector, err := selectorFrom(name, parsed, parsed.Positionals)
-	if err != nil {
-		return err
-	}
-	return run(jig.LifecycleOptions{Selector: selector}, out)
-}
-
 func cmdPush(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, commandFlags["push"])
+	parsed, err := parseBare("push", args)
 	if err != nil {
 		return err
 	}
-	selector, err := selectorFrom("push", parsed, parsed.Positionals)
-	if err != nil {
-		return err
-	}
-	return jig.Push(jig.PushOptions{Selector: selector, SetUpstream: parsed.Flags["-u"]}, out)
+	return jig.Push(jig.PushOptions{SetUpstream: parsed.Flags["-u"]}, out)
 }
 
 func cmdCheckout(args []string, out io.Writer) error {
@@ -666,28 +631,22 @@ func cmdCheckout(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	// With --default there is no branch positional (and nothing to create),
-	// so only the optional path remains.
-	branch, positionals := "", parsed.Positionals
+	// With --default there is no branch positional (and nothing to create).
+	branch := ""
 	if parsed.Flags["--default"] {
-		if parsed.Flags["-b"] {
+		if parsed.Flags["-b"] || len(parsed.Positionals) > 0 {
 			return usageError("checkout")
 		}
 	} else {
-		if len(positionals) < 1 {
+		if len(parsed.Positionals) != 1 {
 			return usageError("checkout")
 		}
-		branch, positionals = positionals[0], positionals[1:]
-	}
-	selector, err := selectorFrom("checkout", parsed, positionals)
-	if err != nil {
-		return err
+		branch = parsed.Positionals[0]
 	}
 	return jig.Checkout(jig.CheckoutOptions{
-		Selector: selector,
-		Branch:   branch,
-		Default:  parsed.Flags["--default"],
-		Create:   parsed.Flags["-b"],
+		Branch:  branch,
+		Default: parsed.Flags["--default"],
+		Create:  parsed.Flags["-b"],
 	}, out)
 }
 
@@ -710,54 +669,38 @@ func cmdRemove(args []string, out io.Writer) error {
 }
 
 func cmdStatus(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, commandFlags["status"])
+	parsed, err := parseBare("status", args)
 	if err != nil {
 		return err
 	}
-	selector, err := selectorFrom("status", parsed, parsed.Positionals)
-	if err != nil {
-		return err
-	}
-	return jig.Status(jig.StatusOptions{Selector: selector, All: parsed.Flags["--all"]}, out)
+	return jig.Status(jig.StatusOptions{All: parsed.Flags["--all"]}, out)
 }
 
 func cmdDiff(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, commandFlags["diff"])
+	parsed, err := parseBare("diff", args)
 	if err != nil {
 		return err
 	}
-	selector, err := selectorFrom("diff", parsed, parsed.Positionals)
-	if err != nil {
-		return err
-	}
-	return jig.Diff(jig.DiffOptions{Selector: selector, Stat: parsed.Flags["--stat"]}, out)
+	return jig.Diff(jig.DiffOptions{Stat: parsed.Flags["--stat"]}, out)
 }
 
 func cmdUpdate(args []string, out io.Writer) error {
 	// --sync is a legacy alias for jig sync, which now updates the schema
 	// itself before applying it; the flag keeps working undocumented.
-	parsed, err := parseArgs(args, map[string]flagKind{"--sync": boolFlag, "--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--prune": boolFlag, "--archived": boolFlag, "--tags": valueFlag})
+	parsed, err := parseArgs(args, map[string]flagKind{"--sync": boolFlag, "--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--prune": boolFlag})
 	if err != nil {
 		return err
 	}
-	if len(parsed.Positionals) > 1 || len(parsed.Positionals) == 1 && !parsed.Flags["--sync"] {
+	if len(parsed.Positionals) > 0 {
 		return usageError("update")
 	}
-	if !parsed.Flags["--sync"] && (parsed.Flags["--no-deps"] || parsed.Flags["--with-optional-deps"] || parsed.Flags["--archived"] || parsed.Flags["--prune"]) {
-		return errors.New("--no-deps, --with-optional-deps, --archived, and --prune require --sync")
+	if !parsed.Flags["--sync"] && (parsed.Flags["--no-deps"] || parsed.Flags["--with-optional-deps"] || parsed.Flags["--prune"]) {
+		return errors.New("--no-deps, --with-optional-deps, and --prune require --sync")
 	}
 	if err := checkDepsFlags(parsed); err != nil {
 		return err
 	}
-	if err := checkPruneScope(parsed); err != nil {
-		return err
-	}
 	return jig.Update(jig.UpdateOptions{
-		Selector: jig.Selector{
-			Path:            optionalPath(parsed.Positionals),
-			IncludeArchived: parsed.Flags["--archived"],
-			Tags:            parseTags(parsed.Values["--tags"]),
-		},
 		Sync:            parsed.Flags["--sync"],
 		IncludeOptional: parsed.Flags["--with-optional-deps"],
 		SkipDeps:        parsed.Flags["--no-deps"],

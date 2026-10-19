@@ -7,12 +7,11 @@ import (
 )
 
 type PushOptions struct {
-	Selector
 	SetUpstream bool // create the upstream (git push -u) when the branch has none
 }
 
-// Push publishes the current branch of installed repositories matching the
-// query, mirroring git push across the workspace. Pushes are never forced;
+// Push publishes the current branch of the installed repositories in the
+// current scope, mirroring git push across the workspace. Pushes are never forced;
 // a repository where the remote rejects the push is reported as skipped.
 // Repositories with nothing to push report "up to date" without touching
 // the network.
@@ -21,7 +20,7 @@ func Push(options PushOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	repos, err := selectInstalledRepos(ws, options.query())
+	repos, err := selectInstalledRepos(ws)
 	if err != nil {
 		return err
 	}

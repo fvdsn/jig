@@ -142,13 +142,4 @@ func TestStatusSkipsArchivedMissingEntriesUnlessIncluded(t *testing.T) {
 	if !strings.Contains(got, "services/old") || !strings.Contains(got, "scripts/old.sh") {
 		t.Fatalf("expected installed archived entries in status, got:\n%s", got)
 	}
-
-	out.Reset()
-	if err := Status(StatusOptions{Selector: Selector{IncludeArchived: true}}, &out); err != nil {
-		t.Fatal(err)
-	}
-	got = out.String()
-	if !strings.Contains(got, "services/old") || !strings.Contains(got, "scripts/old.sh") {
-		t.Fatalf("expected archived entries with --archived, got:\n%s", got)
-	}
 }

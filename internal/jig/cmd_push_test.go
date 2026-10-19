@@ -116,8 +116,9 @@ func TestPushAcrossInstalledRepos(t *testing.T) {
 
 	// A detached HEAD has no branch to push.
 	gitIn(t, localB, "checkout", "-q", "--detach")
+	t.Chdir(localB)
 	out.Reset()
-	if err := Push(PushOptions{Selector: Selector{Path: "services/b"}}, &out); err == nil {
+	if err := Push(PushOptions{}, &out); err == nil {
 		t.Fatalf("expected the detached repository to be skipped:\n%s", out.String())
 	}
 	if got := out.String(); !strings.Contains(got, "detached HEAD") {

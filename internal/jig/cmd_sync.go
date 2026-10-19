@@ -6,9 +6,8 @@ import (
 )
 
 type SyncOptions struct {
-	Selector
 	IncludeOptional bool
-	SkipDeps        bool // sync only the selected repos, without their dependencies
+	SkipDeps        bool // sync only the installed repos, without their dependencies
 	SkipUpdate      bool // apply the current schema without updating it first
 	Prune           bool // delete entries removed from the schema (jig rm safety rules apply)
 }
@@ -40,50 +39,23 @@ func syncWorkspace(out io.Writer, ws *Workspace, options SyncOptions) error {
 	if options.Prune && ws.Subdir != "" {
 		return fmt.Errorf("--prune applies to the whole workspace; run it from the workspace root")
 	}
+	// Sync converges what is already installed, scoped to where the command
+	// runs; jig clone is how entries are added.
+	scope, err := ws.ResolvePath("")
+	if err != nil {
+		return err
+	}
 	var roots []string
-	var explicitFiles []string
-	var explicitDirs []string
-	if options.Path != "" || options.ID != "" {
-		selection, err := ws.Select(options.query())
-		if err != nil {
-			return err
-		}
-		roots = selection.repoPaths()
-		explicitFiles = selection.filePaths()
-		explicitDirs = entryPaths(selection.ofKind(EntryDir))
-		if len(roots) == 0 && len(explicitFiles) == 0 && len(explicitDirs) == 0 {
-			return noEntriesMatchError(&ws.Model, "repositories or files", selection.Path, options.Tags)
-		}
-	} else {
-		// Pathless sync converges what is already installed — scoped to the
-		// subtree the command runs in. (An explicit path, including ".",
-		// materializes the whole selection instead.)
-		roots = desiredDefinedRepos(ws.Root, &ws.Model, &ws.State)
-		if ws.Subdir != "" {
-			var scoped []string
-			for _, repoPath := range roots {
-				if pathMatches(ws.Subdir, repoPath) {
-					scoped = append(scoped, repoPath)
-				}
-			}
-			roots = scoped
-		}
-		if len(options.Tags) > 0 {
-			var tagged []string
-			for _, repoPath := range roots {
-				if entry, ok := ws.Model.entry(repoPath, EntryRepo); ok && entry.hasAllTags(options.Tags) {
-					tagged = append(tagged, repoPath)
-				}
-			}
-			roots = tagged
+	for _, repoPath := range desiredDefinedRepos(ws.Root, &ws.Model, &ws.State) {
+		if nodePathMatches(scope, repoPath) {
+			roots = append(roots, repoPath)
 		}
 	}
 
 	// A skip failure still leaves valid work behind: report stale entries,
 	// keep the state, and surface the failure in the exit code.
-	applyErr := resolveAndApplyPlan(out, ws, roots, explicitFiles, explicitDirs, applyOptions{
+	applyErr := resolveAndApplyPlan(out, ws, roots, nil, nil, applyOptions{
 		IncludeOptional: options.IncludeOptional,
-		IncludeArchived: options.IncludeArchived,
 		SkipDeps:        options.SkipDeps,
 		Sync:            true,
 	})

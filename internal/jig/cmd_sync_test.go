@@ -3,14 +3,16 @@ package jig
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// A pathless sync converges what is installed, but --id names an entry
-// explicitly and must materialize it like a path would.
-func TestSyncByIdMaterializesTheEntry(t *testing.T) {
+// Sync converges what is installed under the directory it runs in, from
+// anywhere inside a checkout; it never materializes entries that were not
+// cloned.
+func TestSyncConvergesTheCurrentScope(t *testing.T) {
 	root := t.TempDir()
 	remoteA := testBareRemote(t, root, "remote-a")
 	remoteB := testBareRemote(t, root, "remote-b")
@@ -24,16 +26,33 @@ func TestSyncByIdMaterializesTheEntry(t *testing.T) {
 	t.Chdir(root)
 
 	var out bytes.Buffer
-	if err := Sync(SyncOptions{Selector: Selector{ID: "b"}, SkipUpdate: true}, &out); err != nil {
-		t.Fatalf("sync --id b: %v\n%s", err, out.String())
+	if err := Clone(CloneOptions{}, &out); err != nil {
+		t.Fatalf("clone: %v\n%s", err, out.String())
 	}
-	if !strings.Contains(out.String(), "cloned: services/b") {
-		t.Fatalf("expected services/b to be cloned, got:\n%s", out.String())
+	if err := os.RemoveAll(filepath.Join(root, "services", "b")); err != nil {
+		t.Fatal(err)
+	}
+	inside := filepath.Join(root, "services", "a", "src")
+	if err := os.MkdirAll(inside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(inside)
+	out.Reset()
+	if err := Sync(SyncOptions{SkipUpdate: true}, &out); err != nil {
+		t.Fatalf("sync inside a: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "present: services/a") || strings.Contains(out.String(), "services/b") {
+		t.Fatalf("expected only services/a to be converged, got:\n%s", out.String())
+	}
+	if pathExists(filepath.Join(root, "services", "b", ".git")) {
+		t.Fatal("services/b was restored although the sync ran inside services/a")
+	}
+	t.Chdir(root)
+	out.Reset()
+	if err := Sync(SyncOptions{SkipUpdate: true}, &out); err != nil {
+		t.Fatalf("sync at root: %v\n%s", err, out.String())
 	}
 	if !pathExists(filepath.Join(root, "services", "b", ".git")) {
-		t.Fatal("services/b was not cloned")
-	}
-	if pathExists(filepath.Join(root, "services", "a")) {
-		t.Fatal("services/a was cloned although only b was selected")
+		t.Fatal("services/b was not restored by a root sync")
 	}
 }

@@ -188,7 +188,7 @@ Reference sites have one of two arities, enforced by validation:
 - **Selector sites** (`dependsOn` entries, `onlyWhen` conditions) accept any of the three selector fields and may resolve to zero or more repositories, plus site-specific extras (`optional`, `reason`).
 - **Single-target sites** (`$file.link`, `$dir.link`, `$file.copy`, `$dir.copy`) accept only `id` or `path`, forbid `/*`, and must resolve to exactly one entry of the required kind.
 
-The CLI mirrors the three selectors: the path positional, `--id`, and `--tags`. As a human interface the CLI keeps its filesystem feel — a bare path positional selects the node *and* its subtree, position-aware relative to the current directory — and also accepts an explicit trailing `/*`, which selects the same set. `--id` selects exactly one entry and cannot be combined with a path positional or `--tags`.
+The schema commands mirror the three selectors: the path positional, `--id`, and `--tags`. As a human interface the CLI keeps its filesystem feel — a bare path positional selects the node *and* its subtree, position-aware relative to the current directory — and also accepts an explicit trailing `/*`, which selects the same set. `--id` selects exactly one entry and cannot be combined with a path positional or `--tags`.
 
 ## Position-Relative CLI Paths
 
@@ -197,7 +197,7 @@ CLI path arguments and pathless commands are interpreted relative to the directo
 - A pathless command uses the current subtree as its selection. At the workspace root this selects everything, preserving root behavior.
 - Path arguments resolve like filesystem paths: `.` is the current subtree, `..` climbs, and a leading `/` anchors to the workspace root. A resolved path escaping the workspace is an error.
 - A path below a repository or dir entry addresses that entry, the way git finds its repository from any directory inside a checkout: pathless commands run from `services/checkout/src` address `services/checkout`, and so does `jig info ../src` from there. Groups are plain directories and keep subtree semantics. A moved checkout answers to its defined path.
-- Pathless `sync` converges installed entries within the current subtree only; an explicit path (including `.`) materializes the selection as before. `sync --prune` requires the workspace root.
+- The commands that act on checkouts (`sync`, `setup`, `fmt`, `lint`, `test`, `pull`, `fetch`, `push`, `checkout`, `status`, `diff`) take no path and no selector flags: their scope is the current subtree, and `cd` narrows it. Only the schema commands, whose subjects may not exist on disk yet (`list`, `tags`, `info`, `deps`, `graph`, `clone`, and `init --clone`), take paths, `--id`, `--tags`, and `--archived`. `rm` takes the paths to remove as its arguments. `sync --prune` requires the workspace root.
 - Resolution is CLI-side only: schema paths are unchanged and still reject `.`, `..`, and leading `/`.
 - Reported paths remain workspace-relative regardless of where the command runs.
 
@@ -768,7 +768,7 @@ Execution rules:
 - Commands run through the shell with the checkout as working directory.
 - Jig runs them only when the user invokes the matching command — never as a side effect of `clone`, `sync`, or `update`. The schema carries a short, reviewable entrypoint; the logic belongs in the repository, reviewed by the people who own it.
 - `jig setup` runs sequentially in dependency order: a repository's setup may rely on its dependencies being set up. `jig fmt`, `jig lint`, and `jig test` run in parallel.
-- Selection matches `jig pull`: installed repositories under the path, with `--tags` and `--archived` as usual.
+- Selection matches `jig pull`: the installed repositories under the current directory.
 - Repositories without the verb's command are counted (`N repositories define no lint command`), not failed — the org can fill the schema in incrementally.
 - One line per repository as it completes: `<verb>: <path>` on success, `failed: <path>` on failure — failures surface live, not only at the end. After the run, the `failed` group repeats each failure with its exit status and captured output, and the run exits non-zero.
 - While repositories run, a transient status line on stderr shows the done counter and the entries in flight; it renders only when stderr is a terminal, so piped output stays clean.
@@ -951,8 +951,8 @@ Updating the definition and updating repository contents are separate operations
 
 ```text
 jig update        fast-forwards .jig/source from its remote
-jig pull [path]   pulls existing local Git repositories
-jig sync [path]   updates the schema, then applies it to the local checkout shape
+jig pull          pulls the installed Git repositories
+jig sync          updates the schema, then applies it to the installed checkouts
 ```
 
 `jig sync --no-update` applies the current schema without fetching, for offline use or for testing local schema edits before pushing them.
@@ -1031,27 +1031,25 @@ jig graph [path] --archived
 jig graph [path] --tags a,b
 jig graph --id x
 jig clone [path]
-jig setup [path]
-jig fmt [path]
-jig lint [path]
-jig test [path]
-jig pull [path]
-jig pull [path] --archived
-jig push [-u] [path]
-jig checkout [-b] <branch> [path]
-jig status [path]
-jig status [path] --archived
-jig diff [path] [--stat]
+jig setup
+jig fmt
+jig lint
+jig test
+jig pull
+jig push [-u]
+jig checkout [-b] <branch>
+jig checkout --default
+jig status [--all]
+jig diff [--stat]
 jig update
-jig sync [path]
-jig sync [path] --no-update
+jig sync
+jig sync --no-update
 jig clone [path] --no-deps
 jig clone [path] --with-optional-deps
-jig sync [path] --no-deps
-jig sync [path] --with-optional-deps
+jig sync --no-deps
+jig sync --with-optional-deps
 jig sync --prune
 jig clone [path] --archived
-jig sync [path] --archived
 ```
 
 ### `jig init <git-url-or-file> [workspace-dir]`
@@ -1265,23 +1263,17 @@ Clones all repositories, or repositories matching a path, including non-optional
 
 Clones uninstalled archived repositories and files in addition to the default selection.
 
-### `jig sync [path]`
+### `jig sync`
 
 Updates the schema as `jig update` does, then applies it to the local checkout shape. A schema update that fails (unreachable remote, invalid or diverged upstream) is reported on a `schema not updated:` line and the current schema is applied instead, so sync still converges offline. `--no-update` skips the update step: the current `.jig.json` is applied without fetching.
 
-If `path` is provided, Jig syncs repositories and files matching that path. Matching repositories include non-optional dependencies. Matching files are materialized directly.
-
-If `path` matches symlink files, Jig also materializes their target files.
-
-If a matching repository has optional dependencies that are already installed locally, those optional dependencies are included in the sync set.
-
-If `path` is omitted, Jig syncs the desired repositories: those installed locally plus those tracked in `.jig/state.json`, with their non-optional dependencies, then writes active files. Installed optional dependencies are included. It should not clone every repository in the schema by default.
+Sync converges what is installed: the desired repositories under the current directory (those installed locally plus those tracked in `.jig/state.json`), with their non-optional dependencies, then the active files. Installed optional dependencies are included. Sync never clones an entry that was not cloned; `jig clone` is how entries are added, and a repository added to the schema is reported by the update step and materialized by `jig clone`.
 
 State records intent: a tracked repository whose directory was deleted locally is restored by sync and reported as restored. `jig rm` is the way to uninstall.
 
-Archived repositories and files are skipped unless they are already installed or `--archived` is provided.
+Archived repositories and files are skipped unless they are already installed.
 
-`--no-deps` restricts the sync set to exactly the selected repositories and files, without dependency or condition expansion, as in `jig clone --no-deps`. It is mutually exclusive with `--with-optional-deps`.
+`--no-deps` restricts the sync set to exactly the installed repositories, without dependency or condition expansion, as in `jig clone --no-deps`. It is mutually exclusive with `--with-optional-deps`.
 
 Sync may perform these actions:
 
@@ -1301,7 +1293,7 @@ Renamed identities are readopted: when a state entry's identity is no longer def
 
 ### `jig sync --prune`
 
-Deletes state-tracked entries that are no longer defined in the schema, after the normal sync. Pruning is a whole-workspace operation: `--prune` cannot be combined with a path or `--tags`, since stale entries have no schema entry to select on.
+Deletes state-tracked entries that are no longer defined in the schema, after the normal sync. Pruning is a whole-workspace operation: `--prune` requires the workspace root, since stale entries have no schema entry to scope on.
 
 Safety rules match `jig rm` without `--force`:
 
@@ -1315,35 +1307,27 @@ Successful deletions drop the state entry and are reported under `pruned`. There
 
 Sync must skip and report any operation that is ambiguous or unsafe.
 
-### `jig sync [path] --with-optional-deps`
+### `jig sync --with-optional-deps`
 
-Syncs repositories matching `path`, non-optional dependencies, optional dependencies, and active files.
+Syncs the installed repositories, their non-optional dependencies, their optional dependencies, and the active files.
 
-### `jig sync [path] --archived`
-
-Syncs uninstalled archived repositories and files in addition to the default selection.
-
-### `jig setup [path]`, `jig fmt [path]`, `jig lint [path]`, `jig test [path]`
+### `jig setup`, `jig fmt`, `jig lint`, `jig test`
 
 Run each installed repository's schema-declared lifecycle command. See [Repository Lifecycle Commands](#repository-lifecycle-commands) for the vocabulary, execution rules, and reporting.
 
-### `jig pull [path]`
+### `jig pull`
 
-Pulls all locally installed Git repositories matching `path`.
+Pulls the locally installed Git repositories under the current directory: the whole workspace from the root, one subtree from a group directory, one repository from anywhere inside its checkout.
 
-If `path` is omitted, all locally installed repositories in the workspace are matched.
+Files are ignored by `jig pull`. Installed archived repositories are included.
 
-Files are ignored by `jig pull`.
+### `jig fetch`
 
-Installed archived repositories are included by default. `--archived` applies the same selection semantics as other commands, although `pull` can only act on installed repositories.
+Runs `git fetch` in the installed repositories. Selection matches `jig pull`. Fetch never touches working trees or local branches.
 
-### `jig fetch [path]`
+### `jig push [-u]`
 
-Runs `git fetch` in installed repositories matching `path`, or in all installed repositories when `path` is omitted. Selection semantics match `jig pull`. Fetch never touches working trees or local branches.
-
-### `jig push [-u] [path]`
-
-Publishes the current branch of installed repositories matching `path` (all installed repositories when `path` is omitted), in parallel. Selection semantics match `jig pull`.
+Publishes the current branch of the installed repositories, in parallel. Selection matches `jig pull`.
 
 - Pushes are never forced; there is no force flag. A push the remote rejects (for example a non-fast-forward) is reported under `skipped` and the remote is left untouched — escalate per repository with plain Git when needed.
 - Repositories whose branch is not ahead of its upstream report `up to date`, computed locally without network access.
@@ -1353,9 +1337,9 @@ Publishes the current branch of installed repositories matching `path` (all inst
 
 Only the current branch is pushed. There is no branch argument or refspec support.
 
-### `jig checkout [-b] <branch> [path]`
+### `jig checkout [-b] <branch>`
 
-Switches installed repositories matching `path` (all installed repositories when `path` is omitted) to `<branch>`, in parallel. Selection semantics match `jig pull`.
+Switches the installed repositories to `<branch>`, in parallel. Selection matches `jig pull`.
 
 - Repositories already on the branch report `present`.
 - With `-b`, the branch is created at the repository's current HEAD when it does not exist; when it already exists, the repository just switches to it, so re-running is idempotent.
@@ -1363,9 +1347,9 @@ Switches installed repositories matching `path` (all installed repositories when
 - Checkouts are never forced: a repository where git refuses the switch (for example uncommitted changes that would be overwritten) is reported under `skipped` and left untouched.
 - The branch name is validated up front; an invalid name fails before touching any repository.
 
-### `jig checkout --default [path]`
+### `jig checkout --default`
 
-Switches each matching repository to its own remote default branch. This exists because default branches differ across repositories (`main`, `master`, `staging`, …), so no single branch name can express "go back to the mainline everywhere".
+Switches each installed repository to its own remote default branch. This exists because default branches differ across repositories (`main`, `master`, `staging`, …), so no single branch name can express "go back to the mainline everywhere".
 
 - The default branch is resolved per repository from `origin/HEAD`, which git records at clone time, so resolution is normally offline. When the ref is missing (an old clone, a hand-added remote), the remote is asked directly with `ls-remote --symref origin HEAD` and the answer is recorded via `git remote set-head`, making later runs offline again.
 - Since the target branch differs per repository, report lines name it: `switched: services/api (main)`.
@@ -1385,25 +1369,25 @@ Safety: removal is refused for repositories with uncommitted changes, with unpus
 
 Entries tracked in state whose directory is already gone can be removed too; this only drops the state entry.
 
-### `jig diff [path]`
+### `jig diff`
 
-Shows the uncommitted changes of installed repositories matching the selection as one workspace-wide unified diff. Each repository is diffed against `HEAD` (staged and unstaged changes both appear); the `a/` and `b/` path prefixes carry the repository's workspace path, so the output reads as the diff of the whole workspace tree. Untracked files do not appear, exactly as with `git diff` — `jig status` reports them.
+Shows the uncommitted changes of the installed repositories as one workspace-wide unified diff. Each repository is diffed against `HEAD` (staged and unstaged changes both appear); the `a/` and `b/` path prefixes carry the repository's workspace path, so the output reads as the diff of the whole workspace tree. Untracked files do not appear, exactly as with `git diff` — `jig status` reports them.
 
 `--stat` prints one summary line per dirty repository instead of the patch: path, changed file count, and added/deleted line totals. Clean repositories produce no output in either mode.
 
 On a terminal the patch reuses the user's git diff presentation: it is piped through the pager git diff would use (`pager.diff`, then `GIT_PAGER` / `core.pager` / `PAGER`, defaulting to less with git's `LESS=FRX` defaults), and each repository's git runs with `GIT_PAGER_IN_USE` set, so the user's color configuration applies exactly as when git itself pages — custom diff viewers such as delta work unchanged. When output is not a terminal (or with `--stat`), no pager runs and the output is plain, matching git. Quitting the pager ends the output without an error.
 
-`--tags` and `--id` scope the selection as everywhere; repositories that are defined but not installed are skipped.
+Selection matches `jig pull`; repositories that are defined but not installed are skipped.
 
-### `jig status [path]`
+### `jig status [--all]`
 
-Shows local checkout status for repositories and files matching `path`.
+Shows local checkout status for the repositories and files under the current directory.
 
 Status reports the state of the workspace, not the catalog: repositories that are neither installed nor tracked in state are only counted in the summary line as not installed, unless `--all` is given. A tracked repository whose directory was deleted locally is reported as missing (sync restores it). Inactive files and dirs are hidden.
 
-If `path` is omitted, Jig reports status for the installed entries plus entries tracked in `.jig/state.json` that are no longer defined.
+From the workspace root, status also reports the entries tracked in `.jig/state.json` that are no longer defined.
 
-Archived repositories and files are skipped unless they are already installed or `--archived` is provided.
+Archived repositories and files are skipped unless they are already installed.
 
 Output is a single list with one line per entry, ordered by path across repositories and files. Each line shows a status glyph, the path, the current branch (for repositories), and a note spelling out any notable state. For a repository the current branch is shown, or a short `@<sha>` when the checkout is on a detached HEAD.
 

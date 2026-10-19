@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Breaking: the commands that act on checkouts (`sync`, `setup`,
+  `fmt`, `lint`, `test`, `pull`, `fetch`, `push`, `checkout`, `status`,
+  `diff`) no longer take a path, `--tags`, `--id`, or `--archived`.
+  Their scope is the directory they run in: the whole workspace from
+  the root, a subtree from a group directory, one repository from
+  anywhere inside its checkout. The schema commands (`list`, `tags`,
+  `info`, `deps`, `graph`, `clone`) keep the selectors, since their
+  subjects may not be on disk yet. `sync` converges what is installed
+  and never materializes an entry that was not cloned; use `jig
+  clone` for that.
+- A path below a repository or dir entry addresses that entry, the
+  way git finds its repository from any directory inside a checkout.
+
 ## v2.6.0 — 2026-10-19
 
 - Fixes: a workspace or mirror lock left behind by a jig process that

@@ -78,12 +78,19 @@ func TestCheckoutAcrossInstalledRepos(t *testing.T) {
 		t.Fatalf("local edit was not preserved: %q", data)
 	}
 
-	// A path selects a subset; -b on an existing branch switches instead of
+	// The directory the command runs in selects a subset, from anywhere
+	// inside the checkout; -b on an existing branch switches instead of
 	// failing.
-	got = checkout(CheckoutOptions{Selector: Selector{Path: "services/b"}, Branch: "feature", Create: true})
+	inside := filepath.Join(localB, "src")
+	if err := os.MkdirAll(inside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(inside)
+	got = checkout(CheckoutOptions{Branch: "feature", Create: true})
 	if !strings.Contains(got, "switched: services/b") || strings.Contains(got, "services/a") {
 		t.Fatalf("subset run = %q, want only services/b switched", got)
 	}
+	t.Chdir(root)
 
 	// An invalid branch name fails before touching any repository.
 	var out bytes.Buffer

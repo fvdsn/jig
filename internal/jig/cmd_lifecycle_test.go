@@ -72,7 +72,7 @@ func TestLifecycleRunsCommandsAcrossRepos(t *testing.T) {
 	// lint runs each repo's own command in its checkout; the repo without
 	// one is counted, not failed.
 	var out bytes.Buffer
-	if err := Lint(LifecycleOptions{}, &out); err != nil {
+	if err := Lint(&out); err != nil {
 		t.Fatalf("lint: %v\n%s", err, out.String())
 	}
 	got := out.String()
@@ -93,7 +93,7 @@ func TestLifecycleRunsCommandsAcrossRepos(t *testing.T) {
 	// failed group with its output, and fails the run; other repos are
 	// unaffected.
 	out.Reset()
-	if err := Test(LifecycleOptions{}, &out); err == nil {
+	if err := Test(&out); err == nil {
 		t.Fatalf("expected test failure:\n%s", out.String())
 	}
 	got = out.String()
@@ -101,9 +101,11 @@ func TestLifecycleRunsCommandsAcrossRepos(t *testing.T) {
 		t.Fatalf("test output = %q, want a live failed line and the failed group with output", got)
 	}
 
-	// A path scopes the run like every other command.
+	// The directory the command runs in scopes the run like every other
+	// command.
+	t.Chdir(filepath.Join(root, "services", "b"))
 	out.Reset()
-	if err := Lint(LifecycleOptions{Selector: Selector{Path: "services/b"}}, &out); err != nil {
+	if err := Lint(&out); err != nil {
 		t.Fatalf("lint b: %v\n%s", err, out.String())
 	}
 	if got := out.String(); strings.Contains(got, "services/a") || !strings.Contains(got, "lint: services/b") {
@@ -140,7 +142,7 @@ func TestSetupRunsInDependencyOrder(t *testing.T) {
 	t.Chdir(root)
 
 	var out bytes.Buffer
-	if err := Setup(LifecycleOptions{}, &out); err != nil {
+	if err := Setup(&out); err != nil {
 		t.Fatalf("setup: %v\n%s", err, out.String())
 	}
 	data, err := os.ReadFile(filepath.Join(root, "order.log"))
