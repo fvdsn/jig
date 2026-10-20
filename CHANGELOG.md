@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v4.3.0 — 2026-10-20
 
 - The `agents` block gains `plugins`: plugins in the Claude Code plugin
   layout, or marketplaces of them, kept whole under `.agents/plugins/`
