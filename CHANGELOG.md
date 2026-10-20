@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v4.0.1 — 2026-10-20
 
 - The `agents` block derives one entry per location a harness in use
   reads, and nothing else: a Claude-only machine gets `.claude/skills`
