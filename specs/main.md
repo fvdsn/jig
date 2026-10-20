@@ -830,19 +830,36 @@ Not read: `plugin.json` fields other than `name`; a plugin's `apm.yml` and the A
 
 ### `agents.mcp`
 
-A map from server name to a server definition in the MCP standard shape: `command`, `args`, `env` for a local server, or `url` and `headers` for a remote one, plus `onlyWhen`. Values are written verbatim, including `${VAR}` references, which each harness expands itself; jig never resolves secrets.
+A map from server name to a server definition in the MCP standard shape: `command`, `args`, `env` for a local server, or `url` and `headers` for a remote one, plus `onlyWhen`. Jig never resolves secrets: values reach the document as written, except environment references, which are translated to each harness's own syntax. The neutral form is `${NAME}`; VS Code and Cursor read `${env:NAME}`, and a definition written in either form lands correctly in every document. A plugin's `.mcp.json` feeds this map (see [`agents.plugins`](#agentsplugins)).
 
-MCP servers are configuration, not files: each harness reads them from a JSON document that users also edit by hand. The block therefore uses a managed-keys entry rather than a `$file`: jig owns the named keys it wrote inside the document and nothing else. Rules:
+MCP servers are configuration, not files: each harness reads them from a document that users also edit by hand. The block therefore derives a **managed document** per harness rather than a `$file`: a file entry that owns the named keys it wrote inside the document and nothing else. One managed document is derived per harness document in use; no document is shared between harnesses, so there is no canonical entry and nothing is written when no harness is in use. A document that also carries the harness's hooks (Gemini's `settings.json`) is one entry owning both key paths. Rules:
 
-- State records, per document, the keys jig wrote and a hash of each value, as a `$dir` manifest records files.
-- Sync upserts jig's keys, removes keys whose server was gated off or deleted from the schema, and leaves every other key untouched. A document that does not exist is created; one that is empty after jig's last key is removed is deleted only if jig created it.
+- State records, per document, the key paths jig wrote and a hash of each value, in place of the file hash of a `$file`.
+- Sync parses the document, upserts jig's keys, removes keys whose server was gated off or deleted from the schema, and writes everything else back untouched. A document that does not exist is created; one that is empty after jig's last key is removed is deleted only if jig created it.
 - A key jig wants to write that already exists with a different value and is not recorded in state is a conflict: the user's value is kept and the conflict reported, mirroring a locally modified file.
 - A key recorded in state whose value the user changed is kept and reported as modified; `jig rm` refuses to remove it unless forced.
-- The document is rewritten with its existing formatting preserved where the JSON library allows, and with stable key order where it does not.
+- JSON is decoded with its key order preserved and written back with two-space indentation; new keys go last. A document that does not parse (JSONC with comments, say) is reported and left alone. Codex's `config.toml` is edited table by table: jig owns whole `[mcp_servers.<name>]` tables and leaves every other line as it is.
+- Array-valued keys (every hooks format) are owned by value: state records each element jig wrote, sync removes the recorded elements and appends the current ones, and an element the user edited counts as modified.
+
+Per harness, the container key and the server shape:
+
+- Claude `.mcp.json`, Cursor `.cursor/mcp.json`, Gemini `.gemini/settings.json`, Kiro `.kiro/settings/mcp.json`, and Copilot CLI `.github/mcp.json`: `mcpServers`, the standard shape.
+- Copilot also gets VS Code's `.vscode/mcp.json`: `servers`, with a `type` of `stdio` or `http`, since a Copilot user cannot be told apart from a VS Code user by detection.
+- OpenCode `opencode.json`: `mcp`, with `type` `local` or `remote`, the command and arguments as one `command` array, and `env` as `environment`.
+- Codex `.codex/config.toml`: `[mcp_servers.<name>]` tables with `command`, `args`, `env`, or `url`.
+- Windsurf reads MCP servers from a global file only, so it is not read.
 
 ### `agents.hooks`
 
-A list of hook objects: `event`, an optional `matcher`, `command`, and `onlyWhen`. Events use a harness-neutral vocabulary that jig maps onto each harness's own: `sessionStart`, `beforeToolUse`, `afterToolUse`, `beforePrompt`, `stop`. A harness with no equivalent for an event is reported as skipped for that hook, never silently dropped. Hooks are written with the managed-keys rules of `agents.mcp`, since several harnesses keep them inside a settings document shared with unrelated user settings.
+A list of hook objects: `event`, an optional `matcher` (a tool-name pattern, meaningful on the tool events), `command`, an optional `timeout` in seconds, and `onlyWhen`. Only command hooks exist. Events use a harness-neutral vocabulary that jig maps onto each harness's own: `sessionStart`, `beforeToolUse`, `afterToolUse`, `beforePrompt`, `stop`. A harness with no equivalent for an event is reported as skipped for that hook, never silently dropped. A plugin's `hooks/hooks.json` feeds this list, in the Claude hook file shape.
+
+Hooks are written with the managed-document rules of `agents.mcp`, since most harnesses keep them inside a document shared with other settings:
+
+- Claude `.claude/settings.json`, Codex `.codex/hooks.json`, and Gemini `.gemini/settings.json`: the nested matcher schema under `hooks` (`SessionStart`, `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`), Gemini with timeouts in milliseconds.
+- Cursor `.cursor/hooks.json`: a `version` 1 document with camelCase events (`sessionStart`, `preToolUse`, `postToolUse`, `beforeSubmitPrompt`, `stop`); matchers apply to the tool events only.
+- Windsurf `.windsurf/hooks.json`: its own event names, mapped the same way.
+- Copilot `.github/hooks/<name>.json`: one file per hook set with camelCase events (`agentStop` for stop). These are whole files jig generates, so they are plain `$file` entries, not managed documents.
+- OpenCode has no command hooks and Kiro's hooks are event-driven agent triggers, a different thing: both are not read.
 
 ### Materialization matrix
 
@@ -855,8 +872,8 @@ The canonical locations follow the convergence of the harnesses on `.agents/skil
 | instructions | `.agents/rules/` | `.claude/rules/` | folded into context | `.github/instructions/*.instructions.md` (+ `applyTo`) | `.cursor/rules/*.mdc` | folded into context | folded into context | `.windsurf/rules/` | `.kiro/steering/` |
 | subagents | `.agents/agents/` | `.claude/agents/` | `.codex/agents/*.toml` | `.github/agents/*.agent.md` | `.cursor/agents/` | `.opencode/agents/` | not read | not read | `.kiro/agents/` |
 | commands | `.agents/commands/` | `.claude/commands/` | not read | not read | `.cursor/commands/` | `.opencode/commands/` | `.gemini/commands/*.toml` | `.windsurf/workflows/` | not read |
-| mcp | — | `.mcp.json` | `.codex/config.toml` (unsupported until TOML) | `.vscode/mcp.json` | `.cursor/mcp.json` | `opencode.json` | `.gemini/settings.json` | not read | `.kiro/settings/mcp.json` |
-| hooks | — | `.claude/settings.json` | `.codex/hooks.json` | `.github/hooks/<name>.json` | `.cursor/hooks.json` | not read | `.gemini/settings.json` | `.windsurf/hooks.json` | `.kiro/hooks/` |
+| mcp | — | `.mcp.json` | `.codex/config.toml` | `.github/mcp.json` + `.vscode/mcp.json` | `.cursor/mcp.json` | `opencode.json` | `.gemini/settings.json` | not read | `.kiro/settings/mcp.json` |
+| hooks | — | `.claude/settings.json` | `.codex/hooks.json` | `.github/hooks/<name>.json` | `.cursor/hooks.json` | not read | `.gemini/settings.json` | `.windsurf/hooks.json` | not read |
 
 Plugins have no row: a plugin's store at `.agents/plugins/` is read only through the links rewritten into the files above, and its contents feed the rows above. "canonical" means the harness reads the canonical location and no alias is derived. "not read" means the harness has no such primitive and nothing is derived. "unsupported" means the harness has the primitive in a format jig does not transform yet; the harness is reported as skipped for that primitive (no cell says so today). The `.claude/skills` alias is a copy rather than a link because Claude Code's symlink handling has regressed repeatedly; the other aliases are links. Only the columns of the configured harnesses are derived, and the canonical column when one of them reads it or none is configured. Copilot reads `AGENTS.md` as well as its own instructions file, so its context alias is in addition to the canonical entry. The matrix is maintained against the harnesses' documentation and against [APM](https://github.com/microsoft/apm)'s target catalog, which serves as the reference for per-harness paths, naming conventions, and hook events.
 
