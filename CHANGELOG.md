@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Fixes: `jig status` no longer reports as missing the entries sync
+  would not write: a file or dir whose every source is gated off (a
+  plugin library gated on a tag no installed repository carries, an
+  MCP document whose servers are all conditional) is inactive, as sync
+  reports it, and is left out of the status list.
+
 ## v4.8.0 — 2026-10-20
 
 - `jig checkout` is now `jig switch`, after git's own verb for what it

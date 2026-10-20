@@ -143,3 +143,32 @@ func TestStatusSkipsArchivedMissingEntriesUnlessIncluded(t *testing.T) {
 		t.Fatalf("expected installed archived entries in status, got:\n%s", got)
 	}
 }
+
+// Entries sync would report inactive are not missing: a plugin library,
+// MCP servers, hooks, and a file whose sources are all gated on a tag no
+// installed repository carries.
+func TestStatusTreatsGatedEntriesAsInactive(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	writeTestWorkspace(t, root, `{"version": 4, "agents": {
+	  "plugins": [{"src": "git@example.com:plugins.git", "onlyWhen": {"tags": ["apdlc"]}}],
+	  "mcp": {"billing": {"url": "https://mcp.example.com/sse", "onlyWhen": {"tags": ["apdlc"]}}},
+	  "hooks": [{"event": "stop", "command": "echo", "onlyWhen": {"tags": ["apdlc"]}}]
+	}, "tree": {
+	  "tools/a": {"$repo": {"id": "a", "git": "git@example.com:a.git", "tags": ["apdlc"]}},
+	  "notes.md": {"$file": {"src": [{"src": "git@example.com:meta.git#notes.md", "onlyWhen": {"tags": ["apdlc"]}}]}},
+	  "ctx": {"$dir": {"src": [{"repo": {"id": "a"}, "path": "ctx"}]}}
+	}}`)
+	harnesses := []string{"claude", "codex", "copilot"}
+	if err := saveConfig(root, Config{Version: 1, Schema: "jig.json", Harnesses: &harnesses}); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	var out bytes.Buffer
+	if err := Status(StatusOptions{}, &out); err != nil {
+		t.Fatalf("status: %v\n%s", err, out.String())
+	}
+	if got := out.String(); strings.Contains(got, "missing") || !strings.Contains(got, "0 entries") {
+		t.Fatalf("status:\n%s", got)
+	}
+}

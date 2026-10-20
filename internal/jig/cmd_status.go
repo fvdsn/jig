@@ -48,6 +48,9 @@ func Status(options StatusOptions, out io.Writer) error {
 	installedNodes := ws.installedNodes()
 	activeFiles := activeFilesForRepoSet(&ws.Model, map[string]bool{}, installedNodes.Repos, installedNodes.Files, false)
 	activeDirs := activeDirsForRepoSet(&ws.Model, map[string]bool{}, installedNodes.Repos, installedNodes.Dirs, false)
+	// Source gating is judged the way sync judges it, against the
+	// installed repositories.
+	m := &materializer{root: ws.Root, model: &ws.Model, state: &ws.State, evidence: evidenceSet(&ws.Model, map[string]bool{}, installedNodes.Repos)}
 
 	type result struct {
 		line         statusLine
@@ -67,10 +70,10 @@ func Status(options StatusOptions, out io.Writer) error {
 			}
 			results[i] = result{line: markArchived(repoStatusLine(ws, entry), entry), ok: true}
 		case EntryFile:
-			line, ok := fileStatusLine(ws, entry, activeFiles)
+			line, ok := fileStatusLine(ws, m, entry, activeFiles)
 			results[i] = result{line: markArchived(line, entry), ok: ok}
 		case EntryDir:
-			line, ok := dirStatusLine(ws, entry, activeDirs)
+			line, ok := dirStatusLine(ws, m, entry, activeDirs)
 			results[i] = result{line: markArchived(line, entry), ok: ok}
 		}
 	})
@@ -179,7 +182,7 @@ func repoStatusLine(ws *Workspace, entry Entry) statusLine {
 	return statusLine{glyph, repoPath, branch, strings.Join(notes, ", ")}
 }
 
-func fileStatusLine(ws *Workspace, entry Entry, activeFiles map[string]bool) (statusLine, bool) {
+func fileStatusLine(ws *Workspace, m *materializer, entry Entry, activeFiles map[string]bool) (statusLine, bool) {
 	filePath := entry.Path
 	if !activeFiles[filePath] {
 		return statusLine{}, false
@@ -191,6 +194,9 @@ func fileStatusLine(ws *Workspace, entry Entry, activeFiles map[string]bool) (st
 		return statusLine{glyphMoved, filePath, "", "moved from " + stateFile.Path}, true
 	}
 	if !pathExists(expectedAbs) {
+		if !hasState && m.entryInactive(entry) {
+			return statusLine{}, false
+		}
 		return statusLine{glyphMissing, filePath, "", "missing"}, true
 	}
 	if !hasState {
@@ -251,7 +257,7 @@ func symlinkStatusLine(entryPath string, targetEntryPath string, expectedAbs str
 
 // dirStatusLine summarizes a materialized subtree: per-file divergence from
 // the manifest is aggregated into the note.
-func dirStatusLine(ws *Workspace, entry Entry, activeDirs map[string]bool) (statusLine, bool) {
+func dirStatusLine(ws *Workspace, m *materializer, entry Entry, activeDirs map[string]bool) (statusLine, bool) {
 	dirPath := entry.Path
 	if !activeDirs[dirPath] {
 		return statusLine{}, false
@@ -263,10 +269,7 @@ func dirStatusLine(ws *Workspace, entry Entry, activeDirs map[string]bool) (stat
 		return statusLine{glyphMoved, dirPath, "", "moved from " + stateDir.Path}, true
 	}
 	if !pathExists(expectedAbs) {
-		// A dir fed only by plugins exists once a plugin contributes to
-		// it; until then it is inactive, not missing, and status cannot
-		// tell the two apart without resolving the plugins.
-		if !hasState && pluginFedOnly(entry.Dir) {
+		if !hasState && m.entryInactive(entry) {
 			return statusLine{}, false
 		}
 		return statusLine{glyphMissing, dirPath, "", "missing"}, true
@@ -392,15 +395,50 @@ func printStatusSummary(out io.Writer, lines []statusLine, notInstalled int) {
 	fmt.Fprintln(out, summary)
 }
 
-// pluginFedOnly reports whether every source of a dir comes from the
-// agents block's plugins, so whether it has any content is only known
-// once the plugins have been resolved.
-func pluginFedOnly(dir *Dir) bool {
-	if len(dir.Src) == 0 {
+// entryInactive reports whether an entry that was never written has
+// nothing to write: every source gated off (a condition that does not
+// match, a repository not installed), or content only plugins could
+// provide, which is known once they are resolved. Such an entry is
+// inactive, not missing: sync reports it that way and writes nothing. A
+// link follows its target.
+func (m *materializer) entryInactive(entry Entry) bool {
+	if entry.isLink() {
+		path := ""
+		switch entry.Kind {
+		case EntryFile:
+			path = entry.File.linkPath
+		case EntryDir:
+			path = entry.Dir.linkPath
+		}
+		target, ok := m.model.entry(path, entry.Kind)
+		return ok && m.entryInactive(target)
+	}
+	if entry.Kind == EntryFile && entry.File.managed != nil {
+		return m.managedInactive(entry.File.managed)
+	}
+	sources, err := effectiveSources(m.model, entry)
+	if err != nil || len(sources) == 0 {
 		return false
 	}
-	for _, source := range dir.Src {
-		if source.plugin == "" {
+	for _, source := range sources {
+		if source.plugin == "" && !m.gatedOff(source) {
+			return false
+		}
+	}
+	return true
+}
+
+// managedInactive reports whether a managed document has nothing to
+// carry before its plugins are resolved: no server or hook of the block
+// whose condition matches, and plugin sources gated off or unresolved.
+func (m *materializer) managedInactive(doc *managedDoc) bool {
+	for _, server := range doc.servers {
+		if server.OnlyWhen == nil || conditionMetIn(m.model, m.evidence, *server.OnlyWhen) {
+			return false
+		}
+	}
+	for _, hook := range doc.hooks {
+		if hook.OnlyWhen == nil || conditionMetIn(m.model, m.evidence, *hook.OnlyWhen) {
 			return false
 		}
 	}
