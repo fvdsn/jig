@@ -85,7 +85,7 @@ Deprecated and ignored. The schema's remote is the `origin` of the `.jig/source/
 
 ### `agents`
 
-Optional object, version 4. Declares the agent context of the workspace (skills, root context, instructions, subagents, commands, MCP servers, hooks) once, at a level that names no harness path; jig materializes it for each supported harness. See [Agent Context](#agent-context).
+Optional object, version 4. Declares the agent context of the workspace (skills, root context, instructions, subagents, commands, MCP servers, hooks) once, at a level that names no harness path; jig materializes it for the harnesses configured on each machine. See [Agent Context](#agent-context).
 
 ### `tree`
 
@@ -689,8 +689,6 @@ Coding agents read their context from harness-specific places: skills from `.age
 {
   "version": 4,
   "agents": {
-    "harnesses": ["claude", "codex", "opencode", "copilot"],
-
     "skills": [
       "https://github.com/fvdsn/jig/tree/master/.agents/skills",
       "git@github.com:anthropics/skills.git#skills/frontend-design",
@@ -749,17 +747,23 @@ Coding agents read their context from harness-specific places: skills from `.age
 
 ### Expansion
 
-The block is pure expansion: at load time it becomes tree entries at the harness paths listed in the [materialization matrix](#materialization-matrix), and those entries then behave exactly like declared `$file` and `$dir` entries. `jig list` and `jig status` show them, `jig sync` converges them, `jig rm` removes them, state tracks them, and the safety rules (never overwrite a locally modified file, never touch a user-added file) apply unchanged. The expansion is deterministic and depends only on the block and the harness list, so two machines with the same schema derive the same entries.
+The block is pure expansion: at load time it becomes tree entries at the harness paths listed in the [materialization matrix](#materialization-matrix), and those entries then behave exactly like declared `$file` and `$dir` entries. `jig list` and `jig status` show them, `jig sync` converges them, `jig rm` removes them, state tracks them, and the safety rules (never overwrite a locally modified file, never touch a user-added file) apply unchanged. The expansion is deterministic and depends only on the block and the machine's [harness list](#harnesses), so two machines with the same schema and the same harnesses derive the same entries. The schema never names a harness: which harnesses a workspace serves is a property of the person using it, recorded locally.
 
 Rules:
 
 - A derived entry whose path is also declared in `tree` is a validation error: the explicit form and the block cannot both own a path. A schema may use both forms for different paths, which is how an existing schema migrates one primitive at a time.
 - Derived entries carry no `tags` or `meta` and are not archived. Their identities are fixed names (`agents-skills`, `agents-context`, …, suffixed by harness for per-harness entries), so they can be targeted by `--id` and by `link` references from the tree.
-- One canonical entry is materialized per primitive, and each harness that needs a different location gets an alias: a link dir, a copy dir where the harness is known not to follow symlinks, or a link file. Aliases follow their target's activation, as `$dir.link` and `$file.link` do.
+- One canonical entry is materialized per primitive, always, and each configured harness that needs a different location gets an alias: a link dir, a copy dir where the harness is known not to follow symlinks, or a link file. Aliases follow their target's activation, as `$dir.link` and `$file.link` do.
 
-### `agents.harnesses`
+### Harnesses
 
-Optional list of harness names. Known names: `claude`, `codex`, `copilot`, `cursor`, `opencode`, `gemini`, `windsurf`, `kiro`. An unknown name is a validation error. When omitted, every known harness is targeted; aliases are cheap, and a workspace typically serves several harnesses at once. The list only limits which per-harness aliases and files are derived; the canonical entries are always derived.
+The harnesses a workspace serves are not part of the schema. The schema is shared by a team whose members run different tools, and a schema author can only write the union of them, which would give every member every harness's files. The list lives in `.jig/config.json` as `harnesses`, per workspace and per machine (see [Workspace Discovery](#workspace-discovery)). Known names: `claude`, `codex`, `copilot`, `cursor`, `opencode`, `gemini`, `windsurf`, `kiro`. An unknown name in the config is an error reported by every command that loads the workspace.
+
+The list only decides which per-harness aliases and files are derived; the canonical entries (`.agents/skills`, `AGENTS.md`, and the other canonical columns of the matrix) are always derived. An empty list therefore still gives a workspace that several harnesses read as is, which is the equivalent of APM's `minimal` target.
+
+When the config has no `harnesses` field, jig detects the harnesses from the machine rather than from the workspace. A harness that has run at least once leaves a directory in the user's home, and that directory is the signal: `~/.claude` for `claude`, `~/.codex` for `codex`, `~/.copilot` for `copilot`, `~/.cursor` for `cursor`, `~/.config/opencode` for `opencode`, `~/.gemini` for `gemini`, `~/.codeium/windsurf` for `windsurf`, `~/.kiro` for `kiro`. Detection deliberately does not look at the workspace root: jig itself creates `.claude/` and the like there, so a root-level signal would detect a harness forever after the first sync. Someone who uses one harness has one marker and never configures anything. Detection runs on every load, so installing a new harness is picked up by the next `jig sync` without any step in jig.
+
+`jig init --harness <names>` writes the list explicitly, which turns detection off for that workspace; editing the config is the way to change it later. Removing a harness from the list makes its derived entries stale, and `jig sync --prune` or `jig rm` removes them under the usual safety rules; adding one derives its entries on the next sync. `jig list` and `jig status` show the derived entries like any other, so the effect of the list is always visible.
 
 ### Sources
 
@@ -813,7 +817,7 @@ The canonical locations follow the convergence of the harnesses on `.agents/skil
 | mcp | — | `.mcp.json` | `.codex/config.toml` (unsupported until TOML) | `.vscode/mcp.json` | `.cursor/mcp.json` | `opencode.json` | `.gemini/settings.json` | not read | `.kiro/settings/mcp.json` |
 | hooks | — | `.claude/settings.json` | `.codex/hooks.json` | `.github/hooks/<name>.json` | `.cursor/hooks.json` | not read | `.gemini/settings.json` | `.windsurf/hooks.json` | `.kiro/hooks/` |
 
-"canonical" means the harness reads the canonical location and no alias is derived. "not read" means the harness has no such primitive and nothing is derived. "unsupported" means the harness has the primitive in a format jig does not transform yet; the harness is reported as skipped for that primitive. The `.claude/skills` alias is a copy rather than a link because Claude Code's symlink handling has regressed repeatedly; the other aliases are links. The matrix is maintained against the harnesses' documentation and against [APM](https://github.com/microsoft/apm)'s target catalog, which serves as the reference for per-harness paths, naming conventions, and hook events.
+"canonical" means the harness reads the canonical location and no alias is derived. "not read" means the harness has no such primitive and nothing is derived. "unsupported" means the harness has the primitive in a format jig does not transform yet; the harness is reported as skipped for that primitive. The `.claude/skills` alias is a copy rather than a link because Claude Code's symlink handling has regressed repeatedly; the other aliases are links. Only the columns of the configured harnesses are derived; the canonical column always is. The matrix is maintained against the harnesses' documentation and against [APM](https://github.com/microsoft/apm)'s target catalog, which serves as the reference for per-harness paths, naming conventions, and hook events.
 
 ### Activation
 
@@ -826,6 +830,7 @@ Each source is gated by its own `onlyWhen`. The canonical entry of a primitive i
 - `mcp` keys must be valid server names (`[A-Za-z0-9_.-]+`); a definition must have exactly one of `command` and `url`.
 - `hooks` events must be in the neutral vocabulary.
 - Derived paths must not collide with declared tree paths.
+- `harnesses` in `.jig/config.json`, when present, must contain known harness names only.
 
 ### Scope
 
@@ -1071,6 +1076,7 @@ If no workspace is found, the command should fail with a clear error. If a legac
 
 - `version`: required integer. Initial supported value: `1`.
 - `schema`: required safe path of the schema file inside `.jig/source/`.
+- `harnesses`: optional list of harness names, for the [`agents` block](#harnesses). Absent means detect from the machine; present, including empty, means exactly this list. The field is local to the machine, like everything in `.jig/`.
 
 `.jig/` contains Jig-owned local workspace metadata.
 
@@ -1168,6 +1174,7 @@ jig init <git-url> [workspace-dir] --path <path>
 jig init <git-url-or-file> [workspace-dir] --clone [path]
 jig init <git-url-or-file> [workspace-dir] --clone [path] --with-optional-deps
 jig init <git-url-or-file> [workspace-dir] --clone [path] --archived
+jig init <git-url-or-file> [workspace-dir] --harness <names>
 jig validate
 jig list [path]
 jig list [path] --archived
@@ -1228,12 +1235,14 @@ The command should:
 - Clone the schema repository into `.jig/source/` (a full clone, so it can be pushed from).
 - Locate the schema file: the `--path` value, or the first of `.jig.json`, `jig.json`, `schema.json` at the checkout root.
 - Validate the schema.
-- Write `.jig/config.json` recording the schema path.
+- Write `.jig/config.json` recording the schema path and, when `--harness` was given, the harness list.
 - Create `.jig/state.json` with empty local state.
 
 By default, the command should not clone repositories or write files declared in the tree.
 
 `--with-optional-deps` and `--archived` are valid only when `--clone` is present.
+
+`--harness <names>` takes a comma-separated list of known harness names (`--harness claude,codex`) or `none`, and records it in `.jig/config.json`; the schema's `agents` block is then materialized for exactly those harnesses. Without the flag nothing is recorded and jig detects the harnesses from the machine on every load (see [Harnesses](#harnesses)). In both cases init prints one line naming the resulting list and where it came from (`harnesses: claude (detected)`, `harnesses: claude, codex (--harness)`, `harnesses: none (nothing detected)`), so a surprising result is visible once. The flag is accepted when the schema has no `agents` block, so a workspace can be configured before its schema grows one.
 
 Initial state:
 
