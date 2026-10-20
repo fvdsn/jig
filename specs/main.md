@@ -720,6 +720,14 @@ Coding agents read their context from harness-specific places: skills from `.age
       "git@github.com:org/meta.git#commands"
     ],
 
+    "plugins": [
+      "git@github.com:org/pdlc-plugins.git",
+      {
+        "src": "git@github.com:org/pdlc-plugins.git#delivery/review-code",
+        "onlyWhen": { "tags": ["product:flowin"] }
+      }
+    ],
+
     "mcp": {
       "github": {
         "command": "npx",
@@ -805,6 +813,21 @@ No harness reads a shared location for these two primitives, so each listed harn
 
 Files that are not markdown pass through every transform unchanged.
 
+### `agents.plugins`
+
+A plugin is a directory in the Claude Code plugin layout, which Cursor and the generic `.plugin` convention duplicate and which organizations publish as marketplaces: a manifest at `.claude-plugin/plugin.json` (or `.plugin/plugin.json`, or `.cursor-plugin/plugin.json`; the first found is read, and only its `name`), and beside it any of `skills/<name>/SKILL.md`, `agents/*.md`, `commands/*.md`, `hooks/hooks.json`, and `.mcp.json`, plus whatever else the plugin keeps for itself, typically `references/` and `scripts/` that the skills and agents link to. A marketplace is a directory with `.claude-plugin/marketplace.json` (or the `.plugin` equivalent) whose `plugins[].source` entries are relative paths to plugins inside the same repository.
+
+`plugins` is a list of sources in the `$dir` grammar (git, or a local `dir`, with `optional` and `onlyWhen`), each naming a plugin or a marketplace. A marketplace source installs every plugin it lists; a plugin source installs one. Listing is content: which plugins a marketplace holds is read when the source resolves, like the single-skill rule, and an entry whose `source` is not a relative path (a marketplace may point at other repositories) is skipped and reported once per sync.
+
+A plugin is kept whole, because its skills and agents link to files outside their own directories. Rules:
+
+- One derived `$dir` at `.agents/plugins/` (identity `agents-plugins`) is the plugin store, the equivalent of APM's `apm_modules/`. Each source lands under its own name, the last path segment of the source (the repository name for a whole repository): a marketplace source as `.agents/plugins/<repository>/` with its plugins at their paths inside it, a plugin source as `.agents/plugins/<plugin>/`. The store is derived whenever the list is non-empty, for every harness list, since the rewritten links below read it. It is never aliased.
+- Each plugin's `skills/`, `agents/`, and `commands/` directories, `.mcp.json` servers, and `hooks/hooks.json` hooks join the sources of the matching primitive, before the explicit sources of the block, so explicit declarations win on a conflicting name and a conflict between two plugins is reported as shadowed like any other. They are materialized by that primitive's rules and matrix row, format transforms included, so a plugin's skills land in `.claude/skills` and `.agents/skills`, its agents in `.codex/agents` as TOML, and so on. A plugin contributes nothing beyond those five kinds; `references/` and `scripts/` exist only in the store.
+- A relative markdown link in a file written out of a plugin (a skill, agent, or command file) whose target lies inside the plugin but outside the written unit is rewritten to a relative path into the store, from the location of the written file, so it resolves from wherever the harness reads it. The unit is the skill directory for a skill, the file itself for an agent or command. The rewrite follows APM's contract: only links with no scheme, not root-absolute, not a bare fragment, whose target exists in the plugin and stays inside it; fragments and queries are preserved; everything else, links within a skill directory included, is left untouched. The rewrite is a per-file transform composed before the harness format transform, so a Codex agent's rewritten links end up inside its TOML.
+- The store is a plain `$dir`: manifest, update and deletion rules, local modifications kept and reported. A plugin source gated off by its `onlyWhen` leaves the store and every primitive on the next sync, under the usual rules.
+
+Not read: `plugin.json` fields other than `name`; a plugin's `apm.yml` and the APM dependencies it declares (declare them as sources of the matching primitive); the duplicate Cursor and generic manifests; a marketplace's categories and tags. Jig reads the repository's default branch, as for every source, so a marketplace is consumed at whatever its publisher keeps on that branch.
+
 ### `agents.mcp`
 
 A map from server name to a server definition in the MCP standard shape: `command`, `args`, `env` for a local server, or `url` and `headers` for a remote one, plus `onlyWhen`. Values are written verbatim, including `${VAR}` references, which each harness expands itself; jig never resolves secrets.
@@ -835,7 +858,7 @@ The canonical locations follow the convergence of the harnesses on `.agents/skil
 | mcp | — | `.mcp.json` | `.codex/config.toml` (unsupported until TOML) | `.vscode/mcp.json` | `.cursor/mcp.json` | `opencode.json` | `.gemini/settings.json` | not read | `.kiro/settings/mcp.json` |
 | hooks | — | `.claude/settings.json` | `.codex/hooks.json` | `.github/hooks/<name>.json` | `.cursor/hooks.json` | not read | `.gemini/settings.json` | `.windsurf/hooks.json` | `.kiro/hooks/` |
 
-"canonical" means the harness reads the canonical location and no alias is derived. "not read" means the harness has no such primitive and nothing is derived. "unsupported" means the harness has the primitive in a format jig does not transform yet; the harness is reported as skipped for that primitive (no cell says so today). The `.claude/skills` alias is a copy rather than a link because Claude Code's symlink handling has regressed repeatedly; the other aliases are links. Only the columns of the configured harnesses are derived, and the canonical column when one of them reads it or none is configured. Copilot reads `AGENTS.md` as well as its own instructions file, so its context alias is in addition to the canonical entry. The matrix is maintained against the harnesses' documentation and against [APM](https://github.com/microsoft/apm)'s target catalog, which serves as the reference for per-harness paths, naming conventions, and hook events.
+Plugins have no row: a plugin's store at `.agents/plugins/` is read only through the links rewritten into the files above, and its contents feed the rows above. "canonical" means the harness reads the canonical location and no alias is derived. "not read" means the harness has no such primitive and nothing is derived. "unsupported" means the harness has the primitive in a format jig does not transform yet; the harness is reported as skipped for that primitive (no cell says so today). The `.claude/skills` alias is a copy rather than a link because Claude Code's symlink handling has regressed repeatedly; the other aliases are links. Only the columns of the configured harnesses are derived, and the canonical column when one of them reads it or none is configured. Copilot reads `AGENTS.md` as well as its own instructions file, so its context alias is in addition to the canonical entry. The matrix is maintained against the harnesses' documentation and against [APM](https://github.com/microsoft/apm)'s target catalog, which serves as the reference for per-harness paths, naming conventions, and hook events.
 
 ### Activation
 
@@ -849,6 +872,7 @@ Each source is gated by its own `onlyWhen`. The canonical entry of a primitive i
 - `hooks` events must be in the neutral vocabulary.
 - Derived paths must not collide with declared tree paths.
 - `harnesses` in `.jig/config.json`, when present, must contain known harness names only.
+- `plugins` sources must parse by the `$dir` rules; a local source must be a `dir`.
 
 ### Scope
 
