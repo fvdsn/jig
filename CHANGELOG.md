@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- The `agents` block gains `subagents` and `commands`: source lists
+  whose entries are directories of markdown files or single files
+  (git or local), each file landing under its own basename in every
+  harness's own directory (`.claude/agents`, `.cursor/commands`,
+  `.windsurf/workflows`, ...). Codex subagents and Gemini commands are
+  written as TOML and Copilot subagents get the `.agent.md` suffix, so
+  no harness is skipped. Only `instructions`, `mcp`, and `hooks` remain
+  unimplemented.
+
 ## v4.0.1 — 2026-10-20
 
 - The `agents` block derives one entry per location a harness in use

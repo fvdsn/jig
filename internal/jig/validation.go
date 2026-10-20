@@ -41,10 +41,17 @@ func validateDefinition(def *Definition) validationResult {
 		result.Errors = append(result.Errors, err.Error())
 	}
 
-	// Validation derives the agents block for every known harness, so a
-	// collision with a per-harness alias is an error on every machine, not
-	// only on the ones that use that harness.
-	model, err := flattenDefinition(def, knownHarnesses)
+	// The entry checks run on the canonical expansion of the agents block,
+	// where each primitive's sources appear once. The expansion for every
+	// known harness is checked separately, so a path or identity collision
+	// with a per-harness entry is an error on every machine, not only on
+	// the ones that use that harness.
+	model, err := flattenDefinition(def, nil)
+	if err != nil {
+		result.Errors = append(result.Errors, err.Error())
+		return result
+	}
+	full, err := flattenDefinition(def, knownHarnesses)
 	if err != nil {
 		result.Errors = append(result.Errors, err.Error())
 		return result
@@ -53,14 +60,17 @@ func validateDefinition(def *Definition) validationResult {
 	// Identities are globally unique across kinds so id references are
 	// never ambiguous.
 	identities := map[string]string{}
-	for _, path := range sortedEntryPaths(&model) {
-		entry := model.Entries[path]
-		kind := string(entry.Kind)
+	for _, path := range sortedEntryPaths(&full) {
+		entry := full.Entries[path]
 		if prev, ok := identities[entry.Identity]; ok {
 			result.Errors = append(result.Errors, fmt.Sprintf("duplicate identity %s: %s and %s", entry.Identity, prev, path))
 		} else {
 			identities[entry.Identity] = path
 		}
+	}
+	for _, path := range sortedEntryPaths(&model) {
+		entry := model.Entries[path]
+		kind := string(entry.Kind)
 		for _, condition := range entry.Conditions {
 			validateCondition(&result, &model, path, condition)
 		}
@@ -91,7 +101,11 @@ func validateDefinition(def *Definition) validationResult {
 				result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot use executable with copy; the bit follows the copy target", path))
 			}
 		case EntryDir:
-			validateSources(&result, &model, path, EntryDir, entry.Dir.Src, entry.Dir.Link, entry.Dir.Copy)
+			if entry.Dir.items {
+				validateItemSources(&result, &model, path, entry.Dir.Src, entry.Dir.Link, entry.Dir.Copy)
+			} else {
+				validateSources(&result, &model, path, EntryDir, entry.Dir.Src, entry.Dir.Link, entry.Dir.Copy)
+			}
 		}
 	}
 
@@ -140,6 +154,39 @@ func validateSources(result *validationResult, model *Model, path string, kind E
 	}
 	if copy != nil {
 		validateCopyRef(result, model, path, label, kind, *copy)
+	}
+}
+
+// validateItemSources is validateSources for a derived dir whose sources
+// may be whole directories or single files: a git source in either form,
+// or a local dir or file.
+func validateItemSources(result *validationResult, model *Model, path string, sources SrcList, link *Ref, copy *Ref) {
+	if countVariants(len(sources) > 0, link != nil, copy != nil) != 1 {
+		result.Errors = append(result.Errors, fmt.Sprintf("dir %s must define exactly one of src, link, or copy", path))
+	}
+	for _, source := range sources {
+		if countVariants(source.Src != "", source.File != "", source.Dir != "") != 1 {
+			result.Errors = append(result.Errors, fmt.Sprintf("dir %s invalid src: source must define exactly one of src, file, or dir", path))
+			continue
+		}
+		if local := source.File + source.Dir; local != "" {
+			if !strings.HasPrefix(local, "~/") && !strings.HasPrefix(local, "/") {
+				result.Errors = append(result.Errors, fmt.Sprintf("dir %s invalid src: local path must start with ~/ or /: %s", path, local))
+			}
+			continue
+		}
+		if _, err := parseItemSrc(source.Src); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("dir %s invalid src: %s", path, err))
+		}
+		if source.OnlyWhen != nil {
+			validateCondition(result, model, path, *source.OnlyWhen)
+		}
+	}
+	if link != nil {
+		validateLinkRef(result, model, path, "dir", EntryDir, *link)
+	}
+	if copy != nil {
+		validateCopyRef(result, model, path, "dir", EntryDir, *copy)
 	}
 }
 

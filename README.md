@@ -144,13 +144,18 @@ Coding agents read skills and root instructions from harness-specific places: `.
     "context": [
       "git@github.com:acme/meta.git#context/workspace.md",
       { "file": "~/.config/acme/AGENTS.md", "optional": true }
-    ]
+    ],
+    "subagents": [
+      "git@github.com:acme/meta.git#agents",
+      { "src": "git@github.com:acme/meta.git#agents/api-architect.md", "onlyWhen": { "tags": ["api"] } }
+    ],
+    "commands": ["git@github.com:acme/meta.git#commands"]
   },
   "tree": {}
 }
 ```
 
-`skills` sources are skill packs (directories of `<name>/SKILL.md`) or single skills (a directory whose root is a `SKILL.md`, landing under its own name), merged into `.agents/skills` with the `$dir` rules: last wins on conflicts, `onlyWhen` gates per source, local sources extend the set per user. `context` sources are concatenated into `AGENTS.md` with the `$file` rules. Jig itself ships a skill at `.agents/skills/jig/SKILL.md` that teaches agents how to drive it; the first source above pulls it in, and a bare `jig init` starts from exactly that.
+`subagents` and `commands` sources are directories of markdown files or single files, landing under their own names in each harness's directory (`.claude/agents`, `.cursor/commands`, ...), converted where the harness wants its own format: Codex subagents and Gemini commands become TOML, Copilot subagents get the `.agent.md` suffix. `skills` sources are skill packs (directories of `<name>/SKILL.md`) or single skills (a directory whose root is a `SKILL.md`, landing under its own name), merged into `.agents/skills` with the `$dir` rules: last wins on conflicts, `onlyWhen` gates per source, local sources extend the set per user. `context` sources are concatenated into `AGENTS.md` with the `$file` rules. Jig itself ships a skill at `.agents/skills/jig/SKILL.md` that teaches agents how to drive it; the first source above pulls it in, and a bare `jig init` starts from exactly that.
 
 Which harnesses are materialized is not in the schema: it depends on the person, not the team. A Claude-only machine gets `.claude/skills` and `CLAUDE.md` and nothing else; a machine that also runs Codex gets the canonical entries too, with `.claude/skills` as a real copy and `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md` as links to them. `jig init` detects the harnesses installed on the machine from their home directories and prints the list; `jig init --harness claude,codex` (or `none`) records a choice in `.jig/config.json` instead. The derived entries show up in `jig list` and `jig status` like declared ones, and a tree entry can still `link` to them by identity (`agents-skills`, `agents-context`) for a harness jig does not know.
 

@@ -219,6 +219,20 @@ func parseDirSrc(src string) (fileSrc, error) {
 	return parsed, nil
 }
 
+// parseItemSrc parses a source that may name a directory or a single file,
+// for derived dirs that accept both: the dir form first, then the file
+// form (a forge URL pointing at a file).
+func parseItemSrc(src string) (fileSrc, error) {
+	parsed, err := parseDirSrc(src)
+	if err == nil {
+		return parsed, nil
+	}
+	if fileParsed, fileErr := parseFileSrc(src); fileErr == nil {
+		return fileParsed, nil
+	}
+	return fileSrc{}, err
+}
+
 // fileFetcher reads file content and blob ids from source repositories,
 // freshening each repository's cache mirror at most once per run.
 type fileFetcher struct {

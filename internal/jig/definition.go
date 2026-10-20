@@ -121,6 +121,8 @@ type Dir struct {
 	Meta        map[string]string `json:"meta,omitempty"` // user-defined metadata, opaque to jig
 	OnlyWhen    *Condition        `json:"onlyWhen,omitempty"`
 	skills      bool              // derived skills dir: a source that is one skill lands under its own name
+	items       bool              // derived dir whose sources may be single files, landing under their basename
+	transform   dirTransform      // derived dir written in a harness's own format, one file at a time
 }
 
 // targetPath returns the resolved tree path this entry aliases, whether as a

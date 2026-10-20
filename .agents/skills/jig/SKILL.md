@@ -418,7 +418,12 @@ Skills and root instructions for coding agents are better declared once in the t
       "git@github.com:acme/meta.git#context/workspace.md",
       { "src": "git@github.com:acme/meta.git#context/billing.md", "onlyWhen": { "path": "billing/*" } },
       { "file": "~/.config/acme/AGENTS.md", "optional": true }
-    ]
+    ],
+    "subagents": [
+      "git@github.com:acme/meta.git#agents",
+      { "src": "git@github.com:acme/meta.git#agents/api-architect.md", "onlyWhen": { "tags": ["api"] } }
+    ],
+    "commands": ["git@github.com:acme/meta.git#commands", { "file": "~/.config/acme/deploy.md", "optional": true }]
   },
   "tree": {}
 }
@@ -428,10 +433,11 @@ Rules:
 
 - `skills` is a source list in the `$dir` grammar, merged into `.agents/skills` (last wins on conflicts, per-source `onlyWhen`, local `dir` sources). A source is a skill pack: a directory of `<name>/SKILL.md`. A source whose root is itself a `SKILL.md` is one skill and lands under its own name (`frontend-design/SKILL.md` above).
 - `context` is a source list in the `$file` grammar, concatenated into `AGENTS.md`.
+- `subagents` and `commands` are source lists whose entries are directories of markdown files (`#agents`) or single files (`#agents/api-architect.md`, or a local `{"file": ...}`), each file landing under its own basename. Every harness reads its own directory (`.claude/agents`, `.claude/commands`, `.cursor/agents`, `.cursor/commands`, `.opencode/agents`, `.opencode/commands`, `.github/agents` as `<name>.agent.md`, `.codex/agents` as TOML, `.gemini/commands` as TOML, `.windsurf/workflows`, `.kiro/agents`); identities are `agents-subagents-<harness>` and `agents-commands-<harness>`. With no harness in use they land in `.agents/agents` and `.agents/commands`.
 - Jig derives one entry per location a harness in use reads. Codex, Copilot, Cursor, OpenCode, and Windsurf read the canonical `.agents/skills` (identity `agents-skills`) and `AGENTS.md` (identity `agents-context`); Claude and Kiro read `.claude/skills` and `.kiro/skills`, Claude, Gemini, and Copilot read `CLAUDE.md`, `GEMINI.md`, and `.github/copilot-instructions.md` (identities `agents-skills-claude`, `agents-context-claude`, ...). When a canonical entry is derived, the harness paths are copies (skills) or links (context) of it; on a machine whose harnesses read only their own paths, those paths are the real entries and nothing canonical is written, so a Claude-only machine gets `.claude/skills` and `CLAUDE.md` only. With no harness in use, the canonical entries are derived. The derived entries behave like declared ones in `list`, `status`, `sync`, `rm`, and state.
 - Which harnesses are materialized is per machine, never in the schema: the `harnesses` list in `.jig/config.json`, or detection from the harness directories in the home folder when the list is absent. Removing a harness makes its aliases stale (`jig sync --prune` removes them); adding one derives them on the next sync.
 - A derived path the tree also declares is a validation error, so a schema migrates one primitive at a time: move `.agents/skills` into `agents.skills` and delete the tree entry and its aliases. A tree entry may `link` to a derived entry by identity for a harness path jig does not know.
-- `agents` requires `"version": 4`. The other primitives of the spec (`instructions`, `subagents`, `commands`, `mcp`, `hooks`) are not implemented yet and are refused by name.
+- `agents` requires `"version": 4`. The other primitives of the spec (`instructions`, `mcp`, `hooks`) are not implemented yet and are refused by name.
 
 ## Conditional Nodes
 

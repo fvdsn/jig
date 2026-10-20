@@ -785,7 +785,15 @@ A list of sources, each a directory of per-topic markdown rule files, merged lik
 
 ### `agents.subagents` and `agents.commands`
 
-Lists of sources, each a single markdown file or a directory of them, merged into a canonical directory per primitive. A subagent or command is a markdown file with frontmatter in the common (Claude Code / Copilot) form. A harness whose format differs (Codex subagents and Gemini commands are TOML) is unsupported for that primitive until the transform exists, and the matrix says so; jig reports the skipped harness once per sync rather than deriving nothing silently.
+Lists of sources, each a single markdown file or a directory of them, merged into a directory per primitive with the `$dir` multi-source rules. A directory source contributes its whole tree; a file source lands under its own basename. Which one a git source is follows from the object it names when it resolves (a forge URL says it up front); local sources take either form, `{"dir": ...}` or `{"file": ...}`. A subagent or command is a markdown file with frontmatter in the common (Claude Code / Copilot) form, and keeps its name: no renaming from frontmatter, so what the source repository shows is what the harness directory holds.
+
+No harness reads a shared location for these two primitives, so each listed harness gets a real directory at its own path (the canonical `.agents/agents/` and `.agents/commands/` are derived only when no harness is listed). A harness whose format differs gets its files transformed one by one as they are written, and the manifest records the written names:
+
+- Copilot subagents are named `<name>.agent.md`.
+- Codex subagents are TOML: `name` (the frontmatter's, else the file stem), `description`, `model` and `model_reasoning_effort` when present, and the markdown body as `developer_instructions`. Frontmatter Codex has no field for (`tools`, `user-invocable`) is dropped, as APM does.
+- Gemini commands are TOML: `description` when present and the body as `prompt`, with `$ARGUMENTS` rewritten to Gemini's `{{args}}`; a prompt using positional `$1`-style arguments gets `Arguments: {{args}}` prepended, since Gemini has no positional form.
+
+Files that are not markdown pass through every transform unchanged.
 
 ### `agents.mcp`
 
@@ -812,12 +820,12 @@ The canonical locations follow the convergence of the harnesses on `.agents/skil
 | skills | `.agents/skills/` | `.claude/skills/` (copy) | canonical | canonical | canonical | canonical | canonical | canonical | `.kiro/skills/` (copy) |
 | context | `AGENTS.md` | `CLAUDE.md` (link) | canonical | `.github/copilot-instructions.md` (link) | canonical | canonical | `GEMINI.md` (link) | canonical | canonical |
 | instructions | `.agents/rules/` | `.claude/rules/` | folded into context | `.github/instructions/*.instructions.md` (+ `applyTo`) | `.cursor/rules/*.mdc` | folded into context | folded into context | `.windsurf/rules/` | `.kiro/steering/` |
-| subagents | `.agents/agents/` | `.claude/agents/` | unsupported (TOML) | `.github/agents/*.agent.md` | `.cursor/agents/` | `.opencode/agents/` | not read | not read | `.kiro/agents/` |
-| commands | `.agents/commands/` | `.claude/commands/` | not read | not read | `.cursor/commands/` | `.opencode/commands/` | unsupported (TOML) | `.windsurf/workflows/` | not read |
+| subagents | `.agents/agents/` | `.claude/agents/` | `.codex/agents/*.toml` | `.github/agents/*.agent.md` | `.cursor/agents/` | `.opencode/agents/` | not read | not read | `.kiro/agents/` |
+| commands | `.agents/commands/` | `.claude/commands/` | not read | not read | `.cursor/commands/` | `.opencode/commands/` | `.gemini/commands/*.toml` | `.windsurf/workflows/` | not read |
 | mcp | — | `.mcp.json` | `.codex/config.toml` (unsupported until TOML) | `.vscode/mcp.json` | `.cursor/mcp.json` | `opencode.json` | `.gemini/settings.json` | not read | `.kiro/settings/mcp.json` |
 | hooks | — | `.claude/settings.json` | `.codex/hooks.json` | `.github/hooks/<name>.json` | `.cursor/hooks.json` | not read | `.gemini/settings.json` | `.windsurf/hooks.json` | `.kiro/hooks/` |
 
-"canonical" means the harness reads the canonical location and no alias is derived. "not read" means the harness has no such primitive and nothing is derived. "unsupported" means the harness has the primitive in a format jig does not transform yet; the harness is reported as skipped for that primitive. The `.claude/skills` alias is a copy rather than a link because Claude Code's symlink handling has regressed repeatedly; the other aliases are links. Only the columns of the configured harnesses are derived, and the canonical column when one of them reads it or none is configured. Copilot reads `AGENTS.md` as well as its own instructions file, so its context alias is in addition to the canonical entry. The matrix is maintained against the harnesses' documentation and against [APM](https://github.com/microsoft/apm)'s target catalog, which serves as the reference for per-harness paths, naming conventions, and hook events.
+"canonical" means the harness reads the canonical location and no alias is derived. "not read" means the harness has no such primitive and nothing is derived. "unsupported" means the harness has the primitive in a format jig does not transform yet; the harness is reported as skipped for that primitive (no cell says so today). The `.claude/skills` alias is a copy rather than a link because Claude Code's symlink handling has regressed repeatedly; the other aliases are links. Only the columns of the configured harnesses are derived, and the canonical column when one of them reads it or none is configured. Copilot reads `AGENTS.md` as well as its own instructions file, so its context alias is in addition to the canonical entry. The matrix is maintained against the harnesses' documentation and against [APM](https://github.com/microsoft/apm)'s target catalog, which serves as the reference for per-harness paths, naming conventions, and hook events.
 
 ### Activation
 
