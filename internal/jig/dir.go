@@ -293,6 +293,9 @@ type pluginResolution struct {
 func (m *materializer) resolvePluginSource(source SrcEntry) ([]dirSource, string, string, []string, error) {
 	cacheKey := source.describe() + "\x00" + source.plugin
 	if cached, ok := m.plugins[cacheKey]; ok {
+		if len(cached.source.routes) == 0 {
+			return nil, cached.key, cached.id, cached.skipped, nil
+		}
 		return []dirSource{cached.source}, cached.key, cached.id, cached.skipped, nil
 	}
 	var root pluginTree

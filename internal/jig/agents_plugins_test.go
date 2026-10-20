@@ -240,3 +240,31 @@ func TestAgentsBlockPluginSourceForms(t *testing.T) {
 		t.Fatal("beta's command derived from a single-plugin source")
 	}
 }
+
+// Two harness directories fed by the same plugin source that contributes
+// nothing to them (a plugin without commands) are both inactive; the
+// memoized resolution must not hand the second one an empty source.
+func TestAgentsBlockPluginWithoutCommandsForTwoHarnesses(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	lib := filepath.Join(root, "pdlc-lib")
+	testMarketplace(t, lib)
+	writeTestWorkspace(t, root, fmt.Sprintf(`{"version": 4, "agents": {"plugins": [%q]}, "tree": {}}`, lib+"#alpha"))
+	harnesses := []string{"claude", "opencode"}
+	if err := saveConfig(root, Config{Version: 1, Schema: "jig.json", Harnesses: &harnesses}); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	var out bytes.Buffer
+	if err := Clone(CloneOptions{}, &out); err != nil {
+		t.Fatalf("clone: %v\n%s", err, out.String())
+	}
+	if strings.Count(out.String(), "inactive-dir:") != 2 || strings.Contains(out.String(), "skipped") {
+		t.Fatalf("expected both commands dirs inactive:\n%s", out.String())
+	}
+	for _, rel := range []string{".claude/agents/reviewer.md", ".opencode/agents/reviewer.md", ".claude/skills/pdlc-review/SKILL.md", ".agents/skills/pdlc-review/SKILL.md"} {
+		if !pathExists(filepath.Join(root, filepath.FromSlash(rel))) {
+			t.Fatalf("missing %s:\n%s", rel, out.String())
+		}
+	}
+}

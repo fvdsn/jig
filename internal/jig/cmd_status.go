@@ -246,6 +246,12 @@ func dirStatusLine(ws *Workspace, entry Entry, activeDirs map[string]bool) (stat
 		return statusLine{glyphMoved, dirPath, "", "moved from " + stateDir.Path}, true
 	}
 	if !pathExists(expectedAbs) {
+		// A dir fed only by plugins exists once a plugin contributes to
+		// it; until then it is inactive, not missing, and status cannot
+		// tell the two apart without resolving the plugins.
+		if !hasState && pluginFedOnly(entry.Dir) {
+			return statusLine{}, false
+		}
 		return statusLine{glyphMissing, dirPath, "", "missing"}, true
 	}
 	if !hasState {
@@ -367,4 +373,19 @@ func printStatusSummary(out io.Writer, lines []statusLine, notInstalled int) {
 		summary += " (" + strings.Join(extras, ", ") + ")"
 	}
 	fmt.Fprintln(out, summary)
+}
+
+// pluginFedOnly reports whether every source of a dir comes from the
+// agents block's plugins, so whether it has any content is only known
+// once the plugins have been resolved.
+func pluginFedOnly(dir *Dir) bool {
+	if len(dir.Src) == 0 {
+		return false
+	}
+	for _, source := range dir.Src {
+		if source.plugin == "" {
+			return false
+		}
+	}
+	return true
 }

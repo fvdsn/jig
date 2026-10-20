@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Fixes: with two or more harnesses fed by a plugin source that has
+  no content for a primitive (a plugin without commands, say), the
+  second harness's directory failed with a git archive error instead
+  of being reported inactive. Status no longer reports such a
+  directory as missing before anything has been written to it.
+
 ## v4.3.0 — 2026-10-20
 
 - The `agents` block gains `plugins`: plugins in the Claude Code plugin
