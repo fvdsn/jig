@@ -55,6 +55,15 @@ func (m *materializer) ensureDir(dirPath string) error {
 	var treeOIDs []string
 	var skippedPlugins []string
 	resolved, err := m.resolveSources(srcs, func(source SrcEntry) (string, error) {
+		if source.embedded != "" {
+			digest, err := fsDigest(EmbeddedSkill)
+			if err != nil {
+				return "", err
+			}
+			sources = append(sources, dirSource{embedded: EmbeddedSkill, tree: digest})
+			treeOIDs = append(treeOIDs, digest)
+			return embeddedSkillKey(), nil
+		}
 		if source.plugin != "" {
 			list, key, id, skipped, err := m.resolvePluginSource(source)
 			if err != nil {
@@ -200,6 +209,8 @@ func (m *materializer) ensureDir(dirPath string) error {
 			err = merger.add(sources[i].name, sources[i].file, 0o644)
 		case sources[i].local != "":
 			err = materializeLocalTree(sources[i].local, merger)
+		case sources[i].embedded != nil:
+			err = materializeFS(sources[i].embedded, merger)
 		default:
 			err = materializeTree(sources[i].mirror, sources[i].tree, merger, sources[i].pathspecs...)
 		}
@@ -262,6 +273,7 @@ type dirSource struct {
 	rewrite   *pluginRewrite // plugin subtree: how to rewrite its links into the store
 	routes    []pluginRoute  // plugin source: which files to take and how, by prefix
 	pathspecs []string       // plugin source: the subtrees to archive
+	embedded  fs.FS          // a pack carried by the binary
 }
 
 // pluginRoot resolves a plugin source to its tree (git mirror or local

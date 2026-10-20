@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- The jig skill ships inside the binary and is installed in every
+  workspace, agents block or not and whatever the schema version, as
+  `.agents/skills/jig` and the harness copies the machine's harness
+  list asks for, so the skill always matches the installed version. A
+  schema that declares the skills directory itself takes it in as a
+  source; an explicit `jig` skill shadows it. An upgraded jig rewrites
+  it on the next sync. `jig skill` prints it. Schemas that pulled
+  `https://github.com/fvdsn/jig/tree/master/.agents/skills` should
+  drop that source, which now only shadows the embedded skill with
+  whatever master holds. A bare `jig init` seeds a version and an
+  empty tree, and needs no network.
 - A schema can be written in YAML (`jig.yaml`, `jig.yml`, or any
   `--path` with those extensions) with the same structure as JSON.
   YAML is read strictly: one document, no anchors, aliases, merge keys,

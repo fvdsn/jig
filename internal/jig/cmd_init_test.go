@@ -60,12 +60,13 @@ func TestInitFromLocalFileCreatesSourceCheckout(t *testing.T) {
 }
 
 func TestInitBareCreatesStarterWorkspace(t *testing.T) {
+	useEmbeddedSkill(t)
 	workspacePath := filepath.Join(t.TempDir(), "workspace")
 
-	// Clone is off so the test does not fetch the starter skill over the
-	// network; the CLI turns it on for a bare init.
+	// The starter needs no network: the only content is the embedded jig
+	// skill, so the clone step the CLI turns on for a bare init runs here.
 	var out bytes.Buffer
-	if err := Init(InitOptions{WorkspaceDir: workspacePath}, &out); err != nil {
+	if err := Init(InitOptions{WorkspaceDir: workspacePath, Clone: true}, &out); err != nil {
 		t.Fatal(err)
 	}
 
@@ -88,8 +89,13 @@ func TestInitBareCreatesStarterWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The starter declares nothing: the skills directory comes from the
+	// embedded jig skill.
 	if _, ok := model.entry(".agents/skills", EntryDir); !ok {
-		t.Fatal("expected the starter schema to define .agents/skills")
+		t.Fatal("expected the jig skill to derive .agents/skills")
+	}
+	if !pathExists(filepath.Join(workspacePath, ".agents", "skills", "jig", "SKILL.md")) {
+		t.Fatalf("jig skill not installed:\n%s", out.String())
 	}
 	if !strings.Contains(out.String(), "next steps:") || !strings.Contains(out.String(), "$EDITOR .jig/source/jig.yaml") {
 		t.Fatalf("expected next-steps guidance, got:\n%s", out.String())
@@ -151,6 +157,7 @@ func TestInitFromLocalFileRejectsPathFlag(t *testing.T) {
 // Init records the harness list when given and leaves detection on
 // otherwise, and says which on its one harness line.
 func TestInitRecordsHarnesses(t *testing.T) {
+	useEmbeddedSkill(t)
 	home := t.TempDir()
 	setTestHome(t, home)
 	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
@@ -189,8 +196,8 @@ func TestInitRecordsHarnesses(t *testing.T) {
 	if config.Harnesses == nil || strings.Join(*config.Harnesses, ",") != "claude,gemini" {
 		t.Fatalf("recorded harnesses = %v", config.Harnesses)
 	}
-	// The starter schema's agents block derives the claude alias for the
-	// recorded list.
+	// The embedded jig skill derives the claude alias for the recorded
+	// list.
 	ws, err := loadWorkspaceAt(chosen, "", false)
 	if err != nil {
 		t.Fatal(err)

@@ -211,10 +211,22 @@ func (p agentsPrimitive) sources(block *AgentsBlock) SrcList {
 		own = block.Commands
 	}
 	fromPlugins := pluginSources(block.Plugins, pluginSubdirs[p.name])
-	if len(fromPlugins) == 0 {
+	var sources SrcList
+	if p.name == "skills" && EmbeddedSkill != nil {
+		sources = append(sources, embeddedSkillSource())
+	}
+	sources = append(sources, fromPlugins...)
+	if len(sources) == 0 {
 		return own
 	}
-	return append(fromPlugins, own...)
+	return append(sources, own...)
+}
+
+// embeddedOnly reports whether a primitive's sources are the jig skill and
+// nothing the schema declared, the case in which a declared directory at
+// a derived path takes the skill in instead of colliding.
+func (p agentsPrimitive) embeddedOnly(block *AgentsBlock) bool {
+	return p.name == "skills" && EmbeddedSkill != nil && len(block.Skills) == 0 && len(block.Plugins) == 0
 }
 
 // canonicalRead reports whether the canonical location of a primitive is
@@ -246,7 +258,11 @@ func canonicalRead(harnesses []string, aliases map[string]harnessAlias) bool {
 // converges in place.
 func expandAgents(block *AgentsBlock, harnesses []string, model *Model) error {
 	if block == nil {
-		return nil
+		if EmbeddedSkill == nil {
+			return nil
+		}
+		// Every schema gets the jig skill, block or not.
+		block = &AgentsBlock{}
 	}
 	harnesses = sortHarnesses(harnesses)
 	if len(block.Plugins) > 0 {
@@ -276,9 +292,13 @@ func expandAgents(block *AgentsBlock, harnesses []string, model *Model) error {
 			}
 			continue
 		}
+		add := addDerived
+		if primitive.embeddedOnly(block) {
+			add = addSkillsDerived
+		}
 		canonical := canonicalRead(harnesses, primitive.aliases)
 		if canonical {
-			if err := addDerived(model, primitive.entry(primitive.path, primitive.identity, primitive.description, sources, nil, harnessAlias{})); err != nil {
+			if err := add(model, primitive.entry(primitive.path, primitive.identity, primitive.description, sources, nil, harnessAlias{})); err != nil {
 				return err
 			}
 		}
@@ -296,11 +316,31 @@ func expandAgents(block *AgentsBlock, harnesses []string, model *Model) error {
 			if primitive.kind == EntryFile {
 				description = fmt.Sprintf("%s, as %s reads it", primitive.description, harness)
 			}
-			if err := addDerived(model, primitive.entry(alias.path, identity, description, sources, target, alias)); err != nil {
+			if err := add(model, primitive.entry(alias.path, identity, description, sources, target, alias)); err != nil {
 				return err
 			}
 		}
 	}
+	return nil
+}
+
+// addSkillsDerived adds a skills entry carrying only the jig skill. A $dir
+// the tree declares at that path with its own sources takes the skill in
+// as its first source instead; a declared link or copy follows its
+// target, which carries it, and is left alone.
+func addSkillsDerived(model *Model, entry Entry) error {
+	declared, ok := model.Entries[entry.Path]
+	if !ok {
+		return addDerived(model, entry)
+	}
+	if declared.Kind != EntryDir {
+		return addDerived(model, entry)
+	}
+	if declared.Dir.Link != nil || declared.Dir.Copy != nil {
+		return nil
+	}
+	declared.Dir.Src = append(SrcList{embeddedSkillSource()}, declared.Dir.Src...)
+	model.Entries[entry.Path] = declared
 	return nil
 }
 

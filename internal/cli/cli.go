@@ -34,11 +34,14 @@ func Run(args []string, out io.Writer) error {
 		return printCommandHelp(out, args[0])
 	}
 
+	jig.EmbeddedSkillVersion = strings.TrimPrefix(versionString(), "jig ")
 	switch args[0] {
 	case "init":
 		return cmdInit(args[1:], out)
 	case "validate":
 		return cmdValidate(args[1:], out)
+	case "skill":
+		return cmdSkill(args[1:], out)
 	case "list":
 		return cmdList(args[1:], out)
 	case "tags":
@@ -273,6 +276,9 @@ var commandDocs = []commandDoc{
 	{"validate",
 		[]string{"validate [schema-file]"},
 		[]string{"Validate the current workspace schema, or a schema file given by path."}},
+	{"skill",
+		[]string{"skill"},
+		[]string{"Print the jig skill (SKILL.md) this binary carries and installs under .agents/skills/jig in every workspace."}},
 	{"list",
 		[]string{"list [path] [--archived] [--tags a,b] [--meta key[=value]] [--id x]"},
 		[]string{"List groups, repositories, files, and dirs defined in the schema."}},
@@ -474,6 +480,18 @@ func cmdInit(args []string, out io.Writer) error {
 		options.Harnesses = &harnesses
 	}
 	return jig.Init(options, out)
+}
+
+func cmdSkill(args []string, out io.Writer) error {
+	if len(args) != 0 {
+		return usageError("skill")
+	}
+	content, err := jig.EmbeddedSkillContent()
+	if err != nil {
+		return err
+	}
+	_, err = out.Write(content)
+	return err
 }
 
 func cmdValidate(args []string, out io.Writer) error {

@@ -17,10 +17,14 @@ type SrcEntry struct {
 	Optional bool       `json:"optional,omitempty"`
 	OnlyWhen *Condition `json:"onlyWhen,omitempty"`
 	plugin   string     // derived from agents.plugins: the plugin directory (skills, agents, commands) this source contributes
+	embedded string     // a pack carried by the binary (see skill.go)
 }
 
 // describe renders a source for output: the git spec or the local path.
 func (s SrcEntry) describe() string {
+	if s.embedded != "" {
+		return "embedded:" + s.embedded
+	}
 	if s.File != "" {
 		return s.File
 	}

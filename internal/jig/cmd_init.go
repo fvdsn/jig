@@ -25,11 +25,9 @@ type InitOptions struct {
 // declaration pulls the official jig skill, so coding agents in the fresh
 // workspace already know how to drive and evolve it. It is YAML, the
 // format for a schema people write by hand.
-const sampleSchema = `version: 4
-
-agents:
-  skills:
-    - https://github.com/fvdsn/jig/tree/master/.agents/skills
+const sampleSchema = `# The workspace schema: repositories and support files under tree, agent
+# context under agents. Run jig skill for the full reference.
+version: 4
 
 tree: {}
 `

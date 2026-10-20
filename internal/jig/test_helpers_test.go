@@ -8,6 +8,28 @@ import (
 	"testing"
 )
 
+// repoSkills is the repository's own .agents/skills, the pack the binary
+// embeds; resolved before any test changes directory.
+var repoSkills = func() string {
+	abs, err := filepath.Abs(filepath.Join("..", "..", ".agents", "skills"))
+	if err != nil {
+		panic(err)
+	}
+	return abs
+}()
+
+// useEmbeddedSkill gives the test the embedded jig skill, as main does for
+// the binary; tests that do not call it run without one.
+func useEmbeddedSkill(t *testing.T) {
+	t.Helper()
+	EmbeddedSkill = os.DirFS(repoSkills)
+	EmbeddedSkillVersion = "test"
+	t.Cleanup(func() {
+		EmbeddedSkill = nil
+		EmbeddedSkillVersion = ""
+	})
+}
+
 // TestMain points the repo cache at a throwaway directory so tests never
 // touch the developer's real cache.
 func TestMain(m *testing.M) {
