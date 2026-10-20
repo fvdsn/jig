@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v4.3.1 — 2026-10-20
 
 - Fixes: with two or more harnesses fed by a plugin source that has
   no content for a primitive (a plugin without commands, say), the
