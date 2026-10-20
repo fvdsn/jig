@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v4.5.0 — 2026-10-20
 
 - The `agents` block gains `hooks`, its last primitive: commands run
   on lifecycle events, declared once in a neutral vocabulary
