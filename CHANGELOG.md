@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v4.6.0 — 2026-10-20
 
 - The jig skill ships inside the binary and is installed in every
   workspace, agents block or not and whatever the schema version, as
