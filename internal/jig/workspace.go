@@ -20,7 +20,7 @@ const (
 
 // schemaCandidates are the schema file names probed at the root of a source
 // repository when no explicit path is given, in order of preference.
-var schemaCandidates = []string{".jig.json", "jig.json", "schema.json"}
+var schemaCandidates = []string{".jig.json", "jig.json", "schema.json", "jig.yaml", "jig.yml"}
 
 type Config struct {
 	Version   int       `json:"version"`

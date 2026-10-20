@@ -115,7 +115,7 @@ A schema file is JSON or YAML; the format follows the file extension (`.yaml` an
 YAML is read as a single document into the same tree a JSON file would give, so the result is exactly what JSON would accept, and:
 
 - Duplicate keys in a mapping are an error, as they are for JSON.
-- Anchors, aliases, merge keys, explicit tags, and multi-document files are not supported and are reported as errors naming the construct, rather than resolved into a tree the author did not write.
+- Anchors, aliases, merge keys, local tags (`!name`; the standard `!!str` and friends are read), and multi-document files are not supported and are reported as errors naming the construct, rather than resolved into a tree the author did not write.
 - Scalars keep YAML's typing: unquoted `on`, `yes`, `no`, `1.0`, or `2024-01-01` become booleans, numbers, or dates, not strings. Validation reports a tag, id, path, or other string field that came through as a non-string, so the mistake names the field instead of failing somewhere downstream.
 - Comments are allowed and ignored.
 

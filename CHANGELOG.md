@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- A schema can be written in YAML (`jig.yaml`, `jig.yml`, or any
+  `--path` with those extensions) with the same structure as JSON.
+  YAML is read strictly: one document, no anchors, aliases, merge keys,
+  or local tags, no duplicate keys, and a scalar typed by YAML where a
+  string is wanted gets a hint to quote it. A bare `jig init` now seeds
+  a YAML starter, a local `.yaml` file keeps its format in the source
+  checkout, and a Git source is probed for `jig.yaml` and `jig.yml`
+  after the JSON names. Jig takes its first dependency for this,
+  `github.com/goccy/go-yaml`.
+
 ## v4.5.0 — 2026-10-20
 
 - The `agents` block gains `hooks`, its last primitive: commands run

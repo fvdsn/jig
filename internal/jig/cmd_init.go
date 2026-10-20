@@ -23,15 +23,18 @@ type InitOptions struct {
 
 // sampleSchema seeds a bare "jig init": a starter schema whose only
 // declaration pulls the official jig skill, so coding agents in the fresh
-// workspace already know how to drive and evolve it.
-const sampleSchema = `{
-  "version": 4,
-  "agents": {
-    "skills": ["https://github.com/fvdsn/jig/tree/master/.agents/skills"]
-  },
-  "tree": {}
-}
+// workspace already know how to drive and evolve it. It is YAML, the
+// format for a schema people write by hand.
+const sampleSchema = `version: 4
+
+agents:
+  skills:
+    - https://github.com/fvdsn/jig/tree/master/.agents/skills
+
+tree: {}
 `
+
+const sampleSchemaName = "jig.yaml"
 
 func Init(options InitOptions, out io.Writer) error {
 	workspaceDir, err := filepath.Abs(options.WorkspaceDir)
@@ -106,7 +109,7 @@ func Init(options InitOptions, out io.Writer) error {
 	if options.SourceArg == "" {
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, "next steps:")
-		fmt.Fprintln(out, "  $EDITOR .jig/source/jig.json   describe your repositories")
+		fmt.Fprintf(out, "  $EDITOR .jig/source/%s   describe your repositories\n", config.Schema)
 		fmt.Fprintln(out, "  jig validate                   check the schema")
 		fmt.Fprintln(out, "  jig sync                       apply it to the workspace")
 		fmt.Fprintln(out, "to share the workspace, push .jig/source to a Git remote; teammates run: jig init <url>")
@@ -219,7 +222,7 @@ func setUpSource(sourceArg string, schemaPath string, sourceAbs string) (string,
 		if schemaPath != "" {
 			return "", errors.New("--path can only be used with Git sources")
 		}
-		return seedSource(sourceAbs, []byte(sampleSchema))
+		return seedSource(sourceAbs, sampleSchemaName, []byte(sampleSchema))
 	}
 	// Only a successful stat of a regular file means a local schema file; any
 	// stat error falls through to cloning. Remote URLs are not valid paths on
@@ -233,7 +236,11 @@ func setUpSource(sourceArg string, schemaPath string, sourceAbs string) (string,
 		if err != nil {
 			return "", err
 		}
-		return seedSource(sourceAbs, data)
+		name := "jig.json"
+		if isYAMLSchema(sourceArg) {
+			name = "jig.yaml"
+		}
+		return seedSource(sourceAbs, name, data)
 	}
 
 	if err := cloneRepo(sourceArg, sourceAbs); err != nil {
@@ -254,15 +261,15 @@ func setUpSource(sourceArg string, schemaPath string, sourceAbs string) (string,
 }
 
 // seedSource creates the source checkout as a fresh git repository seeded
-// with the given schema content as jig.json.
-func seedSource(sourceAbs string, schema []byte) (string, error) {
+// with the given schema content under name (jig.json or jig.yaml).
+func seedSource(sourceAbs string, name string, schema []byte) (string, error) {
 	if _, err := git("", "init", "--quiet", sourceAbs); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(filepath.Join(sourceAbs, "jig.json"), schema, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(sourceAbs, name), schema, 0o644); err != nil {
 		return "", err
 	}
-	return "jig.json", nil
+	return name, nil
 }
 
 func schemaCandidateList() string {

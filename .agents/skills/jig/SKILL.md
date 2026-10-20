@@ -19,7 +19,7 @@ A workspace keeps everything Jig manages under `.jig/`:
 .jig/state.json    local machine state
 ```
 
-The schema file (usually `.jig.json` or `jig.json`) lives in its own Git repository shared by the team. `jig init` clones that repository into `.jig/source/`, and Jig always reads the schema live from the checkout.
+The schema file (usually `jig.json` or `jig.yaml`; JSON and YAML have the same structure, chosen by extension) lives in its own Git repository shared by the team. `jig init` clones that repository into `.jig/source/`, and Jig always reads the schema live from the checkout.
 
 The `.jig/state.json` file is local and machine-owned. It tracks installed repositories and generated files so Jig can safely handle moves, remote changes, and local edits.
 
@@ -41,7 +41,7 @@ Start a brand-new workspace from scratch (no schema yet):
 jig init
 ```
 
-This creates `.jig/source/` as a fresh local Git repository containing a starter `jig.json` and materializes it immediately. The starter schema's `agents` block pulls the official jig skill into `.agents/skills`, so coding agents in the workspace know how to use jig. Edit `.jig/source/jig.json` to describe your repositories, then push `.jig/source` to a shared remote so teammates can `jig init <url>`.
+This creates `.jig/source/` as a fresh local Git repository containing a starter `jig.yaml` and materializes it immediately. The starter schema's `agents` block pulls the official jig skill into `.agents/skills`, so coding agents in the workspace know how to use jig. Edit `.jig/source/jig.yaml` to describe your repositories, then push `.jig/source` to a shared remote so teammates can `jig init <url>`.
 
 Init prints one `harnesses:` line: the coding-agent harnesses the `agents` block is materialized for, detected from their directories in your home (`~/.claude`, `~/.codex`, ...). `jig init <url> --harness claude,codex` (or `--harness none`) records a choice in `.jig/config.json` instead of detecting; edit that file to change it later. See Agent Context below.
 
@@ -75,7 +75,9 @@ Initialize from a local file while testing a draft definition:
 jig init ./draft.json ~/Code/acme-test
 ```
 
-When initialized from a local file, `.jig/source/` is created as a fresh Git repository containing the schema as `jig.json`, with no remote configured.
+When initialized from a local file, `.jig/source/` is created as a fresh Git repository containing the schema as `jig.yaml` (a `.yaml` or `.yml` file) or `jig.json`, with no remote configured. From a Git source the schema is found at the root as `.jig.json`, `jig.json`, `schema.json`, `jig.yaml`, or `jig.yml`, or wherever `--path` says.
+
+The schema is JSON or YAML with the same structure; everything below shows JSON, and translates field for field. YAML is read strictly: one document, no anchors, aliases, merge keys, or local tags, no duplicate keys, and an unquoted scalar that YAML types as a number or boolean where a string is wanted is reported with a hint to quote it. Jig never rewrites a schema file.
 
 ## Definition Shape
 

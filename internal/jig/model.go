@@ -77,6 +77,9 @@ func flattenDefinition(def *Definition, harnesses []string) (Model, error) {
 		return model, err
 	}
 	if err := flattenTreeNode(root, "", inheritedGroup{}, &model); err != nil {
+		if def.yaml {
+			return model, yamlDecodeHint(err)
+		}
 		return model, err
 	}
 	if err := expandAgents(def.Agents, harnesses, &model); err != nil {

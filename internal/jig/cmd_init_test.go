@@ -73,13 +73,14 @@ func TestInitBareCreatesStarterWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.Schema != "jig.json" {
-		t.Fatalf("expected schema jig.json, got %q", config.Schema)
+	// The starter is YAML, the format for a schema written by hand.
+	if config.Schema != "jig.yaml" {
+		t.Fatalf("expected schema jig.yaml, got %q", config.Schema)
 	}
 	if !isGitRepo(filepath.Join(workspacePath, sourceDir)) {
 		t.Fatal("expected source checkout to be a git repository")
 	}
-	def, err := loadDefinition(filepath.Join(workspacePath, sourceDir, "jig.json"))
+	def, err := loadDefinition(filepath.Join(workspacePath, sourceDir, "jig.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +91,7 @@ func TestInitBareCreatesStarterWorkspace(t *testing.T) {
 	if _, ok := model.entry(".agents/skills", EntryDir); !ok {
 		t.Fatal("expected the starter schema to define .agents/skills")
 	}
-	if !strings.Contains(out.String(), "next steps:") {
+	if !strings.Contains(out.String(), "next steps:") || !strings.Contains(out.String(), "$EDITOR .jig/source/jig.yaml") {
 		t.Fatalf("expected next-steps guidance, got:\n%s", out.String())
 	}
 }

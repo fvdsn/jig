@@ -66,6 +66,7 @@ type Definition struct {
 	Source  *Source                    `json:"source,omitempty"`
 	Agents  *AgentsBlock               `json:"agents,omitempty"` // version 4: agent context, expanded into derived entries
 	Tree    map[string]json.RawMessage `json:"tree"`
+	yaml    bool                       // loaded from YAML: decoding errors get the typing hint (see yaml.go)
 }
 
 type Source struct {
@@ -250,14 +251,26 @@ type Condition struct {
 	Reason string `json:"reason,omitempty"`
 }
 
+// loadDefinition reads a schema file, JSON or YAML by its extension (see
+// yaml.go); both decode through the JSON types.
 func loadDefinition(path string) (*Definition, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+	fromYAML := isYAMLSchema(path)
+	if fromYAML {
+		if data, err = yamlToJSON(data); err != nil {
+			return nil, err
+		}
+	}
 	var def Definition
 	if err := json.Unmarshal(data, &def); err != nil {
+		if fromYAML {
+			return nil, yamlDecodeHint(err)
+		}
 		return nil, err
 	}
+	def.yaml = fromYAML
 	return &def, nil
 }

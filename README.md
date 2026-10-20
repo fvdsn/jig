@@ -87,7 +87,7 @@ Commands are position-aware: `jig status` in `services/` shows just your service
 
 ## The schema
 
-A JSON tree where paths are the directory layout. Repos, files, and dirs are leaves; any level can carry group metadata that children inherit.
+A tree where paths are the directory layout, written in JSON or YAML (same structure, chosen by the file extension; a bare `jig init` starts you with `jig.yaml`). Repos, files, and dirs are leaves; any level can carry group metadata that children inherit.
 
 ```json
 {
