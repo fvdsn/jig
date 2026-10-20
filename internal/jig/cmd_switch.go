@@ -36,6 +36,11 @@ func Switch(options SwitchOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	return switchWorkspace(ws, options, out)
+}
+
+// switchWorkspace is Switch on a loaded workspace, for init --switch.
+func switchWorkspace(ws *Workspace, options SwitchOptions, out io.Writer) error {
 	repos, err := selectInstalledRepos(ws)
 	if err != nil {
 		return err
@@ -74,13 +79,13 @@ func Switch(options SwitchOptions, out io.Writer) error {
 }
 
 // checkoutRepo switches one repository and returns the report verb. Creating
-// is idempotent: when the branch already exists, -b degrades to a plain
-// switch instead of failing.
+// is idempotent: when the branch already exists, locally or on origin, -c
+// degrades to a plain switch instead of failing or forking a second branch.
 func checkoutRepo(local string, branch string, create bool) (string, error) {
 	if gitBranch(local) == branch {
 		return "present", nil
 	}
-	if create && !localBranchExists(local, branch) {
+	if create && !branchExists(local, branch) {
 		if _, err := git(local, "checkout", "-q", "-b", branch); err != nil {
 			return "", err
 		}

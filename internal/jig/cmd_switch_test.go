@@ -195,6 +195,18 @@ func TestSwitchBranchList(t *testing.T) {
 	if !strings.Contains(got, "present: services/a (release/CX-1)") || !strings.Contains(got, fmt.Sprintf("present: services/c (%s)", defaultC)) {
 		t.Fatalf("default fallback run =\n%s", got)
 	}
+	// -c on a branch that exists on origin only switches to a tracking
+	// branch instead of creating a second one.
+	out.Reset()
+	if err := Switch(SwitchOptions{Branches: []string{"release/CX-1"}, Create: true}, &out); err != nil {
+		t.Fatalf("-c existing: %v\n%s", err, out.String())
+	}
+	if got := out.String(); !strings.Contains(got, "present: services/a") || strings.Count(got, "created: ") != 2 {
+		t.Fatalf("-c run =\n%s", got)
+	}
+	if upstream, err := git(filepath.Join(root, "services", "a"), "rev-parse", "--abbrev-ref", "release/CX-1@{upstream}"); err != nil || strings.TrimSpace(upstream) != "origin/release/CX-1" {
+		t.Fatalf("upstream = %q %v", upstream, err)
+	}
 	if err := Switch(SwitchOptions{Branches: []string{"x", "y"}, Create: true}, &out); err == nil {
 		t.Fatal("-c with two names accepted")
 	}

@@ -59,7 +59,7 @@ jig rm services/checkout        # uninstall
 
 | Command | Description |
 | --- | --- |
-| `init [<git-url\|file> [dir]]` | Create a workspace from a schema repository or a local draft file; no args starts a fresh starter schema (`--harness a,b` picks the coding-agent harnesses, otherwise detected) |
+| `init [<git-url\|file> [dir]]` | Create a workspace from a schema repository or a local draft file; no args starts a fresh starter schema (`--harness a,b` picks the coding-agent harnesses, otherwise detected; `--clone x --switch b` installs and branches in one go) |
 | `list [path]` | List the catalog: groups, repos, files, dirs |
 | `tags [path]` | List the tags in scope, with entry counts |
 | `info <path>` | Show one entry's metadata |

@@ -3,6 +3,7 @@ package jig
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -213,5 +214,43 @@ func TestInitRecordsHarnesses(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "harnesses: none (--harness)\n") {
 		t.Fatalf("none init output:\n%s", out.String())
+	}
+}
+
+// --switch puts every cloned repository on the branch, creating it where
+// it does not exist and tracking it where origin has it; it needs --clone.
+func TestInitSwitchesClonedRepos(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	remoteA := filepath.Join(root, "remote-a")
+	remoteB := filepath.Join(root, "remote-b")
+	testRemoteRepo(t, remoteA)
+	testRemoteRepo(t, remoteB)
+	gitIn(t, remoteB, "branch", "feature/CX-1")
+	schema := filepath.Join(root, "schema.json")
+	if err := os.WriteFile(schema, []byte(fmt.Sprintf(`{"version": 3, "tree": {
+	  "services/a": {"$repo": {"git": %q}},
+	  "services/b": {"$repo": {"git": %q}}
+	}}`, remoteA, remoteB)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ws := filepath.Join(root, "ws")
+	var out bytes.Buffer
+	if err := Init(InitOptions{SourceArg: schema, WorkspaceDir: ws, Clone: true, Switch: "feature/CX-1"}, &out); err != nil {
+		t.Fatalf("init: %v\n%s", err, out.String())
+	}
+	if got := out.String(); !strings.Contains(got, "created: services/a") || !strings.Contains(got, "switched: services/b") {
+		t.Fatalf("init output:\n%s", got)
+	}
+	for _, name := range []string{"a", "b"} {
+		if branch := gitBranch(filepath.Join(ws, "services", name)); branch != "feature/CX-1" {
+			t.Fatalf("%s is on %q", name, branch)
+		}
+	}
+	if err := Init(InitOptions{SourceArg: schema, WorkspaceDir: filepath.Join(root, "ws2"), Switch: "feature/CX-1"}, &out); err == nil || !strings.Contains(err.Error(), "--switch needs --clone") {
+		t.Fatalf("switch without clone = %v", err)
+	}
+	if err := Init(InitOptions{SourceArg: schema, WorkspaceDir: filepath.Join(root, "ws3"), Clone: true, Switch: "-bad"}, &out); err == nil || !strings.Contains(err.Error(), "invalid branch name") {
+		t.Fatalf("bad branch = %v", err)
 	}
 }

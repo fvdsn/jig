@@ -63,6 +63,12 @@ Initialize and clone everything:
 jig init git@github.com:acme/jig-definition.git ~/Code/acme --clone
 ```
 
+Initialize, clone one path, and put every cloned repository on a branch, created where it does not exist (`--switch` needs `--clone`):
+
+```sh
+jig init git@github.com:acme/jig-definition.git ~/Code/acme-cx12 --clone services/checkout --switch feature/CX-12
+```
+
 Include optional dependencies during initial clone:
 
 ```sh

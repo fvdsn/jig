@@ -9,7 +9,11 @@
   default branch, so `jig switch release/CX-12 feature/CX-12 --default`
   puts a workspace on the branches a piece of work touches. A
   repository with none of the branches is skipped. The old name and
-  `-b` are gone.
+  `-b` are gone. `-c` on a branch that exists on origin only switches
+  to a tracking branch instead of creating a second one.
+- `jig init --clone ... --switch <branch>` puts every cloned
+  repository on the branch, created where it does not exist, so one
+  command sets up a workspace for a piece of work.
 
 ## v4.7.0 — 2026-10-20
 

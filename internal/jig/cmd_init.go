@@ -19,6 +19,7 @@ type InitOptions struct {
 	SkipDeps        bool // clone only the selected repos, without their dependencies
 	Tags            []string
 	Harnesses       *[]string // --harness: record this list (empty for none); nil leaves detection on
+	Switch          string    // --switch: after the clone, switch every installed repository to this branch, creating it where missing
 }
 
 // sampleSchema seeds a bare "jig init": a starter schema whose only
@@ -35,6 +36,14 @@ tree: {}
 const sampleSchemaName = "jig.yaml"
 
 func Init(options InitOptions, out io.Writer) error {
+	if options.Switch != "" {
+		if !options.Clone {
+			return errors.New("--switch needs --clone: there is nothing to switch before anything is installed")
+		}
+		if _, err := git("", "check-ref-format", "--branch", options.Switch); err != nil {
+			return fmt.Errorf("invalid branch name %q", options.Switch)
+		}
+	}
 	workspaceDir, err := filepath.Abs(options.WorkspaceDir)
 	if err != nil {
 		return err
@@ -103,6 +112,9 @@ func Init(options InitOptions, out io.Writer) error {
 			}
 			fmt.Fprintf(out, "could not fetch everything (%s); run jig sync to retry\n", shortError(cloneErr))
 		}
+		if err := switchAfterInit(ws, options, out); err != nil {
+			return err
+		}
 	}
 	if options.SourceArg == "" {
 		fmt.Fprintln(out)
@@ -162,7 +174,20 @@ func resumeInit(workspaceDir string, options InitOptions, out io.Writer) error {
 	if !options.Clone {
 		return nil
 	}
-	return cloneIntoWorkspace(ws, options, out)
+	if err := cloneIntoWorkspace(ws, options, out); err != nil {
+		return err
+	}
+	return switchAfterInit(ws, options, out)
+}
+
+// switchAfterInit runs init's --switch step on the freshly cloned
+// repositories: every installed repository goes to the branch, created
+// where it does not exist yet, so one command sets up a task workspace.
+func switchAfterInit(ws *Workspace, options InitOptions, out io.Writer) error {
+	if options.Switch == "" {
+		return nil
+	}
+	return switchWorkspace(ws, SwitchOptions{Branches: []string{options.Switch}, Create: true}, out)
 }
 
 // cloneIntoWorkspace runs init's --clone step. State accumulated before a

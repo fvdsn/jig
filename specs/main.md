@@ -1443,6 +1443,10 @@ Initializes a workspace, then clones all repositories, or repositories matching 
 
 Initializes a workspace, then clones uninstalled archived repositories and files in addition to the default selection.
 
+### `jig init <git-url-or-file> [workspace-dir] --clone [path] --switch <branch>`
+
+Initializes a workspace, clones the selection, then switches every installed repository to `<branch>` with the rules of `jig switch -c`: created at the repository's HEAD where it does not exist, switched to where it does, locally or on origin. One command therefore sets up a workspace for a piece of work on its branch. `--switch` without `--clone` is an error, since nothing is installed to switch; the branch name is validated before anything is created.
+
 ### `jig validate`
 
 Validates the definition file: the workspace's schema, or the file given as an argument, whose format follows its extension as for any schema file.
@@ -1685,7 +1689,7 @@ Switches the installed repositories to a branch, in parallel, the way `git switc
 
 ### `jig switch -c <branch>`
 
-Creates `<branch>` at each repository's current HEAD when it does not exist, and just switches to it when it does, so re-running is idempotent. `-c` takes exactly one name and no `--default`.
+Creates `<branch>` at each repository's current HEAD when it does not exist, locally or on origin, and just switches to it when it does (a branch on origin only becomes a local tracking branch rather than a second branch of the same name), so re-running is idempotent. `-c` takes exactly one name and no `--default`.
 
 ### `jig switch --default`
 
