@@ -114,7 +114,8 @@ func TestRepositoryExportsMaterialize(t *testing.T) {
 			t.Fatalf("missing %s:\n%s", rel, out.String())
 		}
 	}
-	if got := read("AGENTS.md"); !strings.Contains(got, "Use alpha.") {
+	// An exported section is framed with the project it applies to.
+	if got := read("AGENTS.md"); !strings.HasPrefix(got, "## tools/a\n\nExported by the repository at `tools/a`; it applies to that project.\n\n# Alpha\nUse alpha.\n") {
 		t.Fatalf("AGENTS.md =\n%s", got)
 	}
 	state, err := loadState(root)

@@ -235,7 +235,7 @@ func TestEnsureFileConcatenatesMultipleSources(t *testing.T) {
 		t.Fatalf("first run = %q, want wrote-file", got)
 	}
 	data, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
-	if err != nil || string(data) != "base\nextra\n" {
+	if err != nil || string(data) != "base\n\nextra\n" {
 		t.Fatalf("content = %q, %v; want base and extra joined by a newline", data, err)
 	}
 	if !strings.Contains(state.Files["agents"].SrcBlob, "+") {
@@ -253,7 +253,7 @@ func TestEnsureFileConcatenatesMultipleSources(t *testing.T) {
 	if got := ensure(); !strings.Contains(got, "updated-file:") {
 		t.Fatalf("update run = %q, want updated-file", got)
 	}
-	if data, _ := os.ReadFile(filepath.Join(root, "AGENTS.md")); string(data) != "base\nextra v2\n" {
+	if data, _ := os.ReadFile(filepath.Join(root, "AGENTS.md")); string(data) != "base\n\nextra v2\n" {
 		t.Fatalf("content = %q, want updated concatenation", data)
 	}
 }
@@ -301,7 +301,7 @@ func TestFileSourcesGatedByOnlyWhen(t *testing.T) {
 	if got := ensure(map[string]bool{"billing/api": true}); !strings.Contains(got, "updated-file:") {
 		t.Fatalf("activation run = %q, want updated-file", got)
 	}
-	if content() != "base\nbilling\n" {
+	if content() != "base\n\nbilling\n" {
 		t.Fatalf("content = %q, want base and billing", content())
 	}
 
@@ -645,7 +645,7 @@ func TestEnsureFileSkipsUnavailableSources(t *testing.T) {
 	if got := ensure(); !strings.Contains(got, "updated-file:") {
 		t.Fatalf("recovery run = %q, want updated-file", got)
 	}
-	if content() != "base\nextra\n" {
+	if content() != "base\n\nextra\n" {
 		t.Fatalf("content = %q, want full concatenation", content())
 	}
 
@@ -660,7 +660,7 @@ func TestEnsureFileSkipsUnavailableSources(t *testing.T) {
 	if got := ensure(); !strings.Contains(got, "present-file:") || !strings.Contains(got, "unavailable") {
 		t.Fatalf("degraded run = %q, want present-file with unavailable note", got)
 	}
-	if content() != "base\nextra\n" {
+	if content() != "base\n\nextra\n" {
 		t.Fatalf("content = %q, want file kept while degraded", content())
 	}
 
@@ -673,7 +673,7 @@ func TestEnsureFileSkipsUnavailableSources(t *testing.T) {
 	if got := ensure(); !strings.Contains(got, "updated-file:") {
 		t.Fatalf("restore run = %q, want updated-file", got)
 	}
-	if content() != "base v2\nextra v2\n" {
+	if content() != "base v2\n\nextra v2\n" {
 		t.Fatalf("content = %q, want full rewrite after recovery", content())
 	}
 }
@@ -728,7 +728,7 @@ func TestEnsureFileLocalSources(t *testing.T) {
 	if got := ensure(); !strings.Contains(got, "updated-file:") {
 		t.Fatalf("appear run = %q, want updated-file", got)
 	}
-	if content() != "base\nmine\n" {
+	if content() != "base\n\nmine\n" {
 		t.Fatalf("content = %q, want local part appended", content())
 	}
 
@@ -739,7 +739,7 @@ func TestEnsureFileLocalSources(t *testing.T) {
 	if got := ensure(); !strings.Contains(got, "updated-file:") {
 		t.Fatalf("edit run = %q, want updated-file", got)
 	}
-	if content() != "base\nmine v2\n" {
+	if content() != "base\n\nmine v2\n" {
 		t.Fatalf("content = %q, want edited local part", content())
 	}
 

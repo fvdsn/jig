@@ -20,6 +20,7 @@ type SrcEntry struct {
 	OnlyWhen *Condition `json:"onlyWhen,omitempty"`
 	plugin   string     // derived from agents.plugins: the plugin directory (skills, agents, commands) this source contributes
 	embedded string     // a pack carried by the binary (see skill.go)
+	export   bool       // a repository export (see exports.go): a context section is framed with its origin
 }
 
 // describe renders a source for output: the git spec or the local path.

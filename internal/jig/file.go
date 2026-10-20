@@ -93,6 +93,9 @@ func (m *materializer) ensureFile(filePath string) error {
 			if err != nil {
 				return "", err
 			}
+			if source.export {
+				part = append(exportHeader(m.model, source), part...)
+			}
 			parts = append(parts, part)
 			blobs = append(blobs, sha256Hex(part))
 			return key, nil
@@ -209,14 +212,19 @@ func (m *materializer) ensureFile(filePath string) error {
 	return nil
 }
 
-// concatParts joins source parts in order, inserting a newline between two
-// parts when the earlier one does not end with one, so text sections never
-// run together.
+// concatParts joins source parts in order with one blank line between two
+// parts, so text sections never run together and a heading that opens a
+// section is a heading in the result.
 func concatParts(parts [][]byte) []byte {
 	var content []byte
 	for _, part := range parts {
-		if len(content) > 0 && content[len(content)-1] != '\n' {
-			content = append(content, '\n')
+		if len(content) > 0 {
+			if content[len(content)-1] != '\n' {
+				content = append(content, '\n')
+			}
+			if len(content) < 2 || content[len(content)-2] != '\n' {
+				content = append(content, '\n')
+			}
 		}
 		content = append(content, part...)
 	}

@@ -12,6 +12,11 @@
   and a repository without the path offers nothing. The checkout
   source is also available to `$file` and `$dir` as
   `{"repo": {"id": ...}, "path": ...}`.
+- Multi-source files get one blank line between parts instead of a bare
+  newline, so a section's opening heading stays a heading; every
+  multi-source file is rewritten once on the next sync. An exported
+  context section is framed with a `## <repository path>` heading and a
+  line saying it applies to that project.
 - Fixes: a link file or dir whose target has every source gated off is
   now removed with the target instead of failing the sync with "link
   target is missing".

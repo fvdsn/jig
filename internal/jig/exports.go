@@ -37,7 +37,7 @@ func exportSources(model *Model, primitive string) SrcList {
 			continue
 		}
 		if rel := entry.Repo.Agents[primitive]; rel != "" {
-			sources = append(sources, SrcEntry{Repo: &Ref{ID: entry.Identity}, Path: rel})
+			sources = append(sources, SrcEntry{Repo: &Ref{ID: entry.Identity}, Path: rel, export: true})
 		}
 	}
 	return sources
@@ -107,6 +107,18 @@ func readCheckoutTree(abs string) (dirSource, error) {
 		return dirSource{}, err
 	}
 	return dirSource{local: abs, tree: digest}, nil
+}
+
+// exportHeader frames an exported context section with the workspace
+// path of the repository it came from, so an agent knows the section
+// applies to that project.
+func exportHeader(model *Model, source SrcEntry) []byte {
+	entries := model.resolveRef(*source.Repo)
+	if len(entries) != 1 {
+		return nil
+	}
+	path := entries[0].Path
+	return []byte(fmt.Sprintf("## %s\n\nExported by the repository at `%s`; it applies to that project.\n\n", path, path))
 }
 
 // validateCheckoutSource checks a checkout source: a single-target

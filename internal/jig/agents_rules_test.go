@@ -67,7 +67,7 @@ func TestRenderFold(t *testing.T) {
 		{rel: "sql-migrations.md", content: []byte(sampleRule)},
 		{rel: "terse.md", content: []byte("Be terse.\n")},
 	}))
-	want := "\n## Instructions\n\n### How to write database migrations\n\nApplies to: `**/migrations/*.sql`, `db/**/*.sql`\n\n# SQL migrations\n\n- Ship the down migration in the same file.\n\n### terse\n\nBe terse.\n"
+	want := "## Instructions\n\n### How to write database migrations\n\nApplies to: `**/migrations/*.sql`, `db/**/*.sql`\n\n# SQL migrations\n\n- Ship the down migration in the same file.\n\n### terse\n\nBe terse.\n"
 	if got != want {
 		t.Fatalf("fold =\n%s\nwant\n%s", got, want)
 	}
@@ -217,7 +217,7 @@ func TestAgentsBlockMaterializesInstructions(t *testing.T) {
 		return string(data)
 	}
 	agents := read("AGENTS.md")
-	if !strings.HasPrefix(agents, "# Workspace\n\nContext here.\n") || !strings.Contains(agents, "\n## Instructions\n") ||
+	if !strings.HasPrefix(agents, "# Workspace\n\nContext here.\n") || !strings.Contains(agents, "## Instructions\n") ||
 		!strings.Contains(agents, "### How to write database migrations\n\nApplies to: `**/migrations/*.sql`, `db/**/*.sql`\n") ||
 		!strings.Contains(agents, "### terse\n\nBe terse.\n") || strings.Contains(agents, "not a rule") {
 		t.Fatalf("AGENTS.md =\n%s", agents)

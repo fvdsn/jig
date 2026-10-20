@@ -216,7 +216,7 @@ func renderFold(rules []ruleFile) []byte {
 		return nil
 	}
 	var b strings.Builder
-	b.WriteString("\n## Instructions\n")
+	b.WriteString("## Instructions\n")
 	for _, rule := range rules {
 		meta, body := parseRule(rule.content)
 		_, stem, _ := ruleStem(rule.rel)
