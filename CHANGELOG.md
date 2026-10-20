@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v4.8.0 — 2026-10-20
 
 - `jig checkout` is now `jig switch`, after git's own verb for what it
   does, with `-c` to create a branch. It takes several branches: each
