@@ -383,15 +383,21 @@ Condition inherited by all descendant repositories and files.
 
 Inherited `onlyWhen` conditions are additive. A descendant is active only when all inherited and local conditions match.
 
-### `$group.agents`
+### `$group.exports`
 
 Optional object.
 
 Repository exports declared once for every descendant repository: each key is a primitive of the [agents block](#agent-context) (`skills`, `context`, `subagents`, `commands`) and its value a safe path inside a checkout. A descendant repository whose checkout has that path offers it; one without it offers nothing. Inherited per key, nearest ancestor wins, so a repository can override one key and keep the rest. See [Repository exports](#repository-exports).
 
+### `$group.agents`
+
+Optional object.
+
+An agents block scoped to the group: the same keys and rules as the top-level [`agents`](#agent-context), active while a repository under the group is installed or active. See [Group blocks](#group-blocks).
+
 ## Group Inheritance
 
-When flattening the tree: `agents` is inherited per key: a repository takes each export key from its nearest ancestor that sets it, unless it sets that key itself.
+When flattening the tree: `exports` is inherited per key: a repository takes each export key from its nearest ancestor that sets it, unless it sets that key itself.
 
 - `description` is inherited by descendant repositories and files when they do not define one locally. The nearest value wins.
 - `web` is inherited by descendant repositories when they do not define one locally. The nearest value wins.
@@ -509,11 +515,11 @@ If inherited `onlyWhen` conditions are present, all inherited conditions and the
 
 See [Conditional Nodes](#conditional-nodes).
 
-### `$repo.agents`
+### `$repo.exports`
 
 Optional object.
 
-What this repository exports to the workspace's agent context: each key is a primitive of the [agents block](#agent-context) (`skills`, `context`, `subagents`, `commands`) and its value a safe path inside the checkout, `"agents": { "skills": ".agents/skills" }` for a repository that ships the skill of the tool it builds. Keys inherit from groups per key (see `$group.agents`). See [Repository exports](#repository-exports).
+What this repository exports to the workspace's agent context: each key is a primitive of the [agents block](#agent-context) (`skills`, `context`, `subagents`, `commands`) and its value a safe path inside the checkout, `"exports": { "skills": ".agents/skills" }` for a repository that ships the skill of the tool it builds. Keys inherit from groups per key (see `$group.exports`). See [Repository exports](#repository-exports).
 
 ## File Nodes
 
@@ -845,18 +851,18 @@ When the config has no `harnesses` field, jig detects the harnesses from the mac
 
 ### Repository exports
 
-A repository often ships the agent context of the tool it builds beside the code, `.agents/skills/<name>/SKILL.md` for the skill that explains it, maintained with the same lifecycle; but harnesses discover skills at the workspace root, so a repository-local skills directory is invisible to them. Repository exports lift such content into the block: `agents` on a `$repo`, or on a `$group` for every descendant, names a path inside the checkout per primitive (`skills`, `context`, `subagents`, `commands`), and that path joins the primitive's sources as a [checkout source](#filesrc) of that repository.
+A repository often ships the agent context of the tool it builds beside the code, `.agents/skills/<name>/SKILL.md` for the skill that explains it, maintained with the same lifecycle; but harnesses discover skills at the workspace root, so a repository-local skills directory is invisible to them. Repository exports lift such content into the block: `exports` on a `$repo`, or on a `$group` for every descendant, names a path inside the checkout per primitive (`skills`, `context`, `subagents`, `commands`), and that path joins the primitive's sources as a [checkout source](#filesrc) of that repository.
 
 ```json
 {
   "tree": {
     "tools/": {
-      "$group": { "agents": { "skills": ".agents/skills" } },
+      "$group": { "exports": { "skills": ".agents/skills" } },
       "bimbam": {
         "$repo": {
           "id": "bimbam",
           "git": "git@github.com:org/bimbam.git",
-          "agents": { "skills": "skills", "context": "AGENTS.md" }
+          "exports": { "skills": "skills", "context": "AGENTS.md" }
         }
       }
     }
@@ -868,10 +874,40 @@ Rules:
 
 - An export is active while its repository is installed and the path exists in the checkout; installing the repository is the only decision, there is no second step. A repository without the path offers nothing, so a group-level convention costs nothing for repositories that do not follow it. Removing the repository gates the export off and its untouched files leave the merge on the next sync, as for any source.
 - Content is read from the checkout's working tree, so an edit to a skill flows to the harness directories on the next sync before it is pushed, and a feature branch that changes a tool and its skill together is seen as such. The copies at the root are never the thing to edit: a local edit there is kept and reported, as for any derived file.
-- The primitive's sources are, in order: [the jig skill](#the-jig-skill), the plugins', the repository exports in tree order, then the block's own list, so an explicit declaration wins on a name and two repositories exporting the same skill name are reported as shadowed like any merge. Skills exports are skill packs, so a repository namespaces its skills by directory name; a context export is one more section of the root context file, in tree order.
+- The primitive's sources are, in order: [the jig skill](#the-jig-skill), the plugins', the repository exports in tree order, then the block's own list and the [group blocks](#group-blocks), so an explicit declaration wins on a name and two repositories exporting the same skill name are reported as shadowed like any merge. Skills exports are skill packs, so a repository namespaces its skills by directory name; a context export is one more section of the root context file, in tree order.
 - An exported context section is framed with the project it applies to: a `## <repository path>` heading and the line ``Exported by the repository at `<path>`; it applies to that project.``, then the file as written. The block's own context sources are workspace-level and are not framed. A repository that moves in the tree rewrites its section with the new path.
 - The agents block itself may be absent: exports alone derive the primitive's entries, as the jig skill does.
 - `instructions` is not exportable yet: a repository's rule globs are relative to the repository, and prefixing them with its workspace path is a separate decision.
+
+### Group blocks
+
+Agent context often belongs to one part of the workspace: the payments context matters once a payments service is installed, and so does the billing MCP server. Writing that as an `onlyWhen` on each source repeats the scope on every line. A group may instead carry an `agents` block of its own, the same shape as the top-level block, whose every source, server, and hook is scoped to the group:
+
+```json
+{
+  "tree": {
+    "services/": {
+      "payments/": {
+        "$group": {
+          "agents": {
+            "context": ["git@github.com:org/meta.git#context/payments.md"],
+            "mcp": { "billing-api": { "url": "https://mcp.example.com/sse" } }
+          }
+        },
+        "checkout": { "$repo": { "id": "checkout-service", "git": "git@github.com:org/checkout.git" } }
+      }
+    }
+  }
+}
+```
+
+Rules:
+
+- A group block takes every key of the top-level block with the same rules. Each of its sources, servers, and hooks carries an implied condition `{"path": "<group>/*"}`, combined with its own `onlyWhen`, so it is active exactly when a repository under the group is installed or active, by the rules of [Conditional Nodes](#conditional-nodes). Nothing else is new: the block expands into the same derived entries, and a group block alone, without a top-level block, derives them too.
+- Scope wins: in each primitive the sources are the jig skill, the plugins', the repository exports, the top-level block's, then the group blocks' in tree order, so a group's skill, server, or hook overrides the workspace default of the same name, and two groups colliding resolve by tree order, with the shadowed report for files.
+- A context section from a group block is framed like an exported one: a `## <group path>` heading and the line ``Applies to the repositories under `<group path>`.``, then the content. The top-level block's sections are not framed.
+- The jig skill and `plugins` are not scoped by a group block any differently from a source: a plugin library declared in a group block is gated on the group like any of its sources.
+- A group block requires `version` 4 and is validated as the top-level block is; its implied condition must be satisfiable, so a group with no repository beneath it cannot carry one.
 
 ### `agents.skills`
 
@@ -998,7 +1034,8 @@ Each source is gated by its own `onlyWhen`; a repository export is active while 
 - Derived paths must not collide with declared tree paths, except that the jig skill joins a declared skills directory (see [The jig skill](#the-jig-skill)).
 - `harnesses` in `.jig/config.json`, when present, must contain known harness names only.
 - `plugins` sources must parse by the `$dir` rules; a local source must be a `dir`.
-- `agents` on a `$repo` or `$group` must use the exportable keys only (`skills`, `context`, `subagents`, `commands`), each with a safe relative path; a checkout source's `repo` reference must select exactly one repository, as for `link`.
+- `exports` on a `$repo` or `$group` must use the exportable keys only (`skills`, `context`, `subagents`, `commands`), each with a safe relative path; a checkout source's `repo` reference must select exactly one repository, as for `link`.
+- `agents` on a `$group` is validated as the top-level block is, and its implied condition must be satisfiable: a group with no repository beneath it cannot carry a block.
 
 ### Scope
 
