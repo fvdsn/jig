@@ -661,3 +661,40 @@ func TestDiffShowsWorkspaceWideChanges(t *testing.T) {
 	}
 	w.assertContains(out, "skipped:", "tools/other")
 }
+
+// A schema renamed upstream, jig.json to jig.yaml, is followed by update:
+// the new name is recorded in the config and the YAML schema is applied.
+func TestUpdateFollowsSchemaRename(t *testing.T) {
+	w := newWorld(t)
+	svc := w.newRemote("svc", map[string]string{"README.md": "svc\n"})
+	extra := w.newRemote("extra", map[string]string{"README.md": "extra\n"})
+	schemaRemote := w.newRemote("schema", map[string]string{"jig.json": fmt.Sprintf(`{
+  "version": 3,
+  "tree": {
+    "services/svc": { "$repo": { "id": "svc", "git": "%s" } }
+  }
+}`, svc)})
+	w.mustJig(w.root, "init", schemaRemote, "ws", "--clone")
+	ws := w.path("ws")
+
+	if err := os.Remove(w.path("remotes", "schema", "jig.json")); err != nil {
+		t.Fatal(err)
+	}
+	w.commitRemote(schemaRemote, map[string]string{"jig.yaml": fmt.Sprintf(`version: 4
+tree:
+  services/:
+    svc:
+      $repo: { id: svc, git: %s }
+    extra:
+      $repo: { id: extra, git: %s }
+`, svc, extra)}, "move to yaml")
+
+	out := w.mustJig(ws, "update")
+	w.assertContains(out, "schema file is now jig.yaml (recorded in .jig/config.json)")
+	config, err := os.ReadFile(w.path("ws", ".jig", "config.json"))
+	if err != nil || !strings.Contains(string(config), `"schema": "jig.yaml"`) {
+		t.Fatalf("config = %s %v", config, err)
+	}
+	w.assertContains(w.mustJig(ws, "list"), "services/extra")
+	w.assertContains(w.mustJig(ws, "sync"), "schema already up to date")
+}

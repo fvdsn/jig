@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `jig update` and `jig sync` decode an upstream YAML schema by its
+  name, and follow the schema file when it is renamed upstream
+  (`jig.json` to `jig.yaml`, say): the new name is recorded in
+  `.jig/config.json` and reported.
 - A `$group` may carry an `agents` block of its own, the same shape as
   the top-level block, active while a repository under the group is
   installed or active: the context, servers, hooks, and sources that

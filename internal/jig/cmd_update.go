@@ -1,7 +1,6 @@
 package jig
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -49,19 +48,35 @@ func updateSchema(ws *Workspace, out io.Writer) error {
 	if _, err := git(src, "fetch", "--quiet"); err != nil {
 		return err
 	}
-	data, err := git(src, "show", "@{upstream}:"+ws.Config.Schema)
+	schemaPath := ws.Config.Schema
+	data, err := git(src, "show", "@{upstream}:"+schemaPath)
 	if err != nil {
-		return fmt.Errorf("could not read upstream schema: %s", shortError(err))
+		// The schema file may have been renamed upstream (jig.json to
+		// jig.yaml, say): follow it to the first candidate name found.
+		moved := ""
+		for _, candidate := range schemaCandidates {
+			if candidate == schemaPath {
+				continue
+			}
+			if found, probe := git(src, "show", "@{upstream}:"+candidate); probe == nil {
+				moved, data = candidate, found
+				break
+			}
+		}
+		if moved == "" {
+			return fmt.Errorf("could not read upstream schema: %s", shortError(err))
+		}
+		schemaPath = moved
 	}
-	var incoming Definition
-	if err := json.Unmarshal([]byte(data), &incoming); err != nil {
+	incoming, err := decodeDefinition([]byte(data), schemaPath)
+	if err != nil {
 		return fmt.Errorf("invalid upstream schema: %s", err)
 	}
-	validation := validateDefinition(&incoming)
+	validation := validateDefinition(incoming)
 	if len(validation.Errors) > 0 {
 		return validation.asError("invalid upstream schema")
 	}
-	if _, err := flattenDefinition(&incoming, ws.Harnesses); err != nil {
+	if _, err := flattenDefinition(incoming, ws.Harnesses); err != nil {
 		return err
 	}
 
@@ -73,6 +88,13 @@ func updateSchema(ws *Workspace, out io.Writer) error {
 	}
 	if after, _ := git(src, "rev-parse", "HEAD"); strings.TrimSpace(after) == strings.TrimSpace(before) {
 		fmt.Fprintln(out, "schema already up to date")
+	}
+	if schemaPath != ws.Config.Schema {
+		ws.Config.Schema = schemaPath
+		if err := saveConfig(ws.Root, ws.Config); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "schema file is now %s (recorded in .jig/config.json)\n", schemaPath)
 	}
 
 	// Diff against the live schema file after the merge; it may carry

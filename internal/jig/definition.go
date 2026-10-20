@@ -273,7 +273,13 @@ func loadDefinition(path string) (*Definition, error) {
 	if err != nil {
 		return nil, err
 	}
+	return decodeDefinition(data, path)
+}
+
+// decodeDefinition parses schema content whose format follows the name.
+func decodeDefinition(data []byte, path string) (*Definition, error) {
 	fromYAML := isYAMLSchema(path)
+	var err error
 	if fromYAML {
 		if data, err = yamlToJSON(data); err != nil {
 			return nil, err

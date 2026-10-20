@@ -1326,6 +1326,8 @@ jig sync          updates the schema, then applies it to the installed checkouts
 
 `jig update` should not clone repositories, pull repositories, delete repositories, move directories, write files, or update Git remotes unless `--sync` is provided.
 
+The upstream schema is decoded by its file name, as any schema file is. When the configured schema file no longer exists upstream, `jig update` looks for the first of the usual names (`.jig.json`, `jig.json`, `schema.json`, `jig.yaml`, `jig.yml`) at the upstream root and follows the rename: the new name is recorded in `.jig/config.json` after the fast-forward and reported as `schema file is now jig.yaml (recorded in .jig/config.json)`. A team can therefore move its schema from JSON to YAML in one commit without every member editing their config.
+
 When reporting changes between the previous and updated definitions, Jig should use repository and file identities.
 
 ## Clone Cache
