@@ -67,8 +67,8 @@ func parseFrontmatterFields(fm *frontmatter, header string) {
 		}
 		key = strings.TrimSpace(key)
 		value = strings.TrimSpace(value)
-		switch {
-		case value == "|" || value == ">" || value == "|-" || value == ">-":
+		switch value {
+		case "|", ">", "|-", ">-":
 			var block []string
 			for i+1 < len(lines) && (strings.HasPrefix(lines[i+1], " ") || strings.HasPrefix(lines[i+1], "\t") || strings.TrimSpace(lines[i+1]) == "") {
 				i++
@@ -79,7 +79,7 @@ func parseFrontmatterFields(fm *frontmatter, header string) {
 				joiner = " "
 			}
 			value = strings.TrimRight(strings.Join(block, joiner), " \n")
-		case value == "":
+		case "":
 			var items []string
 			for i+1 < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[i+1]), "- ") {
 				i++

@@ -44,7 +44,8 @@ func renderCodexTable(name string, server MCPServer) string {
 
 func tomlKey(name string) string {
 	for _, r := range name {
-		if !(r == '_' || r == '-' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')) {
+		bare := r == '_' || r == '-' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+		if !bare {
 			return tomlString(name)
 		}
 	}

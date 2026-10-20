@@ -184,15 +184,6 @@ var agentsPrimitives = []agentsPrimitive{
 	},
 }
 
-// Canonical locations of the first two primitives, referenced by name
-// elsewhere.
-const (
-	agentsSkillsPath      = ".agents/skills"
-	agentsSkillsIdentity  = "agents-skills"
-	agentsContextPath     = "AGENTS.md"
-	agentsContextIdentity = "agents-context"
-)
-
 // sources are the primitive's inputs: what the plugins contribute first,
 // then the block's explicit list, so an explicit declaration wins on a
 // conflicting name.
