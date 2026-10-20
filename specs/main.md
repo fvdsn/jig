@@ -381,9 +381,15 @@ Condition inherited by all descendant repositories and files.
 
 Inherited `onlyWhen` conditions are additive. A descendant is active only when all inherited and local conditions match.
 
+### `$group.agents`
+
+Optional object.
+
+Repository exports declared once for every descendant repository: each key is a primitive of the [agents block](#agent-context) (`skills`, `context`, `subagents`, `commands`) and its value a safe path inside a checkout. A descendant repository whose checkout has that path offers it; one without it offers nothing. Inherited per key, nearest ancestor wins, so a repository can override one key and keep the rest. See [Repository exports](#repository-exports).
+
 ## Group Inheritance
 
-When flattening the tree:
+When flattening the tree: `agents` is inherited per key: a repository takes each export key from its nearest ancestor that sets it, unless it sets that key itself.
 
 - `description` is inherited by descendant repositories and files when they do not define one locally. The nearest value wins.
 - `web` is inherited by descendant repositories when they do not define one locally. The nearest value wins.
@@ -501,6 +507,12 @@ If inherited `onlyWhen` conditions are present, all inherited conditions and the
 
 See [Conditional Nodes](#conditional-nodes).
 
+### `$repo.agents`
+
+Optional object.
+
+What this repository exports to the workspace's agent context: each key is a primitive of the [agents block](#agent-context) (`skills`, `context`, `subagents`, `commands`) and its value a safe path inside the checkout, `"agents": { "skills": ".agents/skills" }` for a repository that ships the skill of the tool it builds. Keys inherit from groups per key (see `$group.agents`). See [Repository exports](#repository-exports).
+
 ## File Nodes
 
 File nodes are declared with `$file`.
@@ -570,6 +582,7 @@ Parsing rules:
 
 - All active sources are resolved before the file is written; parts are joined in list order.
 - A list entry may instead be a local source `{"file": "<path>"}` (`{"dir": "<path>"}` for `$dir`): a file or directory on the machine, with the path rooted at `~/` (the user's home) or `/`. Content hashes stand in for git blob and tree ids, so local edits flow into the generated artifact on the next sync. Exactly one of `src` and the local form is required per source.
+- A list entry may instead be a checkout source `{"repo": {"id": ...}, "path": "<path>"}` (or `{"path": ...}` for the repository, exact, as for any single-target reference): a file or directory read from that repository's local checkout, at the given safe path inside it, working tree included, so an edit in the checkout flows into the artifact on the next sync before it is pushed. Content hashes stand in for git ids as for local sources. The source is active only while the repository is installed; a missing path in the checkout gates it off silently, like an absent optional source. This is the primitive behind [repository exports](#repository-exports).
 - Any source may declare `"optional": true`: an optional source that fails to resolve (typically a local path absent on this machine) is gated off exactly as if its `onlyWhen` did not match — the artifact converges without it, silently — instead of the degraded unavailable handling. This makes per-user extension points possible: a schema can list `{"file": "~/.codabox/MY-AGENTS.md", "optional": true}` and every machine composes its own content in, or leaves it out.
 - A source that fails to resolve (unreachable repository, file missing upstream) is excluded from that run and reported on the status line, mirroring `$dir`. A file not yet written is generated from the available parts; an already-written untouched file is left as is while any source is unavailable, since regenerating without the missing part would drop that source's content — the full rewrite happens once every source resolves. When no source resolves, an existing file is left untouched and reported present; a file never written is an error. A malformed source spec is always an error.
 - A newline is inserted between two parts when the earlier one does not end with one, so text sections never run together. Multi-source files are therefore intended for text content.
@@ -723,7 +736,7 @@ Fields: `id` (optional identity, defaults to the path), `src` (required, `<repo-
 State records the source tree id and a manifest mapping each written file to its content hash. Rules:
 
 - The subtree is extracted from the source repository's cache mirror without a checkout.
-- A source may be a local directory `{"dir": "~/path"}` or carry `"optional": true`, with the same semantics as for `$file` sources: local content digests replace tree ids, and an absent optional source is gated off silently.
+- A source may be a local directory `{"dir": "~/path"}` or carry `"optional": true`, with the same semantics as for `$file` sources: local content digests replace tree ids, and an absent optional source is gated off silently. A source may be a checkout source `{"repo": {"id": ...}, "path": "<path>"}`, a directory inside a repository's local checkout, with the rules given for `$file.src`.
 - With multiple sources, trees are merged in order into the same directory; when two sources provide the same file path, the last source wins and the shadowed file is reported, so a source list reads as base layers first and overrides after. All active sources are resolved before any file is written.
 - A source that fails to resolve (unreachable repository, subtree missing upstream) is excluded from that run's merge and reported on the status line; the remaining sources still materialize. While any source is unavailable nothing is deleted, and files that vanished from the merge stay tracked so they update normally once the source resolves again. When no source resolves, an already-written directory is left untouched and reported present; a directory that was never written is an error. A malformed source spec is always an error.
 - A list entry may be an object `{"src": ..., "onlyWhen": ...}`; the per-source condition gates just that source's tree within the merge, evaluated against active and installed repositories. Files of a source whose condition stops matching are removed on the next sync when untouched.
@@ -827,6 +840,33 @@ When the config has no `harnesses` field, jig detects the harnesses from the mac
 ### Sources
 
 `skills`, `context`, `instructions`, `subagents`, and `commands` are lists of sources in exactly the grammar of `$file.src` and `$dir.src`: a string `<repo-url>#<path>` (or a forge web URL), or an object with `src`, or a local `file` / `dir`, plus `optional` and `onlyWhen`. Per-source `onlyWhen` gates that source within its primitive, evaluated against active and installed repositories as everywhere. There is nothing new to learn about resolution, caching, availability handling, or local sources; they are the `$file` and `$dir` rules.
+
+### Repository exports
+
+A repository often ships the agent context of the tool it builds beside the code, `.agents/skills/<name>/SKILL.md` for the skill that explains it, maintained with the same lifecycle; but harnesses discover skills at the workspace root, so a repository-local skills directory is invisible to them. Repository exports lift such content into the block: `agents` on a `$repo`, or on a `$group` for every descendant, names a path inside the checkout per primitive (`skills`, `context`, `subagents`, `commands`), and that path joins the primitive's sources as a [checkout source](#filesrc) of that repository.
+
+```json
+{
+  "tree": {
+    "$group": { "agents": { "skills": ".agents/skills" } },
+    "tools/bimbam": {
+      "$repo": {
+        "id": "bimbam",
+        "git": "git@github.com:org/bimbam.git",
+        "agents": { "skills": "skills", "context": "AGENTS.md" }
+      }
+    }
+  }
+}
+```
+
+Rules:
+
+- An export is active while its repository is installed and the path exists in the checkout; installing the repository is the only decision, there is no second step. A repository without the path offers nothing, so a group-level convention costs nothing for repositories that do not follow it. Removing the repository gates the export off and its untouched files leave the merge on the next sync, as for any source.
+- Content is read from the checkout's working tree, so an edit to a skill flows to the harness directories on the next sync before it is pushed, and a feature branch that changes a tool and its skill together is seen as such. The copies at the root are never the thing to edit: a local edit there is kept and reported, as for any derived file.
+- The primitive's sources are, in order: [the jig skill](#the-jig-skill), the plugins', the repository exports in tree order, then the block's own list, so an explicit declaration wins on a name and two repositories exporting the same skill name are reported as shadowed like any merge. Skills exports are skill packs, so a repository namespaces its skills by directory name; a context export is one more section of the root context file, in tree order.
+- The agents block itself may be absent: exports alone derive the primitive's entries, as the jig skill does.
+- `instructions` is not exportable yet: a repository's rule globs are relative to the repository, and prefixing them with its workspace path is a separate decision.
 
 ### `agents.skills`
 
@@ -942,7 +982,7 @@ Plugins have no row: a plugin's store at `.agents/plugins/` is read only through
 
 ### Activation
 
-Each source is gated by its own `onlyWhen`. The canonical entry of a primitive is active when any of its sources is active, and otherwise follows [File And Dir Activation](#file-and-dir-activation) with the workspace root as scope: a workspace with any repository installed gets its skills and context. Aliases follow the canonical entry. An MCP server or hook is active when its `onlyWhen` matches, or always when it has none.
+Each source is gated by its own `onlyWhen`; a repository export is active while its repository is installed and its path exists in the checkout. The canonical entry of a primitive is active when any of its sources is active, and otherwise follows [File And Dir Activation](#file-and-dir-activation) with the workspace root as scope: a workspace with any repository installed gets its skills and context. Aliases follow the canonical entry. An MCP server or hook is active when its `onlyWhen` matches, or always when it has none.
 
 ### Validation
 
@@ -953,6 +993,7 @@ Each source is gated by its own `onlyWhen`. The canonical entry of a primitive i
 - Derived paths must not collide with declared tree paths, except that the jig skill joins a declared skills directory (see [The jig skill](#the-jig-skill)).
 - `harnesses` in `.jig/config.json`, when present, must contain known harness names only.
 - `plugins` sources must parse by the `$dir` rules; a local source must be a `dir`.
+- `agents` on a `$repo` or `$group` must use the exportable keys only (`skills`, `context`, `subagents`, `commands`), each with a safe relative path; a checkout source's `repo` reference must select exactly one repository, as for `link`.
 
 ### Scope
 
