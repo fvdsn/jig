@@ -24,8 +24,9 @@ type materializer struct {
 	model     *Model
 	state     *State
 	fetcher   *fileFetcher
-	evidence  map[string]bool // repository evidence per-source conditions are judged against
-	allowMove bool            // sync: written entries follow schema moves; clone refuses them
+	evidence  map[string]bool             // repository evidence per-source conditions are judged against
+	allowMove bool                        // sync: written entries follow schema moves; clone refuses them
+	plugins   map[string]pluginResolution // plugin sources resolved this run, by source and subdirectory
 }
 
 func newMaterializer(out io.Writer, root string, model *Model, state *State, fetcher *fileFetcher, activeRepos map[string]bool, installedRepos map[string]bool, allowMove bool) *materializer {

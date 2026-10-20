@@ -193,7 +193,7 @@ func (m *materializer) ensureDir(dirPath string) error {
 	// layers first and overrides after. Materializing in reverse order makes
 	// the first-claim rule award a conflict to the last listed source.
 	for i := len(sources) - 1; i >= 0; i-- {
-		merger.prefix, merger.rewrite = sources[i].prefix, sources[i].rewrite
+		merger.prefix, merger.rewrite, merger.routes = sources[i].prefix, sources[i].rewrite, sources[i].routes
 		var err error
 		switch {
 		case sources[i].name != "":
@@ -201,7 +201,7 @@ func (m *materializer) ensureDir(dirPath string) error {
 		case sources[i].local != "":
 			err = materializeLocalTree(sources[i].local, merger)
 		default:
-			err = materializeTree(sources[i].mirror, sources[i].tree, merger)
+			err = materializeTree(sources[i].mirror, sources[i].tree, merger, sources[i].pathspecs...)
 		}
 		if err != nil {
 			return err
@@ -253,21 +253,48 @@ func (m *materializer) ensureDir(dirPath string) error {
 // local directory (its content digest standing in for a tree id), or a
 // single file (items dirs only) carrying its content.
 type dirSource struct {
-	mirror  string
-	tree    string
-	local   string         // local directory source; mirror is empty
-	prefix  string         // directory the source's files land under; "" for the root
-	name    string         // single-file source: the file's basename
-	file    []byte         // single-file source: its content
-	rewrite *pluginRewrite // plugin subtree: how to rewrite its links into the store
+	mirror    string
+	tree      string
+	local     string         // local directory source; mirror is empty
+	prefix    string         // directory the source's files land under; "" for the root
+	name      string         // single-file source: the file's basename
+	file      []byte         // single-file source: its content
+	rewrite   *pluginRewrite // plugin subtree: how to rewrite its links into the store
+	routes    []pluginRoute  // plugin source: which files to take and how, by prefix
+	pathspecs []string       // plugin source: the subtrees to archive
 }
 
-// resolvePluginSource expands a plugin or marketplace source into the
-// subtrees (skills/, agents/, or commands/) of each plugin it holds, each
-// with the context to rewrite its links into the store. It returns the
-// state key of the source, the tree id covering all of it, and the names
-// of marketplace entries skipped because they are not paths.
+// pluginRoute maps a path prefix inside a plugin source's tree
+// ("alpha/skills/") to the plugin whose files it holds, so one archive of
+// the whole source can be routed file by file.
+type pluginRoute struct {
+	prefix  string
+	rewrite *pluginRewrite
+}
+
+// pluginResolution is what resolving a plugin source for one primitive
+// yields, memoized for the run so the copies of a primitive (the Claude
+// skills next to the canonical ones) do not ask git again.
+type pluginResolution struct {
+	source  dirSource
+	key     string
+	id      string
+	skipped []string
+}
+
+// resolvePluginSource expands a plugin or marketplace source into one
+// dirSource covering the subtrees (skills/, agents/, or commands/) of
+// every plugin it holds, routed by prefix to each plugin's link-rewriting
+// context. The whole source costs three git calls: the manifest, one
+// listing of every file, and later one archive with the subtrees as
+// pathspecs. It returns the state key of the source, the tree id covering
+// all of it, and the names of marketplace entries skipped because they
+// are not paths or do not exist.
 func (m *materializer) resolvePluginSource(source SrcEntry) ([]dirSource, string, string, []string, error) {
+	cacheKey := source.describe() + "\x00" + source.plugin
+	if cached, ok := m.plugins[cacheKey]; ok {
+		return []dirSource{cached.source}, cached.key, cached.id, cached.skipped, nil
+	}
 	var root pluginTree
 	var base, key, id string
 	if source.Dir != "" {
@@ -293,45 +320,70 @@ func (m *materializer) resolvePluginSource(source SrcEntry) ([]dirSource, string
 		if err != nil {
 			return nil, "", "", nil, definitionError{err}
 		}
-		whole := pluginTree{mirror: mirror}
-		if out, err := git(mirror, "rev-parse", "HEAD^{tree}"); err == nil {
-			whole.tree = strings.TrimSpace(out)
-		} else {
-			return nil, "", "", nil, err
+		ref := "HEAD^{tree}"
+		if srcPath != "" {
+			ref = "HEAD:" + srcPath
 		}
-		sub, ok := whole.subtree(srcPath)
-		if !ok {
-			return nil, "", "", nil, fmt.Errorf("%s is not a directory in the source repository", srcPath)
+		out, err := git(mirror, "rev-parse", ref)
+		if err != nil {
+			return nil, "", "", nil, fmt.Errorf("subtree not found: %s", shortError(err))
 		}
-		root, base, key, id = sub, sourceBaseName(parsed, srcPath), source.Src, sub.tree
+		root, base, key, id = pluginTree{mirror: mirror, tree: strings.TrimSpace(out)}, sourceBaseName(parsed, srcPath), source.Src, strings.TrimSpace(out)
 	}
 	plugins, skipped, err := root.manifest()
 	if err != nil {
 		return nil, "", "", nil, err
 	}
-	var list []dirSource
+	all, err := root.files()
+	if err != nil {
+		return nil, "", "", nil, err
+	}
+	var routes []pluginRoute
+	var pathspecs []string
 	for _, rel := range plugins {
-		pluginRoot, ok := root.subtree(rel)
-		if !ok {
+		pluginPrefix := ""
+		if rel != "" {
+			pluginPrefix = rel + "/"
+		}
+		files := map[string]bool{}
+		for file := range all {
+			if inner, ok := strings.CutPrefix(file, pluginPrefix); ok {
+				files[inner] = true
+			}
+		}
+		if len(files) == 0 {
 			skipped = append(skipped, rel)
 			continue
 		}
-		sub, ok := pluginRoot.subtree(source.plugin)
-		if !ok {
+		subdirPrefix := source.plugin + "/"
+		hasSubdir := false
+		for file := range files {
+			if strings.HasPrefix(file, subdirPrefix) {
+				hasSubdir = true
+				break
+			}
+		}
+		if !hasSubdir {
 			continue
 		}
-		files, err := pluginRoot.files()
-		if err != nil {
-			return nil, "", "", nil, err
-		}
-		rewrite := &pluginRewrite{storePath: path.Join(agentsPluginsPath, base, rel), files: files, subdir: source.plugin}
-		if sub.local != "" {
-			list = append(list, dirSource{local: sub.local, tree: id, rewrite: rewrite})
-		} else {
-			list = append(list, dirSource{mirror: sub.mirror, tree: sub.tree, rewrite: rewrite})
-		}
+		routes = append(routes, pluginRoute{
+			prefix:  pluginPrefix + subdirPrefix,
+			rewrite: &pluginRewrite{storePath: path.Join(agentsPluginsPath, base, rel), files: files, subdir: source.plugin},
+		})
+		pathspecs = append(pathspecs, pluginPrefix+source.plugin)
 	}
-	return list, key, id, skipped, nil
+	resolution := pluginResolution{key: key, id: id, skipped: skipped}
+	if len(routes) > 0 {
+		resolution.source = dirSource{mirror: root.mirror, tree: root.tree, local: root.local, routes: routes, pathspecs: pathspecs}
+	}
+	if m.plugins == nil {
+		m.plugins = map[string]pluginResolution{}
+	}
+	m.plugins[cacheKey] = resolution
+	if len(routes) == 0 {
+		return nil, key, id, skipped, nil
+	}
+	return []dirSource{resolution.source}, key, id, skipped, nil
 }
 
 // skillFile marks a directory as one skill. A skills-layout source whose
@@ -422,6 +474,7 @@ type dirMerger struct {
 	prefix      string
 	transform   string
 	rewrite     *pluginRewrite // set while a plugin subtree is being merged
+	routes      []pluginRoute  // plugin source: files are routed by prefix, others skipped
 	entryPath   string         // workspace path of the dir, for link rewriting
 	dirAbs      string
 	oldManifest map[string]string
@@ -430,6 +483,18 @@ type dirMerger struct {
 }
 
 func (g *dirMerger) add(rel string, content []byte, mode os.FileMode) error {
+	if g.routes != nil {
+		routed := false
+		for _, route := range g.routes {
+			if inner, ok := strings.CutPrefix(rel, route.prefix); ok {
+				rel, g.rewrite, routed = inner, route.rewrite, true
+				break
+			}
+		}
+		if !routed {
+			return nil
+		}
+	}
 	if g.rewrite != nil {
 		content = g.rewrite.rewriteLinks(rel, content, path.Dir(g.entryPath+"/"+g.prefix+rel))
 	}
@@ -445,8 +510,8 @@ func (g *dirMerger) add(rel string, content []byte, mode os.FileMode) error {
 // the last listed source claims a conflicted path first); files matching
 // the old manifest (untouched) are overwritten; locally modified files are
 // kept and counted.
-func materializeTree(mirror string, treeOID string, merger *dirMerger) error {
-	cmd := exec.Command("git", "archive", treeOID)
+func materializeTree(mirror string, treeOID string, merger *dirMerger, pathspecs ...string) error {
+	cmd := exec.Command("git", append([]string{"archive", treeOID}, pathspecs...)...)
 	cmd.Dir = mirror
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

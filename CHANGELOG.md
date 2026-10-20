@@ -11,6 +11,10 @@
 - A primitive whose sources resolve but contribute nothing (plugins
   without a commands directory, say) is reported inactive instead of
   failing.
+- A plugin source is resolved with one listing and one archive of the
+  whole repository per run, instead of several git calls per plugin
+  per entry: cloning a 25-plugin marketplace dropped from 7 to 2.5
+  seconds on a warm cache.
 
 ## v4.2.0 — 2026-10-20
 

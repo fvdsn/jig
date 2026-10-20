@@ -65,30 +65,6 @@ func (t pluginTree) readFile(rel string) ([]byte, bool) {
 	return []byte(out), true
 }
 
-// subtree reports whether rel is a directory of the source and returns
-// its tree id (git) or absolute path (local) as a child pluginTree.
-func (t pluginTree) subtree(rel string) (pluginTree, bool) {
-	if rel == "" {
-		return t, true
-	}
-	if t.local != "" {
-		abs := filepath.Join(t.local, filepath.FromSlash(rel))
-		if info, err := os.Stat(abs); err == nil && info.IsDir() {
-			return pluginTree{local: abs}, true
-		}
-		return pluginTree{}, false
-	}
-	out, err := git(t.mirror, "rev-parse", t.tree+":"+rel)
-	if err != nil {
-		return pluginTree{}, false
-	}
-	oid := strings.TrimSpace(out)
-	if objType, err := git(t.mirror, "cat-file", "-t", oid); err != nil || strings.TrimSpace(objType) != "tree" {
-		return pluginTree{}, false
-	}
-	return pluginTree{mirror: t.mirror, tree: oid}, true
-}
-
 // files lists every regular file under the source, relative to its root.
 func (t pluginTree) files() (map[string]bool, error) {
 	files := map[string]bool{}
