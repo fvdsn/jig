@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v4.1.0 — 2026-10-20
 
 - The `agents` block gains `subagents` and `commands`: source lists
   whose entries are directories of markdown files or single files
