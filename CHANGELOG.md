@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v4.7.0 — 2026-10-20
 
 - Repository exports: `agents` on a `$repo`, or on a `$group` for every
   repository beneath it, names a path inside the checkout per agents
