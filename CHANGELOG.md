@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v4.0.0 — 2026-10-20
 
 - Schema version 4 adds the top-level `agents` block: `skills` and
   `context` source lists declare the workspace's agent context once,
