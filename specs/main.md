@@ -77,11 +77,15 @@ Required integer.
 
 Identifies the schema version used by the definition file.
 
-Current version: `3`. Version 3 added local sources and `optional` source entries; declaring it is required to use them, so older jigs refuse the schema with a clear upgrade-jig error. Version 2 (structured references) schemas remain valid; version 1 schemas are refused with an error pointing at the reference format change.
+Current version: `3`. Version 4 (planned) adds the top-level `agents` block (see [Agent Context](#agent-context)); declaring it will be required to use the block. Version 3 added local sources and `optional` source entries; declaring it is required to use them, so older jigs refuse the schema with a clear upgrade-jig error. Version 2 (structured references) schemas remain valid; version 1 schemas are refused with an error pointing at the reference format change.
 
 ### `source`
 
 Deprecated and ignored. The schema's remote is the `origin` of the `.jig/source/` checkout, and the tracked branch is whatever the checkout is on, exactly as with any Git clone. Older schemas that still carry a `source` object continue to parse.
+
+### `agents`
+
+Optional object, version 4. Declares the agent context of the workspace (skills, root context, instructions, subagents, commands, MCP servers, hooks) once, at a level that names no harness path; jig materializes it for each supported harness. See [Agent Context](#agent-context).
 
 ### `tree`
 
@@ -676,6 +680,156 @@ State records the source tree id and a manifest mapping each written file to its
 - Files the user adds inside the directory are never touched or deleted.
 - `jig rm` deletes only manifest-tracked files, refusing when any is locally modified unless forced.
 - Status reports one line per directory entry with aggregated modified/missing counts.
+
+## Agent Context
+
+Coding agents read their context from harness-specific places: skills from `.agents/skills` or `.claude/skills`, root instructions from `AGENTS.md` or `CLAUDE.md`, subagents, commands, MCP servers, and hooks from a directory or configuration file per harness. All of it can be expressed with `$file` and `$dir` entries at those paths, and the engine stays that. The `agents` block is the higher-level declaration: it names what the workspace provides, never where a harness reads it, and jig expands it into the generic entries at load time. Schema authors who only want to add a skill pack never meet a harness path.
+
+```json
+{
+  "version": 4,
+  "agents": {
+    "harnesses": ["claude", "codex", "opencode", "copilot"],
+
+    "skills": [
+      "https://github.com/fvdsn/jig/tree/master/.agents/skills",
+      "git@github.com:anthropics/skills.git#skills/frontend-design",
+      {
+        "src": "git@github.com:org/meta.git#skills/api-agent-skills",
+        "onlyWhen": { "tags": ["api"], "reason": "API guidelines matter once an api repo is installed." }
+      },
+      { "dir": "~/.config/org/skills", "optional": true }
+    ],
+
+    "context": [
+      "git@github.com:org/meta.git#context/workspace.md",
+      {
+        "src": "git@github.com:org/meta.git#context/billing.md",
+        "onlyWhen": { "path": "billing/*" }
+      },
+      { "file": "~/.config/org/AGENTS.md", "optional": true }
+    ],
+
+    "instructions": [
+      "git@github.com:org/meta.git#instructions"
+    ],
+
+    "subagents": [
+      { "src": "git@github.com:org/meta.git#agents/api-architect.md", "onlyWhen": { "tags": ["api"] } }
+    ],
+
+    "commands": [
+      "git@github.com:org/meta.git#commands"
+    ],
+
+    "mcp": {
+      "github": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-github"],
+        "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" }
+      },
+      "billing-api": {
+        "url": "https://mcp.example.com/sse",
+        "onlyWhen": { "path": "billing/*" }
+      }
+    },
+
+    "hooks": [
+      {
+        "event": "afterToolUse",
+        "matcher": "Edit|Write",
+        "command": "jig fmt",
+        "onlyWhen": { "tags": ["product:flowin"] }
+      }
+    ]
+  },
+  "tree": {}
+}
+```
+
+### Expansion
+
+The block is pure expansion: at load time it becomes tree entries at the harness paths listed in the [materialization matrix](#materialization-matrix), and those entries then behave exactly like declared `$file` and `$dir` entries. `jig list` and `jig status` show them, `jig sync` converges them, `jig rm` removes them, state tracks them, and the safety rules (never overwrite a locally modified file, never touch a user-added file) apply unchanged. The expansion is deterministic and depends only on the block and the harness list, so two machines with the same schema derive the same entries.
+
+Rules:
+
+- A derived entry whose path is also declared in `tree` is a validation error: the explicit form and the block cannot both own a path. A schema may use both forms for different paths, which is how an existing schema migrates one primitive at a time.
+- Derived entries carry no `tags` or `meta` and are not archived. Their identities are fixed names (`agents-skills`, `agents-context`, …, suffixed by harness for per-harness entries), so they can be targeted by `--id` and by `link` references from the tree.
+- One canonical entry is materialized per primitive, and each harness that needs a different location gets an alias: a link dir, a copy dir where the harness is known not to follow symlinks, or a link file. Aliases follow their target's activation, as `$dir.link` and `$file.link` do.
+
+### `agents.harnesses`
+
+Optional list of harness names. Known names: `claude`, `codex`, `copilot`, `cursor`, `opencode`, `gemini`, `windsurf`, `kiro`. An unknown name is a validation error. When omitted, every known harness is targeted; aliases are cheap, and a workspace typically serves several harnesses at once. The list only limits which per-harness aliases and files are derived; the canonical entries are always derived.
+
+### Sources
+
+`skills`, `context`, `instructions`, `subagents`, and `commands` are lists of sources in exactly the grammar of `$file.src` and `$dir.src`: a string `<repo-url>#<path>` (or a forge web URL), or an object with `src`, or a local `file` / `dir`, plus `optional` and `onlyWhen`. Per-source `onlyWhen` gates that source within its primitive, evaluated against active and installed repositories as everywhere. There is nothing new to learn about resolution, caching, availability handling, or local sources; they are the `$file` and `$dir` rules.
+
+### `agents.skills`
+
+A list of sources, merged in order into the canonical skills directory with `$dir` multi-source semantics (last source wins on a conflicting path, shadowed files reported).
+
+A source is a skill pack: a directory whose children are `<name>/SKILL.md` skill directories. A source whose root itself contains a `SKILL.md` is a single skill and lands under its own directory name (the last path segment of the source), which is how every harness identifies a skill. This is the one content-dependent rule in the block.
+
+### `agents.context`
+
+A list of sources concatenated in order into the canonical root context file, with `$file` multi-source semantics (newline between parts, partial regeneration rules, removal when every source is gated off). The harness root files are links to it.
+
+### `agents.instructions`
+
+A list of sources, each a directory of per-topic markdown rule files, merged like skills into a canonical rules directory. Harnesses that read per-file rules get them as files, transformed where the harness requires a naming or frontmatter convention (see the matrix). Harnesses that do not read per-file rules get them folded into their root context file, appended after the `context` sources under a heading per rule, so no instruction is silently lost; the root context file of a harness that does read per-file rules omits them, so context is not duplicated.
+
+### `agents.subagents` and `agents.commands`
+
+Lists of sources, each a single markdown file or a directory of them, merged into a canonical directory per primitive. A subagent or command is a markdown file with frontmatter in the common (Claude Code / Copilot) form. A harness whose format differs (Codex subagents and Gemini commands are TOML) is unsupported for that primitive until the transform exists, and the matrix says so; jig reports the skipped harness once per sync rather than deriving nothing silently.
+
+### `agents.mcp`
+
+A map from server name to a server definition in the MCP standard shape: `command`, `args`, `env` for a local server, or `url` and `headers` for a remote one, plus `onlyWhen`. Values are written verbatim, including `${VAR}` references, which each harness expands itself; jig never resolves secrets.
+
+MCP servers are configuration, not files: each harness reads them from a JSON document that users also edit by hand. The block therefore uses a managed-keys entry rather than a `$file`: jig owns the named keys it wrote inside the document and nothing else. Rules:
+
+- State records, per document, the keys jig wrote and a hash of each value, as a `$dir` manifest records files.
+- Sync upserts jig's keys, removes keys whose server was gated off or deleted from the schema, and leaves every other key untouched. A document that does not exist is created; one that is empty after jig's last key is removed is deleted only if jig created it.
+- A key jig wants to write that already exists with a different value and is not recorded in state is a conflict: the user's value is kept and the conflict reported, mirroring a locally modified file.
+- A key recorded in state whose value the user changed is kept and reported as modified; `jig rm` refuses to remove it unless forced.
+- The document is rewritten with its existing formatting preserved where the JSON library allows, and with stable key order where it does not.
+
+### `agents.hooks`
+
+A list of hook objects: `event`, an optional `matcher`, `command`, and `onlyWhen`. Events use a harness-neutral vocabulary that jig maps onto each harness's own: `sessionStart`, `beforeToolUse`, `afterToolUse`, `beforePrompt`, `stop`. A harness with no equivalent for an event is reported as skipped for that hook, never silently dropped. Hooks are written with the managed-keys rules of `agents.mcp`, since several harnesses keep them inside a settings document shared with unrelated user settings.
+
+### Materialization matrix
+
+The canonical locations follow the convergence of the harnesses on `.agents/skills` and `AGENTS.md`; per-harness deviations are aliases. The table is jig's harness knowledge in full, and it is expected to shrink as harnesses converge.
+
+| Primitive | Canonical | `claude` | `codex` | `copilot` | `cursor` | `opencode` | `gemini` | `windsurf` | `kiro` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| skills | `.agents/skills/` | `.claude/skills/` (copy) | canonical | canonical | canonical | canonical | canonical | canonical | `.kiro/skills/` (copy) |
+| context | `AGENTS.md` | `CLAUDE.md` (link) | canonical | `.github/copilot-instructions.md` (link) | canonical | canonical | `GEMINI.md` (link) | canonical | canonical |
+| instructions | `.agents/rules/` | `.claude/rules/` | folded into context | `.github/instructions/*.instructions.md` (+ `applyTo`) | `.cursor/rules/*.mdc` | folded into context | folded into context | `.windsurf/rules/` | `.kiro/steering/` |
+| subagents | `.agents/agents/` | `.claude/agents/` | unsupported (TOML) | `.github/agents/*.agent.md` | `.cursor/agents/` | `.opencode/agents/` | not read | not read | `.kiro/agents/` |
+| commands | `.agents/commands/` | `.claude/commands/` | not read | not read | `.cursor/commands/` | `.opencode/commands/` | unsupported (TOML) | `.windsurf/workflows/` | not read |
+| mcp | — | `.mcp.json` | `.codex/config.toml` (unsupported until TOML) | `.vscode/mcp.json` | `.cursor/mcp.json` | `opencode.json` | `.gemini/settings.json` | not read | `.kiro/settings/mcp.json` |
+| hooks | — | `.claude/settings.json` | `.codex/hooks.json` | `.github/hooks/<name>.json` | `.cursor/hooks.json` | not read | `.gemini/settings.json` | `.windsurf/hooks.json` | `.kiro/hooks/` |
+
+"canonical" means the harness reads the canonical location and no alias is derived. "not read" means the harness has no such primitive and nothing is derived. "unsupported" means the harness has the primitive in a format jig does not transform yet; the harness is reported as skipped for that primitive. The `.claude/skills` alias is a copy rather than a link because Claude Code's symlink handling has regressed repeatedly; the other aliases are links. The matrix is maintained against the harnesses' documentation and against [APM](https://github.com/microsoft/apm)'s target catalog, which serves as the reference for per-harness paths, naming conventions, and hook events.
+
+### Activation
+
+Each source is gated by its own `onlyWhen`. The canonical entry of a primitive is active when any of its sources is active, and otherwise follows [File And Dir Activation](#file-and-dir-activation) with the workspace root as scope: a workspace with any repository installed gets its skills and context. Aliases follow the canonical entry. An MCP server or hook is active when its `onlyWhen` matches, or always when it has none.
+
+### Validation
+
+- `agents` requires `version` 4 or later.
+- Every source must parse by the `$file` / `$dir` rules; every `onlyWhen` must be satisfiable, as for conditional nodes.
+- `mcp` keys must be valid server names (`[A-Za-z0-9_.-]+`); a definition must have exactly one of `command` and `url`.
+- `hooks` events must be in the neutral vocabulary.
+- Derived paths must not collide with declared tree paths.
+
+### Scope
+
+The block covers the workspace-wide primitives that follow the installed repositories, which is what a multi-repository workspace needs and what a per-repository tool cannot express. It deliberately does not cover package resolution with lockfiles, content policy, marketplaces, or plugin bundles; those are the business of per-repository agent package managers, and a repository that carries its own `apm.yml` or plugin configuration works inside a jig workspace unchanged.
 
 ## Dependency Fields
 
