@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v4.4.0 — 2026-10-20
 
 - The `agents` block gains `mcp`: MCP servers declared once in the
   standard shape and written into each harness's own configuration
