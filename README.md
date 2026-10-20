@@ -150,11 +150,16 @@ Coding agents read skills and root instructions from harness-specific places: `.
       "git@github.com:acme/meta.git#agents",
       { "src": "git@github.com:acme/meta.git#agents/api-architect.md", "onlyWhen": { "tags": ["api"] } }
     ],
-    "commands": ["git@github.com:acme/meta.git#commands"]
+    "commands": ["git@github.com:acme/meta.git#commands"],
+    "plugins": [
+      { "src": "git@github.com:acme/pdlc-plugins.git", "onlyWhen": { "tags": ["pdlc"] } }
+    ]
   },
   "tree": {}
 }
 ```
+
+`plugins` sources are plugins in the Claude Code plugin layout, or marketplaces of them: each plugin is kept whole under `.agents/plugins/`, and its skills, agents, and commands feed the lists above as if declared there, with the links from a skill or agent to the plugin's shared `references/` rewritten so they resolve from wherever the harness reads them. One line installs an organization's whole plugin library for every harness, Copilot and Codex included.
 
 `instructions` sources are directories of rule files, markdown with a `description` and a `paths` glob list in the frontmatter, written under each harness's own frontmatter (`.claude/rules`, `.cursor/rules/*.mdc`, `.github/instructions`, `.windsurf/rules`, `.kiro/steering`) and folded into the root context file of the harnesses without per-file rules (Codex, OpenCode, Gemini). `subagents` and `commands` sources are directories of markdown files or single files, landing under their own names in each harness's directory (`.claude/agents`, `.cursor/commands`, ...), converted where the harness wants its own format: Codex subagents and Gemini commands become TOML, Copilot subagents get the `.agent.md` suffix. `skills` sources are skill packs (directories of `<name>/SKILL.md`) or single skills (a directory whose root is a `SKILL.md`, landing under its own name), merged into `.agents/skills` with the `$dir` rules: last wins on conflicts, `onlyWhen` gates per source, local sources extend the set per user. `context` sources are concatenated into `AGENTS.md` with the `$file` rules. Jig itself ships a skill at `.agents/skills/jig/SKILL.md` that teaches agents how to drive it; the first source above pulls it in, and a bare `jig init` starts from exactly that.
 

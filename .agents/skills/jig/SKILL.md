@@ -424,7 +424,11 @@ Skills and root instructions for coding agents are better declared once in the t
       "git@github.com:acme/meta.git#agents",
       { "src": "git@github.com:acme/meta.git#agents/api-architect.md", "onlyWhen": { "tags": ["api"] } }
     ],
-    "commands": ["git@github.com:acme/meta.git#commands", { "file": "~/.config/acme/deploy.md", "optional": true }]
+    "commands": ["git@github.com:acme/meta.git#commands", { "file": "~/.config/acme/deploy.md", "optional": true }],
+    "plugins": [
+      { "src": "git@github.com:acme/pdlc-plugins.git", "onlyWhen": { "tags": ["pdlc"] } },
+      "git@github.com:acme/pdlc-plugins.git#delivery/review-code"
+    ]
   },
   "tree": {}
 }
@@ -439,6 +443,7 @@ Rules:
 - Jig derives one entry per location a harness in use reads. Codex, Copilot, Cursor, OpenCode, and Windsurf read the canonical `.agents/skills` (identity `agents-skills`) and `AGENTS.md` (identity `agents-context`); Claude and Kiro read `.claude/skills` and `.kiro/skills`, Claude, Gemini, and Copilot read `CLAUDE.md`, `GEMINI.md`, and `.github/copilot-instructions.md` (identities `agents-skills-claude`, `agents-context-claude`, ...). When a canonical entry is derived, the harness paths are copies (skills) or links (context) of it; on a machine whose harnesses read only their own paths, those paths are the real entries and nothing canonical is written, so a Claude-only machine gets `.claude/skills` and `CLAUDE.md` only. With no harness in use, the canonical entries are derived. The derived entries behave like declared ones in `list`, `status`, `sync`, `rm`, and state.
 - Which harnesses are materialized is per machine, never in the schema: the `harnesses` list in `.jig/config.json`, or detection from the harness directories in the home folder when the list is absent. Removing a harness makes its aliases stale (`jig sync --prune` removes them); adding one derives them on the next sync.
 - A derived path the tree also declares is a validation error, so a schema migrates one primitive at a time: move `.agents/skills` into `agents.skills` and delete the tree entry and its aliases. A tree entry may `link` to a derived entry by identity for a harness path jig does not know.
+- `plugins` is a source list of plugins in the Claude Code plugin layout (`.claude-plugin/plugin.json`, or `.plugin/`, or `.cursor-plugin/`, beside `skills/`, `agents/`, `commands/`) or marketplaces (`.claude-plugin/marketplace.json` listing plugins by relative path; a marketplace source installs them all, a plugin source one). Each plugin is kept whole in the store `.agents/plugins/<name>/` (identity `agents-plugins`), and its `skills/`, `agents/`, and `commands/` feed those primitives before the explicit lists, so an explicit declaration wins on a same-named skill. Relative markdown links from a skill or agent to files elsewhere in the plugin (its `references/`, say) are rewritten to point into the store. Marketplace entries whose source is not a path inside the repository are skipped and reported. A plugin's `apm.yml` dependencies are not followed: declare them as sources.
 - `agents` requires `"version": 4`. The other primitives of the spec (`mcp`, `hooks`) are not implemented yet and are refused by name.
 
 ## Conditional Nodes

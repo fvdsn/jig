@@ -24,6 +24,7 @@ type AgentsBlock struct {
 	Instructions SrcList // rule files, or directories of them (see rules.go)
 	Subagents    SrcList // subagent files, or directories of them
 	Commands     SrcList // command files, or directories of them
+	Plugins      SrcList // plugins and marketplaces in the Claude plugin layout (see plugin.go)
 }
 
 // agentsPlannedFields are spec'd primitives this jig does not implement
@@ -53,6 +54,8 @@ func (block *AgentsBlock) UnmarshalJSON(data []byte) error {
 			target = &block.Subagents
 		case "commands":
 			target = &block.Commands
+		case "plugins":
+			target = &block.Plugins
 		default:
 			for _, planned := range agentsPlannedFields {
 				if key == planned {
@@ -188,20 +191,28 @@ const (
 	agentsContextIdentity = "agents-context"
 )
 
+// sources are the primitive's inputs: what the plugins contribute first,
+// then the block's explicit list, so an explicit declaration wins on a
+// conflicting name.
 func (p agentsPrimitive) sources(block *AgentsBlock) SrcList {
+	var own SrcList
 	switch p.name {
 	case "skills":
-		return block.Skills
+		own = block.Skills
 	case "context":
-		return block.Context
+		own = block.Context
 	case "instructions":
-		return block.Instructions
+		own = block.Instructions
 	case "subagents":
-		return block.Subagents
+		own = block.Subagents
 	case "commands":
-		return block.Commands
+		own = block.Commands
 	}
-	return nil
+	fromPlugins := pluginSources(block.Plugins, pluginSubdirs[p.name])
+	if len(fromPlugins) == 0 {
+		return own
+	}
+	return append(fromPlugins, own...)
 }
 
 // canonicalRead reports whether the canonical location of a primitive is
@@ -236,6 +247,19 @@ func expandAgents(block *AgentsBlock, harnesses []string, model *Model) error {
 		return nil
 	}
 	harnesses = sortHarnesses(harnesses)
+	if len(block.Plugins) > 0 {
+		// The store keeps every plugin whole, for the links its skills and
+		// agents make to files outside their own directories; it is read
+		// through those links only, so it has no per-harness alias.
+		if err := addDerived(model, Entry{Path: agentsPluginsPath, Identity: agentsPluginsIdentity, Kind: EntryDir, Dir: &Dir{
+			ID:          agentsPluginsIdentity,
+			Src:         block.Plugins,
+			Description: "Plugins from the agents block, kept whole",
+			store:       true,
+		}}); err != nil {
+			return err
+		}
+	}
 	for _, primitive := range agentsPrimitives {
 		sources := primitive.sources(block)
 		if len(sources) == 0 {

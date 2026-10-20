@@ -135,6 +135,9 @@ func validateSources(result *validationResult, model *Model, path string, kind E
 		result.Errors = append(result.Errors, fmt.Sprintf("%s %s must define exactly one of src, link, or copy", label, path))
 	}
 	for _, source := range sources {
+		if source.plugin != "" {
+			continue // validated once, on the plugin store
+		}
 		if err := validateLocalSource(source, kind); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("%s %s invalid src: %s", label, path, err))
 			continue
@@ -165,6 +168,9 @@ func validateItemSources(result *validationResult, model *Model, path string, so
 		result.Errors = append(result.Errors, fmt.Sprintf("dir %s must define exactly one of src, link, or copy", path))
 	}
 	for _, source := range sources {
+		if source.plugin != "" {
+			continue // validated once, on the plugin store
+		}
 		if countVariants(source.Src != "", source.File != "", source.Dir != "") != 1 {
 			result.Errors = append(result.Errors, fmt.Sprintf("dir %s invalid src: source must define exactly one of src, file, or dir", path))
 			continue

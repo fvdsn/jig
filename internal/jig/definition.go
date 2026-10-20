@@ -16,6 +16,7 @@ type SrcEntry struct {
 	Dir      string     `json:"dir,omitempty"`  // local directory path (~/ or absolute); $dir entries only
 	Optional bool       `json:"optional,omitempty"`
 	OnlyWhen *Condition `json:"onlyWhen,omitempty"`
+	plugin   string     // derived from agents.plugins: the plugin directory (skills, agents, commands) this source contributes
 }
 
 // describe renders a source for output: the git spec or the local path.
@@ -124,6 +125,7 @@ type Dir struct {
 	skills      bool              // derived skills dir: a source that is one skill lands under its own name
 	items       bool              // derived dir whose sources may be single files, landing under their basename
 	transform   string            // derived dir written in a harness's own format, one file at a time (see dirTransforms)
+	store       bool              // derived plugin store: every source lands under its own name
 }
 
 // targetPath returns the resolved tree path this entry aliases, whether as a

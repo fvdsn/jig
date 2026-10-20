@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- The `agents` block gains `plugins`: plugins in the Claude Code plugin
+  layout, or marketplaces of them, kept whole under `.agents/plugins/`
+  and feeding the skills, subagents, and commands primitives, with the
+  links from a skill or agent to the plugin's shared files rewritten
+  to resolve from each harness's directory. One line installs an
+  organization's plugin library for every harness.
+- A primitive whose sources resolve but contribute nothing (plugins
+  without a commands directory, say) is reported inactive instead of
+  failing.
+
 ## v4.2.0 — 2026-10-20
 
 - The `agents` block gains `instructions`: rule files (markdown with a
