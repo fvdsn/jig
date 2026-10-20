@@ -94,7 +94,7 @@ A tree where paths are the directory layout, written in JSON or YAML (same struc
 ```yaml
 version: 4
 tree:
-  platform:
+  platform/:
     $group: { description: Shared platform services, tags: [backend] }
     auth:
       $repo: { id: auth-service, git: git@github.com:acme/auth.git }
@@ -108,7 +108,7 @@ tree:
       dependsOn:
         - path: platform/*
           reason: uses platform services
-  tools/ci:
+  tools/ci/:
     $dir: { src: git@github.com:acme/config.git#scripts/ci }
 ```
 

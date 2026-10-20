@@ -225,7 +225,7 @@ Declare group metadata with `$group` on directory nodes.
 ```json
 {
   "tree": {
-    "platform": {
+    "platform/": {
       "$group": {
         "id": "platform-group",
         "description": "Shared platform services",
@@ -363,7 +363,7 @@ Declare whole subtrees with `$dir`. The subtree of the source repository is mate
 ```json
 {
   "tree": {
-    "tools/ci-scripts": {
+    "tools/ci-scripts/": {
       "$dir": {
         "id": "ci-scripts",
         "src": "git@github.com:acme/workspace-config.git#scripts/ci"
@@ -393,9 +393,9 @@ A `$dir` can instead declare `link` to become a relative symlink to another `$di
 ```json
 {
   "tree": {
-    ".agents/skills":   { "$dir": { "id": "agent-skills", "src": ["git@github.com:acme/skills.git#skills"] } },
-    ".opencode/skills": { "$dir": { "id": "opencode-skills", "link": {"path": ".agents/skills"} } },
-    ".claude/skills":   { "$dir": { "id": "claude-skills", "copy": {"path": ".agents/skills"} } }
+    ".agents/skills/":  { "$dir": { "id": "agent-skills", "src": ["git@github.com:acme/skills.git#skills"] } },
+    ".opencode/skills/": { "$dir": { "id": "opencode-skills", "link": {"path": ".agents/skills"} } },
+    ".claude/skills/":  { "$dir": { "id": "claude-skills", "copy": {"path": ".agents/skills"} } }
   }
 }
 ```
@@ -479,7 +479,7 @@ Tag conditions make support artifacts follow capabilities instead of locations: 
 ```json
 {
   "tree": {
-    ".agents/skills": {
+    ".agents/skills/": {
       "$group": {
         "onlyWhen": {
           "path": "platform/*",

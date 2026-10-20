@@ -56,6 +56,7 @@ type inheritedGroup struct {
 type treeNode struct {
 	markers  map[string]json.RawMessage // $repo / $file / $group
 	children map[string]*treeNode
+	slashed  bool // written with a trailing slash, the mark of a group or dir
 }
 
 func newTreeNode() *treeNode {
@@ -118,6 +119,13 @@ func insertTreeMap(node *treeNode, nodes map[string]json.RawMessage, prefix stri
 				return fmt.Errorf("reserved tree key %q cannot be used as a path segment", key)
 			}
 		}
+		raw := nodes[key]
+		// A trailing slash marks a key as a directory jig lays out, a
+		// group or a $dir, for readability; it names the same node.
+		slashed := len(key) > 1 && strings.HasSuffix(key, "/")
+		if slashed {
+			key = strings.TrimSuffix(key, "/")
+		}
 		path, err := joinTreePath(prefix, key)
 		if err != nil {
 			return err
@@ -131,8 +139,11 @@ func insertTreeMap(node *treeNode, nodes map[string]json.RawMessage, prefix stri
 			}
 			child = next
 		}
+		if slashed {
+			child.slashed = true
+		}
 		var obj map[string]json.RawMessage
-		if err := json.Unmarshal(nodes[key], &obj); err != nil {
+		if err := json.Unmarshal(raw, &obj); err != nil {
 			return fmt.Errorf("invalid tree node %s: %s", path, err)
 		}
 		if err := insertTreeMap(child, obj, path); err != nil {
@@ -159,6 +170,9 @@ func flattenTreeNode(node *treeNode, path string, inherited inheritedGroup, mode
 	if leafMarkers == 1 {
 		if len(node.children) > 0 || hasGroup {
 			return fmt.Errorf("tree node %s cannot contain child nodes with $repo, $file, or $dir", path)
+		}
+		if node.slashed && !hasDir {
+			return fmt.Errorf("tree key %s/ ends with a slash, which marks a group or $dir; write a $repo or $file key without it", path)
 		}
 		if err := validateSafePath(path); err != nil {
 			return fmt.Errorf("invalid tree path %q: %s", path, err)

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- A tree key may end with `/` when its node is a group or a `$dir`
+  (`services/`, `compose/`), a readability mark naming the same node;
+  paths, references, state, and output stay without it. A `$repo` or
+  `$file` key with the slash is an error. The examples use the mark.
+
 ## v4.8.1 — 2026-10-20
 
 - Fixes: `jig status` no longer reports as missing the entries sync

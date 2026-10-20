@@ -198,3 +198,29 @@ func TestGroupOnlyWhenIsInheritedByReposAndFiles(t *testing.T) {
 		t.Fatalf("files = %#v", plan.Files)
 	}
 }
+
+// A trailing slash marks a group or $dir key and names the same node; on
+// a $repo or $file key it is an error.
+func TestFlattenDefinitionAcceptsTrailingSlashOnGroupsAndDirs(t *testing.T) {
+	def := testDefinition(t, `{"version": 3, "tree": {
+	  "services/": {"$group": {"tags": ["svc"]}, "a": {"$repo": {"git": "git@example.com:a.git"}}},
+	  "services": {"b": {"$repo": {"git": "git@example.com:b.git"}}},
+	  "compose/": {"$dir": {"src": "git@example.com:meta.git#compose"}}
+	}}`)
+	model, err := flattenDefinition(def, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(sortedEntryPaths(&model), " "); got != "compose services services/a services/b" {
+		t.Fatalf("entries = %s", got)
+	}
+	if tags := model.Entries["services/b"].Tags; len(tags) != 1 || tags[0] != "svc" {
+		t.Fatalf("slashed and bare keys did not merge: %v", tags)
+	}
+	for _, bad := range []string{`"x/": {"$repo": {"git": "git@example.com:x.git"}}`, `"notes.md/": {"$file": {"src": "git@example.com:m.git#n.md"}}`} {
+		_, err := flattenDefinition(testDefinition(t, `{"version": 3, "tree": {`+bad+`}}`), nil)
+		if err == nil || !strings.Contains(err.Error(), "ends with a slash") {
+			t.Fatalf("%s: err = %v", bad, err)
+		}
+	}
+}

@@ -39,7 +39,7 @@ Initial schema:
         ]
       }
     },
-    "tools": {
+    "tools/": {
       "$group": {
         "description": "Developer tools",
         "onlyWhen": {
@@ -88,7 +88,7 @@ tree:
       dependsOn:
         - path: platform/*
           reason: checkout uses shared platform services
-  tools:
+  tools/:
     $group:
       description: Developer tools
       onlyWhen:
@@ -271,6 +271,8 @@ A node containing `$repo` or `$file` must not contain child nodes.
 
 A node must not contain both `$repo` and `$file`.
 
+A key may end with `/` when its node is a directory jig lays out, a group or a `$dir`: `services/`, `compose/`. The slash is a readability mark and names the same node as the bare key, so entry paths, references, state, and output are always without it. A `$repo` or `$file` key ending with `/` is an error, since the mark would mislead. Examples in this specification use the mark; existing schemas need not.
+
 ## Group Nodes
 
 Group nodes are declared with `$group` on directory nodes.
@@ -282,7 +284,7 @@ Example:
 ```json
 {
   "tree": {
-    "platform": {
+    "platform/": {
       "$group": {
         "id": "platform-group",
         "description": "Shared platform services",
@@ -721,7 +723,7 @@ Directory nodes are declared with `$dir` and materialize a whole subtree of a so
 ```json
 {
   "tree": {
-    "tools/ci-scripts": {
+    "tools/ci-scripts/": {
       "$dir": {
         "id": "ci-scripts",
         "src": "git@github.com:org/workspace-config.git#scripts/ci"
@@ -848,7 +850,7 @@ A repository often ships the agent context of the tool it builds beside the code
 ```json
 {
   "tree": {
-    "tools": {
+    "tools/": {
       "$group": { "agents": { "skills": ".agents/skills" } },
       "bimbam": {
         "$repo": {
@@ -1458,6 +1460,7 @@ Validation should catch:
 - Missing top-level `version`.
 - Missing top-level `tree`.
 - Invalid tree node objects.
+- A `$repo` or `$file` key ending with `/`.
 - Invalid safe paths.
 - Invalid `$group` objects.
 - Invalid `$repo` objects.
