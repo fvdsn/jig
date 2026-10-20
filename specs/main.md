@@ -10,7 +10,7 @@ The primary goal is to make it easy to create and maintain a local workspace con
 
 The shared workspace definition (the schema) lives in its own Git repository. Each workspace keeps a full checkout of that repository at `.jig/source/`, and Jig reads the schema live from that checkout. `.jig/config.json` records which file inside the checkout is the schema.
 
-The schema file is usually named `.jig.json`, `jig.json`, or `schema.json` at the root of the schema repository; `jig init --path` selects any other safe path.
+The schema is written in JSON or YAML, with the same structure in both; see [Schema Formats](#schema-formats). The file is usually named `.jig.json`, `jig.json`, `schema.json`, `jig.yaml`, or `jig.yml` at the root of the schema repository; `jig init --path` selects any other safe path.
 
 Initial schema:
 
@@ -68,6 +68,58 @@ Initial schema:
   }
 }
 ```
+
+The same schema in YAML:
+
+```yaml
+version: 3
+tree:
+  platform/auth:
+    $repo:
+      id: auth-service
+      git: git@github.com:org/platform-auth.git
+      web: https://github.com/org/platform-auth
+      description: Authentication service
+  services/checkout:
+    $repo:
+      id: checkout-service
+      git: git@github.com:org/checkout.git
+      description: Checkout service
+      dependsOn:
+        - path: platform/*
+          reason: checkout uses shared platform services
+  tools:
+    $group:
+      description: Developer tools
+      onlyWhen:
+        path: platform/*
+        reason: Only useful when platform repositories are installed
+    platform-debug:
+      $repo:
+        id: platform-debug-tools
+        git: git@github.com:org/platform-debug-tools.git
+  .agents/skills/platform:
+    $file:
+      id: platform-skill
+      src: git@github.com:org/workspace-config.git#agents/skills/platform.md
+      description: Agent skill for platform repositories
+      onlyWhen:
+        path: platform/*
+        reason: Only useful when platform repositories are installed
+```
+
+### Schema Formats
+
+A schema file is JSON or YAML; the format follows the file extension (`.yaml` and `.yml` are YAML, anything else is JSON), and both describe the same structure: every field, rule, and example in this specification applies to both, the JSON examples translating field for field. Jig never rewrites a schema file, whichever the format: `jig init` seeds a starter or copies a given file once, and everything else reads.
+
+YAML is read as a single document into the same tree a JSON file would give, so the result is exactly what JSON would accept, and:
+
+- Duplicate keys in a mapping are an error, as they are for JSON.
+- Anchors, aliases, merge keys, explicit tags, and multi-document files are not supported and are reported as errors naming the construct, rather than resolved into a tree the author did not write.
+- Scalars keep YAML's typing: unquoted `on`, `yes`, `no`, `1.0`, or `2024-01-01` become booleans, numbers, or dates, not strings. Validation reports a tag, id, path, or other string field that came through as a non-string, so the mistake names the field instead of failing somewhere downstream.
+- Comments are allowed and ignored.
+
+JSON is the canonical form: the specification's examples use it, and tooling that generates a schema should emit it. YAML is for schemas people maintain by hand.
 
 ## Top-Level Fields
 
@@ -1278,11 +1330,11 @@ jig clone [path] --archived
 
 Initializes a Jig workspace from a Git-hosted or local schema.
 
-If the first argument is an existing local file, Jig creates `.jig/source/` as a fresh Git repository containing that file as `jig.json`, with no remote configured. This is useful for testing a schema before pushing it to a Git repository.
+If the first argument is an existing local file, Jig creates `.jig/source/` as a fresh Git repository containing that file as `jig.yaml` when its extension is `.yaml` or `.yml` and as `jig.json` otherwise, with no remote configured. This is useful for testing a schema before pushing it to a Git repository.
 
 If the first argument is not an existing local file, Jig treats it as a Git URL.
 
-If no argument is given, Jig starts a fresh workspace in the current directory: `.jig/source/` is created as a fresh Git repository containing a starter `jig.json` whose `agents` block pulls the official jig skill into the workspace's skills. The workspace is then cloned immediately so the starter content materializes. A fetch failure during this initial clone does not fail the init (`jig sync` retries later), and the command prints next steps for describing repositories and sharing the schema.
+If no argument is given, Jig starts a fresh workspace in the current directory: `.jig/source/` is created as a fresh Git repository containing a starter `jig.yaml` whose `agents` block pulls the official jig skill into the workspace's skills. The workspace is then cloned immediately so the starter content materializes. A fetch failure during this initial clone does not fail the init (`jig sync` retries later), and the command prints next steps for describing repositories and sharing the schema.
 
 If `workspace-dir` is omitted, the current working directory is used.
 
@@ -1293,7 +1345,7 @@ The command should:
 - Replace a `.jig/source/` checkout found without `.jig/config.json`: the config is written only once the source and schema are good, so such a checkout is a leftover from an init that failed midway.
 - When `.jig/config.json` exists and the requested Git source matches the checkout's origin, resume instead of failing: update the schema and run the clone step with the given flags. A different source fails, naming both; a bare init or local schema file (no verifiable source identity) fails as before.
 - Clone the schema repository into `.jig/source/` (a full clone, so it can be pushed from).
-- Locate the schema file: the `--path` value, or the first of `.jig.json`, `jig.json`, `schema.json` at the checkout root.
+- Locate the schema file: the `--path` value, or the first of `.jig.json`, `jig.json`, `schema.json`, `jig.yaml`, `jig.yml` at the checkout root (the JSON names first, so a repository holding both keeps its schema).
 - Validate the schema.
 - Write `.jig/config.json` recording the schema path and, when `--harness` was given, the harness list.
 - Create `.jig/state.json` with empty local state.
@@ -1338,11 +1390,11 @@ Initializes a workspace, then clones uninstalled archived repositories and files
 
 ### `jig validate`
 
-Validates the definition file.
+Validates the definition file: the workspace's schema, or the file given as an argument, whose format follows its extension as for any schema file.
 
 Validation should catch:
 
-- Invalid JSON.
+- Invalid JSON, or invalid YAML, or YAML outside the supported subset (see Schema Formats).
 - Unsupported schema version.
 - Missing top-level `version`.
 - Missing top-level `tree`.
@@ -1489,7 +1541,7 @@ Clones uninstalled archived repositories and files in addition to the default se
 
 ### `jig sync`
 
-Updates the schema as `jig update` does, then applies it to the local checkout shape. A schema update that fails (unreachable remote, invalid or diverged upstream) is reported on a `schema not updated:` line and the current schema is applied instead, so sync still converges offline. `--no-update` skips the update step: the current `.jig.json` is applied without fetching.
+Updates the schema as `jig update` does, then applies it to the local checkout shape. A schema update that fails (unreachable remote, invalid or diverged upstream) is reported on a `schema not updated:` line and the current schema is applied instead, so sync still converges offline. `--no-update` skips the update step: the current schema is applied without fetching.
 
 Sync converges what is installed: the desired repositories under the current directory (those installed locally plus those tracked in `.jig/state.json`), with their non-optional dependencies, then the active files. Installed optional dependencies are included. Sync never clones an entry that was not cloned; `jig clone` is how entries are added, and a repository added to the schema is reported by the update step and materialized by `jig clone`.
 
