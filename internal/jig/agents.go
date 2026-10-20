@@ -69,13 +69,15 @@ const (
 // alias is made. A harness absent from a primitive's map reads the
 // canonical location.
 type harnessAlias struct {
-	path string
-	copy bool // a real directory for a harness that does not follow symlinks
+	path           string
+	copy           bool // a real directory for a harness that does not follow symlinks
+	readsCanonical bool // the harness reads the canonical location too; the alias is in addition
 }
 
 // skillAliases and contextAliases are the skills and context rows of the
 // materialization matrix. Claude Code's symlink handling has regressed
-// repeatedly, so its skills alias is a copy; the rest are links.
+// repeatedly, so its skills alias is a copy; the rest are links. Copilot
+// reads AGENTS.md as well as its own instructions file.
 var skillAliases = map[string]harnessAlias{
 	"claude": {path: ".claude/skills", copy: true},
 	"kiro":   {path: ".kiro/skills", copy: true},
@@ -83,16 +85,37 @@ var skillAliases = map[string]harnessAlias{
 
 var contextAliases = map[string]harnessAlias{
 	"claude":  {path: "CLAUDE.md"},
-	"copilot": {path: ".github/copilot-instructions.md"},
+	"copilot": {path: ".github/copilot-instructions.md", readsCanonical: true},
 	"gemini":  {path: "GEMINI.md"},
 }
 
-// expandAgents derives the block's tree entries into the model: a
-// canonical entry per primitive that has sources, and an alias of it for
-// each listed harness that reads elsewhere. A derived path the tree also
-// declares is an error: the explicit form and the block cannot both own a
-// path. Identities are fixed so the tree can link to them and --id can
-// name them.
+// canonicalRead reports whether the canonical location of a primitive is
+// read on this machine: by a listed harness that has no alias or reads
+// both, or by whatever comes along when no harness is listed at all.
+func canonicalRead(harnesses []string, aliases map[string]harnessAlias) bool {
+	if len(harnesses) == 0 {
+		return true
+	}
+	for _, harness := range harnesses {
+		if alias, ok := aliases[harness]; !ok || alias.readsCanonical {
+			return true
+		}
+	}
+	return false
+}
+
+// expandAgents derives the block's tree entries into the model, one per
+// location something on this machine reads: the canonical entry when a
+// listed harness reads it (or none is listed), and for each listed harness
+// that reads elsewhere either an alias of the canonical entry or, when the
+// canonical entry is not derived, the real entry at the harness's own
+// path. A Claude-only machine thus gets .claude/skills and CLAUDE.md and
+// nothing else, with no duplicate for its search tools to find.
+//
+// A derived path the tree also declares is an error: the explicit form and
+// the block cannot both own a path. Identities are fixed per path so the
+// tree can link to them, --id can name them, and a changed harness list
+// converges in place.
 func expandAgents(block *AgentsBlock, harnesses []string, model *Model) error {
 	if block == nil {
 		return nil
@@ -107,13 +130,16 @@ func expandAgents(block *AgentsBlock, harnesses []string, model *Model) error {
 	harnesses = sortHarnesses(harnesses)
 
 	if len(block.Skills) > 0 {
-		if err := add(Entry{Path: agentsSkillsPath, Identity: agentsSkillsIdentity, Kind: EntryDir, Dir: &Dir{
-			ID:          agentsSkillsIdentity,
-			Src:         block.Skills,
-			Description: "Skills from the agents block",
-			skills:      true,
-		}}); err != nil {
-			return err
+		canonical := canonicalRead(harnesses, skillAliases)
+		if canonical {
+			if err := add(Entry{Path: agentsSkillsPath, Identity: agentsSkillsIdentity, Kind: EntryDir, Dir: &Dir{
+				ID:          agentsSkillsIdentity,
+				Src:         block.Skills,
+				Description: "Skills from the agents block",
+				skills:      true,
+			}}); err != nil {
+				return err
+			}
 		}
 		for _, harness := range harnesses {
 			alias, ok := skillAliases[harness]
@@ -121,9 +147,12 @@ func expandAgents(block *AgentsBlock, harnesses []string, model *Model) error {
 				continue
 			}
 			dir := &Dir{ID: agentsSkillsIdentity + "-" + harness, Description: "Skills from the agents block, as " + harness + " reads them"}
-			if alias.copy {
+			switch {
+			case !canonical:
+				dir.Src, dir.skills = block.Skills, true
+			case alias.copy:
 				dir.Copy = &Ref{ID: agentsSkillsIdentity}
-			} else {
+			default:
 				dir.Link = &Ref{ID: agentsSkillsIdentity}
 			}
 			if err := add(Entry{Path: alias.path, Identity: dir.ID, Kind: EntryDir, Dir: dir}); err != nil {
@@ -133,12 +162,15 @@ func expandAgents(block *AgentsBlock, harnesses []string, model *Model) error {
 	}
 
 	if len(block.Context) > 0 {
-		if err := add(Entry{Path: agentsContextPath, Identity: agentsContextIdentity, Kind: EntryFile, File: &File{
-			ID:          agentsContextIdentity,
-			Src:         block.Context,
-			Description: "Root context from the agents block",
-		}}); err != nil {
-			return err
+		canonical := canonicalRead(harnesses, contextAliases)
+		if canonical {
+			if err := add(Entry{Path: agentsContextPath, Identity: agentsContextIdentity, Kind: EntryFile, File: &File{
+				ID:          agentsContextIdentity,
+				Src:         block.Context,
+				Description: "Root context from the agents block",
+			}}); err != nil {
+				return err
+			}
 		}
 		for _, harness := range harnesses {
 			alias, ok := contextAliases[harness]
@@ -146,9 +178,12 @@ func expandAgents(block *AgentsBlock, harnesses []string, model *Model) error {
 				continue
 			}
 			file := &File{ID: agentsContextIdentity + "-" + harness, Description: "Root context from the agents block, as " + harness + " reads it"}
-			if alias.copy {
+			switch {
+			case !canonical:
+				file.Src = block.Context
+			case alias.copy:
 				file.Copy = &Ref{ID: agentsContextIdentity}
-			} else {
+			default:
 				file.Link = &Ref{ID: agentsContextIdentity}
 			}
 			if err := add(Entry{Path: alias.path, Identity: file.ID, Kind: EntryFile, File: file}); err != nil {

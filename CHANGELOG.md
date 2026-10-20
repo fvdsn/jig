@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- The `agents` block derives one entry per location a harness in use
+  reads, and nothing else: a Claude-only machine gets `.claude/skills`
+  and `CLAUDE.md` as the real entries, with no canonical duplicate for
+  its search tools to find twice. The canonical `.agents/skills` and
+  `AGENTS.md` are derived when a harness in use reads them (Codex,
+  Copilot, Cursor, OpenCode, Windsurf) or when no harness is in use;
+  the other harness paths are then copies or links of them. Changing
+  the harness list converges in place.
+
 ## v4.0.0 — 2026-10-20
 
 - Schema version 4 adds the top-level `agents` block: `skills` and

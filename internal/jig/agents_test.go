@@ -62,6 +62,33 @@ func TestAgentsBlockExpandsForHarnesses(t *testing.T) {
 		t.Fatalf("derived entries carry no tags, meta, or archived: %+v", skills)
 	}
 
+	// A harness that reads only its own paths gets the real entries there
+	// and no canonical copy for its search tools to find twice.
+	model, err = flattenDefinition(testDefinition(t, agentsTestSchema), []string{"claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sortedEntryPaths(&model); strings.Join(got, " ") != ".claude/skills CLAUDE.md" {
+		t.Fatalf("claude-only entries = %v", got)
+	}
+	if own := model.Entries[".claude/skills"]; own.Identity != "agents-skills-claude" || len(own.Dir.Src) != 1 || own.Dir.Copy != nil || !own.Dir.skills {
+		t.Fatalf("claude-only skills = %+v", own.Dir)
+	}
+	if own := model.Entries["CLAUDE.md"]; len(own.File.Src) != 1 || own.File.Link != nil {
+		t.Fatalf("claude-only context = %+v", own.File)
+	}
+	// Two such harnesses each get their own real entry.
+	model, err = flattenDefinition(testDefinition(t, agentsTestSchema), []string{"kiro", "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sortedEntryPaths(&model); strings.Join(got, " ") != ".claude/skills .kiro/skills AGENTS.md CLAUDE.md" {
+		t.Fatalf("claude+kiro entries = %v", got)
+	}
+	if kiro := model.Entries[".kiro/skills"]; len(kiro.Dir.Src) != 1 || kiro.Dir.Copy != nil {
+		t.Fatalf("kiro skills = %+v", kiro.Dir)
+	}
+
 	// No harness derives the canonical entries only.
 	model, err = flattenDefinition(testDefinition(t, agentsTestSchema), nil)
 	if err != nil {
@@ -76,7 +103,7 @@ func TestAgentsBlockExpandsForHarnesses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := sortedEntryPaths(&model); strings.Join(got, " ") != "AGENTS.md CLAUDE.md" {
+	if got := sortedEntryPaths(&model); strings.Join(got, " ") != "CLAUDE.md" {
 		t.Fatalf("context-only entries = %v", got)
 	}
 }
@@ -166,9 +193,9 @@ func TestAgentsBlockRejectsUnimplementedAndUnknownFields(t *testing.T) {
 	}
 }
 
-// End to end: a version 4 workspace materializes the canonical skills and
-// context plus the aliases of the configured harness, and switching the
-// harness list makes the old aliases stale.
+// End to end: a Claude-only workspace materializes the skills and context
+// at Claude's paths and nothing canonical; switching the harness list
+// makes those stale and derives the canonical entries instead.
 func TestAgentsBlockMaterializesForConfiguredHarnesses(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
@@ -195,20 +222,44 @@ func TestAgentsBlockMaterializesForConfiguredHarnesses(t *testing.T) {
 	if err := Clone(CloneOptions{}, &out); err != nil {
 		t.Fatalf("clone: %v\n%s", err, out.String())
 	}
-	for _, rel := range []string{".agents/skills/review/SKILL.md", ".claude/skills/review/SKILL.md", "AGENTS.md"} {
+	for _, rel := range []string{".claude/skills/review/SKILL.md", "CLAUDE.md"} {
 		if !pathExists(filepath.Join(root, filepath.FromSlash(rel))) {
 			t.Fatalf("expected %s, got:\n%s", rel, out.String())
 		}
 	}
-	if !isSymlink(filepath.Join(root, "CLAUDE.md")) || isSymlink(filepath.Join(root, ".claude", "skills")) {
-		t.Fatalf("CLAUDE.md must be a link and .claude/skills a real directory:\n%s", out.String())
+	if isSymlink(filepath.Join(root, "CLAUDE.md")) || isSymlink(filepath.Join(root, ".claude", "skills")) {
+		t.Fatalf("CLAUDE.md and .claude/skills must be real on a Claude-only machine:\n%s", out.String())
 	}
-	if pathExists(filepath.Join(root, "GEMINI.md")) {
-		t.Fatal("GEMINI.md derived although gemini is not configured")
+	for _, rel := range []string{".agents", "AGENTS.md", "GEMINI.md"} {
+		if pathExists(filepath.Join(root, rel)) {
+			t.Fatalf("%s derived although nothing configured reads it:\n%s", rel, out.String())
+		}
 	}
 
-	// Dropping the harness leaves its aliases stale; prune removes them
-	// and the canonical entries stay.
+	// Adding a harness that reads the canonical locations derives them and
+	// turns the Claude entries into aliases, in place. (Clone rather than
+	// sync: with no repository installed nothing activates root files,
+	// and sync never materializes what was not cloned.)
+	both := []string{"claude", "codex"}
+	if err := saveConfig(root, Config{Version: 1, Schema: "jig.json", Harnesses: &both}); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := Clone(CloneOptions{}, &out); err != nil {
+		t.Fatalf("clone with codex: %v\n%s", err, out.String())
+	}
+	if !pathExists(filepath.Join(root, ".agents", "skills", "review", "SKILL.md")) || !pathExists(filepath.Join(root, "AGENTS.md")) {
+		t.Fatalf("canonical entries not derived for codex:\n%s", out.String())
+	}
+	if !isSymlink(filepath.Join(root, "CLAUDE.md")) || isSymlink(filepath.Join(root, ".claude", "skills")) {
+		t.Fatalf("CLAUDE.md must now be a link and .claude/skills a copy:\n%s", out.String())
+	}
+	if data, _ := os.ReadFile(filepath.Join(root, ".claude", "skills", "review", "SKILL.md")); string(data) != "review\n" {
+		t.Fatalf("copied skill = %q", data)
+	}
+
+	// Dropping both harnesses leaves the Claude entries stale; prune
+	// removes them and the canonical entries stay for whatever comes.
 	none := []string{}
 	if err := saveConfig(root, Config{Version: 1, Schema: "jig.json", Harnesses: &none}); err != nil {
 		t.Fatal(err)
@@ -218,12 +269,9 @@ func TestAgentsBlockMaterializesForConfiguredHarnesses(t *testing.T) {
 		t.Fatalf("sync: %v\n%s", err, out.String())
 	}
 	if pathExists(filepath.Join(root, "CLAUDE.md")) || pathExists(filepath.Join(root, ".claude")) {
-		t.Fatalf("claude aliases survived the prune:\n%s", out.String())
+		t.Fatalf("claude entries survived the prune:\n%s", out.String())
 	}
 	if !pathExists(filepath.Join(root, ".agents", "skills", "review", "SKILL.md")) || !pathExists(filepath.Join(root, "AGENTS.md")) {
 		t.Fatalf("canonical entries were removed:\n%s", out.String())
-	}
-	if _, err := os.Stat(filepath.Join(root, "AGENTS.md")); err != nil {
-		t.Fatal(err)
 	}
 }
