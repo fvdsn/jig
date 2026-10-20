@@ -90,28 +90,25 @@ Commands are position-aware: `jig status` in `services/` shows just your service
 
 A tree where paths are the directory layout, written in JSON or YAML (same structure, chosen by the file extension; a bare `jig init` starts you with `jig.yaml`). Repos, files, and dirs are leaves; any level can carry group metadata that children inherit.
 
-```json
-{
-  "version": 4,
-  "tree": {
-    "platform": {
-      "$group": { "description": "Shared platform services", "tags": ["backend"] },
-      "auth":   { "$repo": { "id": "auth-service", "git": "git@github.com:acme/auth.git" } },
-      "dev.sh": { "$file": { "src": "git@github.com:acme/config.git#scripts/dev.sh", "executable": true } }
-    },
-    "services/checkout": {
-      "$repo": {
-        "id": "checkout-service",
-        "git": "git@github.com:acme/checkout.git",
-        "tags": ["go", "api"],
-        "dependsOn": [{ "path": "platform/*", "reason": "uses platform services" }]
-      }
-    },
-    "tools/ci": {
-      "$dir": { "src": "git@github.com:acme/config.git#scripts/ci" }
-    }
-  }
-}
+```yaml
+version: 4
+tree:
+  platform:
+    $group: { description: Shared platform services, tags: [backend] }
+    auth:
+      $repo: { id: auth-service, git: git@github.com:acme/auth.git }
+    dev.sh:
+      $file: { src: git@github.com:acme/config.git#scripts/dev.sh, executable: true }
+  services/checkout:
+    $repo:
+      id: checkout-service
+      git: git@github.com:acme/checkout.git
+      tags: [go, api]
+      dependsOn:
+        - path: platform/*
+          reason: uses platform services
+  tools/ci:
+    $dir: { src: git@github.com:acme/config.git#scripts/ci }
 ```
 
 - **`$repo`** — a Git checkout. `id` is a stable identity that survives renames: move the entry in the schema and `jig sync` moves the checkout on disk.
@@ -131,39 +128,44 @@ Files and dirs follow the repositories around them: a support file placed inside
 
 Coding agents read skills and root instructions from harness-specific places: `.agents/skills` or `.claude/skills`, `AGENTS.md` or `CLAUDE.md`. The `agents` block declares what the workspace provides once, with no harness path in it, and jig materializes it for the harnesses used on each machine:
 
-```json
-{
-  "version": 4,
-  "agents": {
-    "skills": [
-      "git@github.com:anthropics/skills.git#skills/frontend-design",
-      { "src": "git@github.com:acme/billing-skills.git#skills",
-        "onlyWhen": { "path": "billing/*" } },
-      { "dir": "~/.config/acme/skills", "optional": true }
-    ],
-    "context": [
-      "git@github.com:acme/meta.git#context/workspace.md",
-      { "file": "~/.config/acme/AGENTS.md", "optional": true }
-    ],
-    "instructions": ["git@github.com:acme/meta.git#instructions"],
-    "subagents": [
-      "git@github.com:acme/meta.git#agents",
-      { "src": "git@github.com:acme/meta.git#agents/api-architect.md", "onlyWhen": { "tags": ["api"] } }
-    ],
-    "commands": ["git@github.com:acme/meta.git#commands"],
-    "plugins": [
-      { "src": "git@github.com:acme/pdlc-plugins.git", "onlyWhen": { "tags": ["pdlc"] } }
-    ],
-    "mcp": {
-      "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"], "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" } },
-      "billing-api": { "url": "https://mcp.example.com/sse", "onlyWhen": { "path": "billing/*" } }
-    },
-    "hooks": [
-      { "event": "afterToolUse", "matcher": "Edit|Write", "command": "jig fmt", "timeout": 5 }
-    ]
-  },
-  "tree": {}
-}
+```yaml
+version: 4
+agents:
+  skills:
+    - git@github.com:anthropics/skills.git#skills/frontend-design
+    - src: git@github.com:acme/billing-skills.git#skills
+      onlyWhen: { path: billing/* }
+    - dir: ~/.config/acme/skills
+      optional: true
+  context:
+    - git@github.com:acme/meta.git#context/workspace.md
+    - file: ~/.config/acme/AGENTS.md
+      optional: true
+  instructions:
+    - git@github.com:acme/meta.git#instructions
+  subagents:
+    - git@github.com:acme/meta.git#agents
+    - src: git@github.com:acme/meta.git#agents/api-architect.md
+      onlyWhen: { tags: [api] }
+  commands:
+    - git@github.com:acme/meta.git#commands
+  plugins:
+    - src: git@github.com:acme/pdlc-plugins.git
+      onlyWhen: { tags: [pdlc] }
+  mcp:
+    github:
+      command: npx
+      args: [-y, "@modelcontextprotocol/server-github"]
+      env: { GITHUB_TOKEN: "${GITHUB_TOKEN}" }
+    billing-api:
+      url: https://mcp.example.com/sse
+      onlyWhen: { path: billing/* }
+  hooks:
+    - event: afterToolUse
+      matcher: Edit|Write
+      command: jig fmt
+      timeout: 5
+tree: {}
 ```
 
 `mcp` declares MCP servers once, in the standard shape, and jig writes each harness's own configuration document (`.mcp.json`, `.vscode/mcp.json` and `.github/mcp.json`, `.cursor/mcp.json`, `opencode.json`, `.gemini/settings.json`, `.kiro/settings/mcp.json`, `.codex/config.toml`) in that harness's shape, with `${NAME}` references translated to `${env:NAME}` where the harness wants them. These documents are the user's: jig owns only the keys it wrote, keeps and reports a key that conflicts with or was edited by the user, removes its keys when a server leaves the schema, and deletes a document only if it created it. A plugin's `.mcp.json` feeds the same map.
