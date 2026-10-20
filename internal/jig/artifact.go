@@ -120,7 +120,7 @@ func (m *materializer) clearOwnedLink(entry Entry, isLinkRecord bool) (bool, err
 // condition, before any of them is fetched.
 func (m *materializer) allGatedOff(srcs SrcList) bool {
 	for _, source := range srcs {
-		if source.OnlyWhen == nil || conditionMetIn(m.model, m.evidence, *source.OnlyWhen) {
+		if !m.gatedOff(source) {
 			return false
 		}
 	}
@@ -171,7 +171,7 @@ func (r resolvedSources) unavailableError() error {
 func (m *materializer) resolveSources(srcs SrcList, resolve func(source SrcEntry) (string, error)) (resolvedSources, error) {
 	var result resolvedSources
 	for _, source := range srcs {
-		if source.OnlyWhen != nil && !conditionMetIn(m.model, m.evidence, *source.OnlyWhen) {
+		if m.gatedOff(source) {
 			continue
 		}
 		key, err := resolve(source)
@@ -248,6 +248,14 @@ func (m *materializer) ensureLink(entry Entry) error {
 	targetEntry, ok := m.model.entry(linkPath, entry.Kind)
 	if !ok {
 		return fmt.Errorf("link target is not defined: %s", describeRef(*linkRef))
+	}
+	// A link follows its target's activation: a target whose sources are
+	// all gated off is not written, and neither is the link.
+	if !targetEntry.isLink() {
+		if sources, err := effectiveSources(m.model, targetEntry); err == nil && len(sources) > 0 && m.allGatedOff(sources) {
+			_, _, hasState := m.state.artifactRecord(entry.Kind, entry.Identity)
+			return m.ensureWithoutSources(entry, hasState)
+		}
 	}
 	if !pathExists(m.abs(targetEntry.Path)) {
 		return fmt.Errorf("link target is missing: %s", targetEntry.Path)

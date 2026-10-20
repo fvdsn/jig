@@ -89,6 +89,19 @@ func (m *materializer) ensureDir(dirPath string) error {
 			treeOIDs = append(treeOIDs, digest)
 			return "file:" + source.File, nil
 		}
+		if source.Repo != nil {
+			localAbs, key, _ := m.checkoutSource(source)
+			src, err := readCheckoutTree(localAbs)
+			if err != nil {
+				return "", err
+			}
+			if src.local != "" && (dir.store || (skillsLayout && pathExists(filepath.Join(localAbs, skillFile)))) {
+				src.prefix = filepath.Base(localAbs) + "/"
+			}
+			sources = append(sources, src)
+			treeOIDs = append(treeOIDs, src.tree)
+			return key, nil
+		}
 		if source.Dir != "" {
 			localAbs, err := expandLocalSource(source.Dir)
 			if err != nil {

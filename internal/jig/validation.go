@@ -116,6 +116,7 @@ func validateDefinition(def *Definition) validationResult {
 		validateMCP(&result, &model, def.Agents.MCP)
 		validateHooks(&result, &model, def.Agents.Hooks)
 	}
+	validateExports(&result, &model)
 	for _, cycle := range detectCycles(sortedRepoPaths(&model), repoDependencyPaths(&model)) {
 		result.Warnings = append(result.Warnings, "dependency cycle detected: "+strings.Join(cycle, " -> "))
 	}
@@ -144,6 +145,16 @@ func validateSources(result *validationResult, model *Model, path string, kind E
 	for _, source := range sources {
 		if source.plugin != "" || source.embedded != "" {
 			continue // validated once, on the plugin store; the embedded pack is jig's own
+		}
+		if source.Repo != nil {
+			if source.Src != "" || source.File != "" || source.Dir != "" {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s %s invalid src: a checkout source defines repo and path only", label, path))
+			}
+			validateCheckoutSource(result, model, label+" "+path, source)
+			if source.OnlyWhen != nil {
+				validateCondition(result, model, path, *source.OnlyWhen)
+			}
+			continue
 		}
 		if err := validateLocalSource(source, kind); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("%s %s invalid src: %s", label, path, err))
@@ -177,6 +188,16 @@ func validateItemSources(result *validationResult, model *Model, path string, so
 	for _, source := range sources {
 		if source.plugin != "" || source.embedded != "" {
 			continue // validated once, on the plugin store; the embedded pack is jig's own
+		}
+		if source.Repo != nil {
+			if source.Src != "" || source.File != "" || source.Dir != "" {
+				result.Errors = append(result.Errors, fmt.Sprintf("dir %s invalid src: a checkout source defines repo and path only", path))
+			}
+			validateCheckoutSource(result, model, "dir "+path, source)
+			if source.OnlyWhen != nil {
+				validateCondition(result, model, path, *source.OnlyWhen)
+			}
+			continue
 		}
 		if countVariants(source.Src != "", source.File != "", source.Dir != "") != 1 {
 			result.Errors = append(result.Errors, fmt.Sprintf("dir %s invalid src: source must define exactly one of src, file, or dir", path))

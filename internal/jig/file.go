@@ -87,6 +87,16 @@ func (m *materializer) ensureFile(filePath string) error {
 	var blobs []string
 	blobsKnown := true
 	resolved, err := m.resolveSources(srcs, func(source SrcEntry) (string, error) {
+		if source.Repo != nil {
+			abs, key, _ := m.checkoutSource(source)
+			part, err := os.ReadFile(abs)
+			if err != nil {
+				return "", err
+			}
+			parts = append(parts, part)
+			blobs = append(blobs, sha256Hex(part))
+			return key, nil
+		}
 		if source.File != "" {
 			localPath, err := expandLocalSource(source.File)
 			if err != nil {

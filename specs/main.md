@@ -848,12 +848,14 @@ A repository often ships the agent context of the tool it builds beside the code
 ```json
 {
   "tree": {
-    "$group": { "agents": { "skills": ".agents/skills" } },
-    "tools/bimbam": {
-      "$repo": {
-        "id": "bimbam",
-        "git": "git@github.com:org/bimbam.git",
-        "agents": { "skills": "skills", "context": "AGENTS.md" }
+    "tools": {
+      "$group": { "agents": { "skills": ".agents/skills" } },
+      "bimbam": {
+        "$repo": {
+          "id": "bimbam",
+          "git": "git@github.com:org/bimbam.git",
+          "agents": { "skills": "skills", "context": "AGENTS.md" }
+        }
       }
     }
   }

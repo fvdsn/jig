@@ -196,7 +196,7 @@ const (
 // sources are the primitive's inputs: what the plugins contribute first,
 // then the block's explicit list, so an explicit declaration wins on a
 // conflicting name.
-func (p agentsPrimitive) sources(block *AgentsBlock) SrcList {
+func (p agentsPrimitive) sources(block *AgentsBlock, model *Model) SrcList {
 	var own SrcList
 	switch p.name {
 	case "skills":
@@ -216,6 +216,7 @@ func (p agentsPrimitive) sources(block *AgentsBlock) SrcList {
 		sources = append(sources, embeddedSkillSource())
 	}
 	sources = append(sources, fromPlugins...)
+	sources = append(sources, exportSources(model, p.name)...)
 	if len(sources) == 0 {
 		return own
 	}
@@ -225,8 +226,8 @@ func (p agentsPrimitive) sources(block *AgentsBlock) SrcList {
 // embeddedOnly reports whether a primitive's sources are the jig skill and
 // nothing the schema declared, the case in which a declared directory at
 // a derived path takes the skill in instead of colliding.
-func (p agentsPrimitive) embeddedOnly(block *AgentsBlock) bool {
-	return p.name == "skills" && EmbeddedSkill != nil && len(block.Skills) == 0 && len(block.Plugins) == 0
+func (p agentsPrimitive) embeddedOnly(block *AgentsBlock, model *Model) bool {
+	return p.name == "skills" && EmbeddedSkill != nil && len(block.Skills) == 0 && len(block.Plugins) == 0 && len(exportSources(model, "skills")) == 0
 }
 
 // canonicalRead reports whether the canonical location of a primitive is
@@ -258,10 +259,11 @@ func canonicalRead(harnesses []string, aliases map[string]harnessAlias) bool {
 // converges in place.
 func expandAgents(block *AgentsBlock, harnesses []string, model *Model) error {
 	if block == nil {
-		if EmbeddedSkill == nil {
+		if EmbeddedSkill == nil && !hasExports(model) {
 			return nil
 		}
-		// Every schema gets the jig skill, block or not.
+		// Every schema gets the jig skill and its repositories' exports,
+		// block or not.
 		block = &AgentsBlock{}
 	}
 	harnesses = sortHarnesses(harnesses)
@@ -282,18 +284,18 @@ func expandAgents(block *AgentsBlock, harnesses []string, model *Model) error {
 		return err
 	}
 	for _, primitive := range agentsPrimitives {
-		sources := primitive.sources(block)
+		sources := primitive.sources(block, model)
 		if len(sources) == 0 {
 			continue
 		}
 		if primitive.name == "context" {
-			if err := expandContext(primitive, block, harnesses, model); err != nil {
+			if err := expandContext(primitive, block, sources, harnesses, model); err != nil {
 				return err
 			}
 			continue
 		}
 		add := addDerived
-		if primitive.embeddedOnly(block) {
+		if primitive.embeddedOnly(block, model) {
 			add = addSkillsDerived
 		}
 		canonical := canonicalRead(harnesses, primitive.aliases)
@@ -351,8 +353,8 @@ func addSkillsDerived(model *Model, entry Entry) error {
 // canonical file's is a real file composed from the same sources instead
 // of a link to it. Without instructions nothing folds and every alias is
 // a link, as before.
-func expandContext(p agentsPrimitive, block *AgentsBlock, harnesses []string, model *Model) error {
-	sources, rules := block.Context, block.Instructions
+func expandContext(p agentsPrimitive, block *AgentsBlock, sources SrcList, harnesses []string, model *Model) error {
+	rules := block.Instructions
 	canonical := canonicalRead(harnesses, p.aliases)
 	foldCanonical := len(rules) > 0 && len(harnesses) == 0
 	for _, harness := range harnesses {

@@ -14,6 +14,8 @@ type SrcEntry struct {
 	Src      string     `json:"src,omitempty"`
 	File     string     `json:"file,omitempty"` // local file path (~/ or absolute); $file entries only
 	Dir      string     `json:"dir,omitempty"`  // local directory path (~/ or absolute); $dir entries only
+	Repo     *Ref       `json:"repo,omitempty"` // checkout source: a repository of the schema (id or exact path)
+	Path     string     `json:"path,omitempty"` // checkout source: the path inside the checkout (see exports.go)
 	Optional bool       `json:"optional,omitempty"`
 	OnlyWhen *Condition `json:"onlyWhen,omitempty"`
 	plugin   string     // derived from agents.plugins: the plugin directory (skills, agents, commands) this source contributes
@@ -24,6 +26,9 @@ type SrcEntry struct {
 func (s SrcEntry) describe() string {
 	if s.embedded != "" {
 		return "embedded:" + s.embedded
+	}
+	if s.Repo != nil {
+		return "repo:" + s.Repo.ID + s.Repo.Path + "#" + s.Path
 	}
 	if s.File != "" {
 		return s.File
@@ -94,6 +99,7 @@ type Repo struct {
 	Meta        map[string]string `json:"meta,omitempty"` // user-defined metadata, opaque to jig
 	DependsOn   []Dependency      `json:"dependsOn,omitempty"`
 	OnlyWhen    *Condition        `json:"onlyWhen,omitempty"`
+	Agents      map[string]string `json:"agents,omitempty"` // exports: agents block primitive to a path inside the checkout (see exports.go)
 }
 
 type File struct {
@@ -188,6 +194,7 @@ type Group struct {
 	Meta        map[string]string `json:"meta,omitempty"` // user-defined metadata, inherited per key by descendants
 	DependsOn   []Dependency      `json:"dependsOn,omitempty"`
 	OnlyWhen    *Condition        `json:"onlyWhen,omitempty"`
+	Agents      map[string]string `json:"agents,omitempty"` // exports for every descendant repository, inherited per key
 }
 
 // Ref is a schema reference: exactly one of ID, Path, and Tags selects the

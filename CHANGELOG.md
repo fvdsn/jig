@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- Repository exports: `agents` on a `$repo`, or on a `$group` for every
+  repository beneath it, names a path inside the checkout per agents
+  block primitive (`skills`, `context`, `subagents`, `commands`), and
+  that path joins the block's sources while the repository is
+  installed, read from the local checkout's working tree. A repository
+  shipping the skill of the tool it builds thus lands it at the
+  workspace root and in every harness directory with no further step,
+  and a repository without the path offers nothing. The checkout
+  source is also available to `$file` and `$dir` as
+  `{"repo": {"id": ...}, "path": ...}`.
+- Fixes: a link file or dir whose target has every source gated off is
+  now removed with the target instead of failing the sync with "link
+  target is missing".
+
 ## v4.6.0 — 2026-10-20
 
 - The jig skill ships inside the binary and is installed in every
