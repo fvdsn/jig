@@ -236,10 +236,10 @@ func TestFilesDirsAndLinks(t *testing.T) {
 	}
 }
 
-// TestFetchStatusPullCheckout covers the daily loop against a moving remote:
+// TestFetchStatusPullSwitch covers the daily loop against a moving remote:
 // fetch surfaces behind counts in status, pull fast-forwards, and checkout
 // switches branches across the workspace.
-func TestFetchStatusPullCheckout(t *testing.T) {
+func TestFetchStatusPullSwitch(t *testing.T) {
 	w := newWorld(t)
 	app := w.newRemote("app", map[string]string{"README.md": "v1\n"})
 	schemaRemote := w.newRemote("schema", map[string]string{"jig.json": fmt.Sprintf(`{
@@ -259,14 +259,14 @@ func TestFetchStatusPullCheckout(t *testing.T) {
 		t.Fatal("expected pulled content")
 	}
 
-	w.assertContains(w.mustJig(ws, "checkout", "-b", "feature"), "created: app")
+	w.assertContains(w.mustJig(ws, "switch", "-c", "feature"), "created: app")
 	if branch := strings.TrimSpace(w.git(w.path("ws", "app"), "branch", "--show-current")); branch != "feature" {
 		t.Fatalf("branch = %q, want feature", branch)
 	}
 	// Checkout is a plain (non-forced) git checkout: uncommitted changes are
 	// carried to the new branch, never discarded.
 	w.writeFiles(w.path("ws", "app"), map[string]string{"README.md": "dirty\n"})
-	w.assertContains(w.mustJig(ws, "checkout", "-b", "other"), "created: app")
+	w.assertContains(w.mustJig(ws, "switch", "-c", "other"), "created: app")
 	if w.read("ws", "app", "README.md") != "dirty\n" {
 		t.Fatal("expected dirty change carried across checkout")
 	}

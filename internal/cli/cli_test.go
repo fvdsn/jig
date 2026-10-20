@@ -81,18 +81,19 @@ func TestIdSelectorExcludesPathAndTags(t *testing.T) {
 	}
 }
 
-func TestCheckoutDefaultExcludesBranchAndCreate(t *testing.T) {
-	// --default resolves the branch per repository, so a branch positional
-	// or -b alongside it is a usage error; so is a path, since the verbs
-	// that act on checkouts scope by directory.
+func TestSwitchUsage(t *testing.T) {
+	// -c creates one branch, so it takes exactly one name and no
+	// --default; with neither a name nor --default there is nothing to
+	// switch to.
 	for _, args := range [][]string{
-		{"--default", "-b"},
-		{"--default", "feature"},
-		{"feature", "services/a"},
+		{"--default", "-c", "feature"},
+		{"-c", "release/x", "feature/x"},
+		{"-c"},
+		{},
 	} {
-		err := cmdCheckout(args, io.Discard)
+		err := cmdSwitch(args, io.Discard)
 		if err == nil || !strings.Contains(err.Error(), "usage:") {
-			t.Fatalf("cmdCheckout(%v) = %v, want usage error", args, err)
+			t.Fatalf("cmdSwitch(%v) = %v, want usage error", args, err)
 		}
 	}
 }

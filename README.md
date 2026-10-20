@@ -47,10 +47,10 @@ jig status                      # branches, dirty state, ahead/behind
 jig diff --stat                 # what changed, per dirty repo (jig diff for the patch)
 jig fetch && jig status         # what changed across the workspace?
 jig pull                        # fast-forward everything installed
-jig checkout -b fix-x           # branch across repos, edit away…
+jig switch -c fix-x             # branch across repos, edit away…
 jig fmt && jig lint && jig test # …then check every repo, each with its own tooling
 jig push -u                     # publish across repos
-jig checkout --default          # …and back to each repo's own default branch
+jig switch --default            # …and back to each repo's own default branch
 jig git stash                   # anything else git does, verbatim, in every repo in scope
 jig rm services/checkout        # uninstall
 ```
@@ -71,8 +71,9 @@ jig rm services/checkout        # uninstall
 | `pull` | `git pull --ff-only` across installed repos, in parallel |
 | `fetch` | `git fetch` across installed repos, in parallel |
 | `push [-u]` | `git push` (never forced) across installed repos, in parallel; `-u` sets missing upstreams |
-| `checkout [-b] <branch>` | Switch installed repos to a branch (`-b` creates it); never discards local changes |
-| `checkout --default` | Switch each installed repo to its own remote default branch (main, master, …) |
+| `switch <branch>... [--default]` | Switch installed repos to the first listed branch each has (`release/x feature/x --default`); never discards local changes |
+| `switch -c <branch>` | Create a branch across installed repos |
+| `switch --default` | Switch each installed repo to its own remote default branch (main, master, …) |
 | `status` | One line per installed entry — branch, dirt counts, ahead/behind — plus a summary |
 | `diff` | Uncommitted changes across installed repos as one workspace-wide diff, through your git pager and colors (`--stat` for one line per dirty repo) |
 | `git <git args...>` | Run any git command verbatim across installed repos; raw git, no safety net, one report per repo |

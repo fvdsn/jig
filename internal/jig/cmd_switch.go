@@ -1,30 +1,36 @@
 package jig
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 )
 
-type CheckoutOptions struct {
-	Branch  string
-	Create  bool // create the branch (git checkout -b) when it does not exist
-	Default bool // switch each repository to its remote's default branch
+type SwitchOptions struct {
+	Branches []string // candidates in order; the first that exists in a repository is taken
+	Create   bool     // create the (single) branch when it does not exist
+	Default  bool     // fall back to each repository's remote default branch
 }
 
-// Checkout switches the installed repositories in the current scope to a branch,
-// mirroring git checkout across the workspace. Safety is git's own: a plain
-// (non-forced) checkout never discards local changes, so repositories where
+// Switch switches the installed repositories in the current scope to the
+// first listed branch each of them has, or to its remote's default branch,
+// mirroring git switch across the workspace. Safety is git's own: a plain
+// (non-forced) switch never discards local changes, so repositories where
 // the switch would lose work fail and are reported as skipped.
-func Checkout(options CheckoutOptions, out io.Writer) error {
+func Switch(options SwitchOptions, out io.Writer) error {
 	// --branch applies the stricter branch-name rules (e.g. no leading
-	// dash), which also keeps the name from being parsed as a git option.
-	// With Default there is no name to validate: each repository resolves
-	// its own.
-	if !options.Default {
-		if _, err := git("", "check-ref-format", "--branch", options.Branch); err != nil {
-			return fmt.Errorf("invalid branch name %q", options.Branch)
+	// dash), which also keeps a name from being parsed as a git option.
+	for _, branch := range options.Branches {
+		if _, err := git("", "check-ref-format", "--branch", branch); err != nil {
+			return fmt.Errorf("invalid branch name %q", branch)
 		}
+	}
+	if options.Create && len(options.Branches) != 1 {
+		return errors.New("-c creates one branch; give exactly one name")
+	}
+	if len(options.Branches) == 0 && !options.Default {
+		return errors.New("no branch given")
 	}
 	ws, err := loadWorkspace(false)
 	if err != nil {
@@ -34,17 +40,35 @@ func Checkout(options CheckoutOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return runInRepos(out, repos, repoRun{Verb: "checkout", Label: "skipped"}, func(repo installedRepo) (string, string, error) {
-		branch, note := options.Branch, ""
-		if options.Default {
-			// The target differs per repository, so the report names it.
+	// When the target can differ per repository, the report names it.
+	named := len(options.Branches) > 1 || options.Default
+	return runInRepos(out, repos, repoRun{Verb: "switch", Label: "skipped"}, func(repo installedRepo) (string, string, error) {
+		if options.Create {
+			verb, err := checkoutRepo(repo.Local, options.Branches[0], true)
+			return verb, "", err
+		}
+		branch := ""
+		for _, candidate := range options.Branches {
+			if branchExists(repo.Local, candidate) {
+				branch = candidate
+				break
+			}
+		}
+		if branch == "" {
+			if !options.Default {
+				return "", "", fmt.Errorf("none of %s exists", strings.Join(options.Branches, ", "))
+			}
 			resolved, err := defaultBranch(repo.Local)
 			if err != nil {
 				return "", "", err
 			}
-			branch, note = resolved, "("+resolved+")"
+			branch = resolved
 		}
-		verb, err := checkoutRepo(repo.Local, branch, options.Create)
+		note := ""
+		if named {
+			note = "(" + branch + ")"
+		}
+		verb, err := checkoutRepo(repo.Local, branch, false)
 		return verb, note, err
 	})
 }
@@ -95,5 +119,16 @@ func defaultBranch(local string) (string, error) {
 
 func localBranchExists(local string, branch string) bool {
 	_, err := git(local, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
+	return err == nil
+}
+
+// branchExists reports whether a repository has the branch locally or as
+// a remote-tracking branch of origin, from which git creates the local
+// one on switch.
+func branchExists(local string, branch string) bool {
+	if localBranchExists(local, branch) {
+		return true
+	}
+	_, err := git(local, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+branch)
 	return err == nil
 }

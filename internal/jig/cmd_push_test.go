@@ -75,7 +75,7 @@ func TestPushAcrossInstalledRepos(t *testing.T) {
 	// A fresh branch has no upstream: skipped without -u, pushed with it,
 	// and a re-run is idempotent.
 	var out bytes.Buffer
-	if err := Checkout(CheckoutOptions{Branch: "feature", Create: true}, &out); err != nil {
+	if err := Switch(SwitchOptions{Branches: []string{"feature"}, Create: true}, &out); err != nil {
 		t.Fatalf("checkout: %v\n%s", err, out.String())
 	}
 	commitIn(localA, "two\n")

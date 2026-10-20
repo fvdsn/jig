@@ -516,7 +516,7 @@ Keys must be non-empty, must not start with `$`, and must not contain spaces, co
 
 Commands are aware of where they run inside the workspace:
 
-- The commands that act on checkouts (`sync`, `setup`, `fmt`, `lint`, `test`, `pull`, `fetch`, `push`, `checkout`, `status`, `diff`, `git`) take no path and no selector flags. Their scope is the current directory: the whole workspace from the root, one subtree from a group directory (`jig status` in `services/` reports only entries under `services`), one repository from anywhere inside its checkout. `cd` is the selector.
+- The commands that act on checkouts (`sync`, `setup`, `fmt`, `lint`, `test`, `pull`, `fetch`, `push`, `switch`, `status`, `diff`, `git`) take no path and no selector flags. Their scope is the current directory: the whole workspace from the root, one subtree from a group directory (`jig status` in `services/` reports only entries under `services`), one repository from anywhere inside its checkout. `cd` is the selector.
 - The schema commands (`list`, `tags`, `info`, `deps`, `graph`, `clone`) select entries that may not be on disk yet, so they take a path, `--tags`, `--id`, and `--archived`. Pathless, they scope to the current subtree too.
 - Path arguments resolve like filesystem paths against the current directory: `.`, `..`, `../other`, and a leading `/` anchoring to the workspace root (`jig info /platform/auth`). Escaping the workspace is an error. A path below a repository addresses that repository.
 - `jig sync` converges what is installed in the current subtree and never materializes an entry that was not cloned; `jig clone <path>` adds entries. `sync --prune` must run from the workspace root.
@@ -719,23 +719,24 @@ jig push
 jig push -u
 ```
 
-Repositories with nothing to push report `up to date`. Branches with no upstream are skipped unless `-u` is passed, which pushes with `git push -u origin <branch>` and records the upstream — the natural follow-up to `jig checkout -b feature-x` and committing across repos. Only the current branch is pushed.
+Repositories with nothing to push report `up to date`. Branches with no upstream are skipped unless `-u` is passed, which pushes with `git push -u origin <branch>` and records the upstream — the natural follow-up to `jig switch -c feature-x` and committing across repos. Only the current branch is pushed.
 
 Switch installed repositories to a branch, mirroring `git checkout`:
 
 ```sh
-jig checkout main
-jig checkout -b feature-x
-jig checkout --default
+jig switch main
+jig switch -c feature-x
+jig switch release/CX-12 feature/CX-12 --default   # first branch each repo has, else its default
+jig switch --default
 ```
 
-`-b` creates the branch at each repository's current HEAD, or just switches when it already exists. `--default` switches each repository to its own remote default branch (main, master, …). Repositories already on the branch report `present`. Checkouts are never forced: a repository where git refuses the switch (uncommitted changes that would be overwritten) is reported under `skipped` and left untouched.
+With several branches, each repository switches to the first one it has, locally or as `origin/<branch>`, and the report names it (`switched: services/api (feature/CX-12)`); a repository with none is skipped unless `--default` follows the list, which then falls back to its remote default branch. `-c` creates one branch at each repository's current HEAD, or just switches when it already exists. `--default` alone switches each repository to its own remote default branch (main, master, …). Repositories already on the branch report `present`. Switches are never forced: a repository where git refuses the switch (uncommitted changes that would be overwritten) is reported under `skipped` and left untouched. Existence is judged from what the clone knows, so `jig fetch` first for branches pushed since.
 
 Run any other git command verbatim in every installed repository in scope. Everything after `git` belongs to git, so there is no separator; each repository reports `<path>: <output>` in path order, silent ones report `done`, and failures are listed under `failed` with their exit status. This is raw git with none of the safety of the verbs above (`jig git reset --hard` means it), and output is captured, so interactive commands (`rebase -i`, `commit` without `-m`) do not work:
 
 ```sh
 jig git stash                       # in every repo in scope
-jig git switch -c feature-x         # the same as jig checkout -b, without the safety net
+jig git switch -c feature-x         # the same as jig switch -c, without the safety net
 jig git log --oneline -3
 cd services/checkout && jig git rebase origin/main   # one repo, from inside it
 ```

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- `jig checkout` is now `jig switch`, after git's own verb for what it
+  does, with `-c` to create a branch. It takes several branches: each
+  repository switches to the first one it has, locally or on origin,
+  and `--default` after the list falls back to the repository's own
+  default branch, so `jig switch release/CX-12 feature/CX-12 --default`
+  puts a workspace on the branches a piece of work touches. A
+  repository with none of the branches is skipped. The old name and
+  `-b` are gone.
+
 ## v4.7.0 — 2026-10-20
 
 - Repository exports: `agents` on a `$repo`, or on a `$group` for every

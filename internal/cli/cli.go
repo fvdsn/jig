@@ -70,8 +70,8 @@ func Run(args []string, out io.Writer) error {
 		return cmdBare("fetch", jig.Fetch, args[1:], out)
 	case "push":
 		return cmdPush(args[1:], out)
-	case "checkout":
-		return cmdCheckout(args[1:], out)
+	case "switch":
+		return cmdSwitch(args[1:], out)
 	case "rm":
 		return cmdRemove(args[1:], out)
 	case "status":
@@ -218,23 +218,23 @@ func selectorFrom(name string, parsed parsedArgs, pathPositionals []string) (jig
 // commands take the selectors; the commands that act on checkouts take
 // none, since their scope is the directory they run in.
 var commandFlags = map[string]map[string]flagKind{
-	"list":     withSelectorFlags(map[string]flagKind{"--meta": valueFlag}),
-	"tags":     withSelectorFlags(nil),
-	"info":     withSelectorFlags(nil),
-	"deps":     withSelectorFlags(map[string]flagKind{"--reverse": boolFlag, "--with-optional-deps": boolFlag}),
-	"graph":    withSelectorFlags(nil),
-	"clone":    withSelectorFlags(map[string]flagKind{"--with-optional-deps": boolFlag, "--no-deps": boolFlag}),
-	"sync":     {"--no-update": boolFlag, "--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--prune": boolFlag},
-	"setup":    {},
-	"fmt":      {},
-	"lint":     {},
-	"test":     {},
-	"pull":     {},
-	"fetch":    {},
-	"push":     {"-u": boolFlag},
-	"checkout": {"-b": boolFlag, "--default": boolFlag},
-	"status":   {"--all": boolFlag},
-	"diff":     {"--stat": boolFlag},
+	"list":   withSelectorFlags(map[string]flagKind{"--meta": valueFlag}),
+	"tags":   withSelectorFlags(nil),
+	"info":   withSelectorFlags(nil),
+	"deps":   withSelectorFlags(map[string]flagKind{"--reverse": boolFlag, "--with-optional-deps": boolFlag}),
+	"graph":  withSelectorFlags(nil),
+	"clone":  withSelectorFlags(map[string]flagKind{"--with-optional-deps": boolFlag, "--no-deps": boolFlag}),
+	"sync":   {"--no-update": boolFlag, "--with-optional-deps": boolFlag, "--no-deps": boolFlag, "--prune": boolFlag},
+	"setup":  {},
+	"fmt":    {},
+	"lint":   {},
+	"test":   {},
+	"pull":   {},
+	"fetch":  {},
+	"push":   {"-u": boolFlag},
+	"switch": {"-c": boolFlag, "--default": boolFlag},
+	"status": {"--all": boolFlag},
+	"diff":   {"--stat": boolFlag},
 }
 
 var initFlags = map[string]flagKind{
@@ -324,12 +324,16 @@ var commandDocs = []commandDoc{
 	{"push",
 		[]string{"push [-u]"},
 		[]string{"Run git push (never forced) in the installed repositories; -u sets the upstream on branches that have none."}},
-	{"checkout",
+	{"switch",
 		[]string{
-			"checkout [-b] <branch>",
-			"checkout --default",
+			"switch <branch>... [--default]",
+			"switch -c <branch>",
+			"switch --default",
 		},
-		[]string{"Switch the installed repositories to a branch; -b creates it, --default switches each repo to its remote's default branch. Repos where the switch would lose local changes are skipped."}},
+		[]string{
+			"Switch the installed repositories to the first listed branch each of them has; --default falls back to each repo's remote default branch, alone or last.",
+			"-c creates one branch. Repos where the switch would lose local changes are skipped.",
+		}},
 	{"git",
 		[]string{"git <git args...>"},
 		[]string{
@@ -668,27 +672,22 @@ func cmdPush(args []string, out io.Writer) error {
 	return jig.Push(jig.PushOptions{SetUpstream: parsed.Flags["-u"]}, out)
 }
 
-func cmdCheckout(args []string, out io.Writer) error {
-	parsed, err := parseArgs(args, commandFlags["checkout"])
+func cmdSwitch(args []string, out io.Writer) error {
+	parsed, err := parseArgs(args, commandFlags["switch"])
 	if err != nil {
 		return err
 	}
-	// With --default there is no branch positional (and nothing to create).
-	branch := ""
-	if parsed.Flags["--default"] {
-		if parsed.Flags["-b"] || len(parsed.Positionals) > 0 {
-			return usageError("checkout")
-		}
-	} else {
-		if len(parsed.Positionals) != 1 {
-			return usageError("checkout")
-		}
-		branch = parsed.Positionals[0]
+	create, fallback := parsed.Flags["-c"], parsed.Flags["--default"]
+	switch {
+	case create && (fallback || len(parsed.Positionals) != 1):
+		return usageError("switch")
+	case !create && !fallback && len(parsed.Positionals) == 0:
+		return usageError("switch")
 	}
-	return jig.Checkout(jig.CheckoutOptions{
-		Branch:  branch,
-		Default: parsed.Flags["--default"],
-		Create:  parsed.Flags["-b"],
+	return jig.Switch(jig.SwitchOptions{
+		Branches: parsed.Positionals,
+		Default:  fallback,
+		Create:   create,
 	}, out)
 }
 

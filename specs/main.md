@@ -253,7 +253,7 @@ CLI path arguments and pathless commands are interpreted relative to the directo
 - A pathless command uses the current subtree as its selection. At the workspace root this selects everything, preserving root behavior.
 - Path arguments resolve like filesystem paths: `.` is the current subtree, `..` climbs, and a leading `/` anchors to the workspace root. A resolved path escaping the workspace is an error.
 - A path below a repository or dir entry addresses that entry, the way git finds its repository from any directory inside a checkout: pathless commands run from `services/checkout/src` address `services/checkout`, and so does `jig info ../src` from there. Groups are plain directories and keep subtree semantics. A moved checkout answers to its defined path.
-- The commands that act on checkouts (`sync`, `setup`, `fmt`, `lint`, `test`, `pull`, `fetch`, `push`, `checkout`, `status`, `diff`, `git`) take no path and no selector flags: their scope is the current subtree, and `cd` narrows it. Only the schema commands, whose subjects may not exist on disk yet (`list`, `tags`, `info`, `deps`, `graph`, `clone`, and `init --clone`), take paths, `--id`, `--tags`, and `--archived`. `rm` takes the paths to remove as its arguments. `sync --prune` requires the workspace root.
+- The commands that act on checkouts (`sync`, `setup`, `fmt`, `lint`, `test`, `pull`, `fetch`, `push`, `switch`, `status`, `diff`, `git`) take no path and no selector flags: their scope is the current subtree, and `cd` narrows it. Only the schema commands, whose subjects may not exist on disk yet (`list`, `tags`, `info`, `deps`, `graph`, `clone`, and `init --clone`), take paths, `--id`, `--tags`, and `--archived`. `rm` takes the paths to remove as its arguments. `sync --prune` requires the workspace root.
 - Resolution is CLI-side only: schema paths are unchanged and still reject `.`, `..`, and leading `/`.
 - Reported paths remain workspace-relative regardless of where the command runs.
 
@@ -1364,8 +1364,9 @@ jig lint
 jig test
 jig pull
 jig push [-u]
-jig checkout [-b] <branch>
-jig checkout --default
+jig switch <branch>... [--default]
+jig switch -c <branch>
+jig switch --default
 jig git <git args...>
 jig status [--all]
 jig diff [--stat]
@@ -1665,30 +1666,34 @@ Publishes the current branch of the installed repositories, in parallel. Selecti
 
 - Pushes are never forced; there is no force flag. A push the remote rejects (for example a non-fast-forward) is reported under `skipped` and the remote is left untouched — escalate per repository with plain Git when needed.
 - Repositories whose branch is not ahead of its upstream report `up to date`, computed locally without network access.
-- A branch with no upstream is skipped and reported, unless `-u` is passed, which pushes with `git push -u origin <branch>` and records the upstream. Re-running is therefore idempotent: the first `-u` push creates the upstream and later runs report `up to date`. This pairs with `jig checkout -b`, whose fresh branches have no upstream.
+- A branch with no upstream is skipped and reported, unless `-u` is passed, which pushes with `git push -u origin <branch>` and records the upstream. Re-running is therefore idempotent: the first `-u` push creates the upstream and later runs report `up to date`. This pairs with `jig switch -c`, whose fresh branches have no upstream.
 - Repositories on a detached HEAD are skipped and reported: there is no branch to push.
 - The command exits non-zero when any repository was skipped.
 
 Only the current branch is pushed. There is no branch argument or refspec support.
 
-### `jig checkout [-b] <branch>`
+### `jig switch <branch>... [--default]`
 
-Switches the installed repositories to `<branch>`, in parallel. Selection matches `jig pull`.
+Switches the installed repositories to a branch, in parallel, the way `git switch` does in one. Selection matches `jig pull`.
 
-- Repositories already on the branch report `present`.
-- With `-b`, the branch is created at the repository's current HEAD when it does not exist; when it already exists, the repository just switches to it, so re-running is idempotent.
-- Without `-b`, git's usual rules apply, including creating a local branch from a matching remote-tracking branch.
-- Checkouts are never forced: a repository where git refuses the switch (for example uncommitted changes that would be overwritten) is reported under `skipped` and left untouched.
-- The branch name is validated up front; an invalid name fails before touching any repository.
+- With one branch, every repository switches to it. With several, each repository switches to the first listed branch it has, locally or as `origin/<branch>`, so one command puts a workspace on the branches a piece of work touches: `jig switch release/CX-12 feature/CX-12 --default`. A repository that has none of them is reported under `skipped` ("none of ... exists"), unless `--default` is given, which then falls back to that repository's remote default branch.
+- When the branch taken can differ per repository (several names, or `--default`), the report names it: `switched: services/api (feature/CX-12)`.
+- Repositories already on the branch taken report `present`.
+- Git's usual rules apply, including creating a local branch from a matching remote-tracking branch. Existence is judged from what the clone knows; `jig fetch` first for branches pushed since.
+- Switches are never forced: a repository where git refuses the switch (for example uncommitted changes that would be overwritten) is reported under `skipped` and left untouched.
+- Every branch name is validated up front; an invalid name fails before touching any repository.
 
-### `jig checkout --default`
+### `jig switch -c <branch>`
 
-Switches each installed repository to its own remote default branch. This exists because default branches differ across repositories (`main`, `master`, `staging`, …), so no single branch name can express "go back to the mainline everywhere".
+Creates `<branch>` at each repository's current HEAD when it does not exist, and just switches to it when it does, so re-running is idempotent. `-c` takes exactly one name and no `--default`.
+
+### `jig switch --default`
+
+Switches each installed repository to its own remote default branch. This exists because default branches differ across repositories (`main`, `master`, `staging`, …), so no single branch name can express "go back to the mainline everywhere". After a branch list it is the last fallback instead.
 
 - The default branch is resolved per repository from `origin/HEAD`, which git records at clone time, so resolution is normally offline. When the ref is missing (an old clone, a hand-added remote), the remote is asked directly with `ls-remote --symref origin HEAD` and the answer is recorded via `git remote set-head`, making later runs offline again.
 - Since the target branch differs per repository, report lines name it: `switched: services/api (main)`.
 - Repositories whose default branch cannot be resolved (no `origin`, remote unreachable) are reported under `skipped`; switching rules and safety are otherwise identical to the branch form.
-- `--default` replaces the `<branch>` positional and is incompatible with `-b`; combining them is a usage error.
 
 ### `jig git <git args...>`
 
