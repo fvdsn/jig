@@ -116,6 +116,11 @@ func validateDefinition(def *Definition) validationResult {
 		validateMCP(&result, &model, def.Agents.MCP)
 		validateHooks(&result, &model, def.Agents.Hooks)
 	}
+	for _, group := range groupBlocks(&model) {
+		validateCondition(&result, &model, "group "+group.path+" agents block", Condition{Ref: Ref{Path: group.path + "/*"}})
+		validateMCP(&result, &model, group.block.MCP)
+		validateHooks(&result, &model, group.block.Hooks)
+	}
 	validateExports(&result, &model)
 	for _, cycle := range detectCycles(sortedRepoPaths(&model), repoDependencyPaths(&model)) {
 		result.Warnings = append(result.Warnings, "dependency cycle detected: "+strings.Join(cycle, " -> "))

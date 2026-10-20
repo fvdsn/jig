@@ -100,6 +100,12 @@ func (m *materializer) ensureFile(filePath string) error {
 			blobs = append(blobs, sha256Hex(part))
 			return key, nil
 		}
+		frame := func(part []byte) []byte {
+			if file.context && source.scope != "" {
+				return append(scopeHeader(source.scope), part...)
+			}
+			return part
+		}
 		if source.File != "" {
 			localPath, err := expandLocalSource(source.File)
 			if err != nil {
@@ -109,6 +115,7 @@ func (m *materializer) ensureFile(filePath string) error {
 			if err != nil {
 				return "", err
 			}
+			part = frame(part)
 			parts = append(parts, part)
 			blobs = append(blobs, sha256Hex(part))
 			return "file:" + source.File, nil
@@ -119,6 +126,12 @@ func (m *materializer) ensureFile(filePath string) error {
 		part, blob, err := m.fetcher.content(source.Src)
 		if err != nil {
 			return "", err
+		}
+		if source.scope != "" && file.context {
+			// The frame is part of the content, so the blob id alone
+			// would miss a renamed group: hash the framed part instead.
+			part = frame(part)
+			blob = sha256Hex(part)
 		}
 		parts = append(parts, part)
 		if blob == "" {

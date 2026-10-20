@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- A `$group` may carry an `agents` block of its own, the same shape as
+  the top-level block, active while a repository under the group is
+  installed or active: the context, servers, hooks, and sources that
+  belong to one part of the workspace are declared there instead of
+  carrying an `onlyWhen` each. A group's entry overrides the
+  workspace's of the same name while the group is active. A context
+  section from a group is framed with the group it applies to.
+- Breaking: the repository exports field is renamed from `agents` to
+  `exports` on `$repo` and `$group`, so one key no longer means two
+  things. Schemas written against 4.7.0 or 4.8.x rename it.
 - A tree key may end with `/` when its node is a group or a `$dir`
   (`services/`, `compose/`), a readability mark naming the same node;
   paths, references, state, and output stay without it. A `$repo` or

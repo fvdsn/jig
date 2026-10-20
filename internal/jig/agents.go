@@ -258,14 +258,16 @@ func canonicalRead(harnesses []string, aliases map[string]harnessAlias) bool {
 // tree can link to them, --id can name them, and a changed harness list
 // converges in place.
 func expandAgents(block *AgentsBlock, harnesses []string, model *Model) error {
+	groups := groupBlocks(model)
 	if block == nil {
-		if EmbeddedSkill == nil && !hasExports(model) {
+		if EmbeddedSkill == nil && !hasExports(model) && len(groups) == 0 {
 			return nil
 		}
-		// Every schema gets the jig skill and its repositories' exports,
-		// block or not.
+		// Every schema gets the jig skill, its repositories' exports, and
+		// its groups' blocks, top-level block or not.
 		block = &AgentsBlock{}
 	}
+	block = mergeGroupBlocks(block, groups)
 	harnesses = sortHarnesses(harnesses)
 	if len(block.Plugins) > 0 {
 		// The store keeps every plugin whole, for the links its skills and
@@ -326,6 +328,92 @@ func expandAgents(block *AgentsBlock, harnesses []string, model *Model) error {
 	return nil
 }
 
+// scopedBlock is a group's agents block with the group's path.
+type scopedBlock struct {
+	path  string
+	block *AgentsBlock
+}
+
+// groupBlocks lists the groups' agents blocks in tree order.
+func groupBlocks(model *Model) []scopedBlock {
+	var blocks []scopedBlock
+	for _, path := range sortedEntryPaths(model) {
+		entry := model.Entries[path]
+		if entry.Kind == EntryGroup && entry.Group.Agents != nil {
+			blocks = append(blocks, scopedBlock{path: path, block: entry.Group.Agents})
+		}
+	}
+	return blocks
+}
+
+// scopeSources copies a source list with the group's scope on every
+// source, which gates it on a repository under the group and frames a
+// context section with it.
+func scopeSources(sources SrcList, scope string) SrcList {
+	scoped := make(SrcList, 0, len(sources))
+	for _, source := range sources {
+		source.scope = scope
+		scoped = append(scoped, source)
+	}
+	return scoped
+}
+
+// mergeGroupBlocks folds the groups' blocks into the top-level one, in
+// tree order after it: list primitives append, so a group's sources come
+// after the workspace's and win on a conflicting name; servers by name
+// and hooks follow the same order. The result is a new block; the
+// schema's is left as declared.
+func mergeGroupBlocks(top *AgentsBlock, groups []scopedBlock) *AgentsBlock {
+	if len(groups) == 0 {
+		return top
+	}
+	merged := &AgentsBlock{
+		Skills:       append(SrcList{}, top.Skills...),
+		Context:      append(SrcList{}, top.Context...),
+		Instructions: append(SrcList{}, top.Instructions...),
+		Subagents:    append(SrcList{}, top.Subagents...),
+		Commands:     append(SrcList{}, top.Commands...),
+		Plugins:      append(SrcList{}, top.Plugins...),
+		Hooks:        append([]Hook{}, top.Hooks...),
+		MCP:          map[string]MCPServer{},
+	}
+	for name, server := range top.MCP {
+		merged.MCP[name] = server
+	}
+	for _, group := range groups {
+		b := group.block
+		merged.Skills = append(merged.Skills, scopeSources(b.Skills, group.path)...)
+		merged.Context = append(merged.Context, scopeSources(b.Context, group.path)...)
+		merged.Instructions = append(merged.Instructions, scopeSources(b.Instructions, group.path)...)
+		merged.Subagents = append(merged.Subagents, scopeSources(b.Subagents, group.path)...)
+		merged.Commands = append(merged.Commands, scopeSources(b.Commands, group.path)...)
+		merged.Plugins = append(merged.Plugins, scopeSources(b.Plugins, group.path)...)
+		for _, name := range sortedMCPNames(b.MCP) {
+			server := b.MCP[name]
+			server.scope = group.path
+			if previous, ok := merged.MCP[name]; ok {
+				server.fallback = &previous
+			}
+			merged.MCP[name] = server
+		}
+		for _, hook := range b.Hooks {
+			hook.scope = group.path
+			merged.Hooks = append(merged.Hooks, hook)
+		}
+	}
+	return merged
+}
+
+// scopedOff reports whether a scope (a group path) or a condition gates
+// something off: the scope matches when a repository under the group is
+// installed or active, like the condition {"path": "<group>/*"}.
+func (m *materializer) scopedOff(scope string, onlyWhen *Condition) bool {
+	if scope != "" && !conditionMetIn(m.model, m.evidence, Condition{Ref: Ref{Path: scope + "/*"}}) {
+		return true
+	}
+	return onlyWhen != nil && !conditionMetIn(m.model, m.evidence, *onlyWhen)
+}
+
 // addSkillsDerived adds a skills entry carrying only the jig skill. A $dir
 // the tree declares at that path with its own sources takes the skill in
 // as its first source instead; a declared link or copy follows its
@@ -364,6 +452,7 @@ func expandContext(p agentsPrimitive, block *AgentsBlock, sources SrcList, harne
 	}
 	if canonical {
 		entry := p.entry(p.path, p.identity, p.description, sources, nil, harnessAlias{})
+		entry.File.context = true
 		if foldCanonical {
 			entry.File.rules = rules
 		}
@@ -388,6 +477,7 @@ func expandContext(p agentsPrimitive, block *AgentsBlock, sources SrcList, harne
 				entry.File.rules = rules
 			}
 		}
+		entry.File.context = true
 		if err := addDerived(model, entry); err != nil {
 			return err
 		}

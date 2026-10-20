@@ -12,9 +12,9 @@ import (
 func TestRepositoryExportsExpandAndValidate(t *testing.T) {
 	schema := `{"version": 4, "tree": {
 	  "tools": {
-	    "$group": {"agents": {"skills": ".agents/skills"}},
+	    "$group": {"exports": {"skills": ".agents/skills"}},
 	    "a": {"$repo": {"id": "a", "git": "git@example.com:a.git"}},
-	    "b": {"$repo": {"id": "b", "git": "git@example.com:b.git", "agents": {"skills": "skills", "context": "AGENTS.md"}}}
+	    "b": {"$repo": {"id": "b", "git": "git@example.com:b.git", "exports": {"skills": "skills", "context": "AGENTS.md"}}}
 	  },
 	  "compose": {"$dir": {"src": [{"repo": {"id": "a"}, "path": "compose"}]}}
 	}}`
@@ -46,14 +46,14 @@ func TestRepositoryExportsExpandAndValidate(t *testing.T) {
 
 	errs := validateDefinition(testDefinition(t, `{"version": 4, "tree": {
 	  "tools": {
-	    "$group": {"agents": {"rules": "rules"}},
-	    "a": {"$repo": {"id": "a", "git": "git@example.com:a.git", "agents": {"skills": "../skills"}}},
+	    "$group": {"exports": {"rules": "rules"}},
+	    "a": {"$repo": {"id": "a", "git": "git@example.com:a.git", "exports": {"skills": "../skills"}}},
 	    "b": {"$repo": {"id": "b", "git": "git@example.com:b.git"}}
 	  },
 	  "x": {"$dir": {"src": [{"repo": {"id": "nope"}, "path": "p"}, {"repo": {"tags": ["t"]}, "path": "p"}, {"repo": {"id": "a"}}, {"repo": {"path": "x"}, "path": "p"}]}}
 	}}`)).Errors
 	joined := strings.Join(errs, "\n")
-	for _, want := range []string{`agents export "rules" is not exportable`, `agents export skills has an invalid path "../skills"`, "repository nope does not name any entry", "must reference one repository by id or exact path", "needs a path inside the repository", "checkout source x names a dir, not a repository"} {
+	for _, want := range []string{`export "rules" is not exportable`, `export skills has an invalid path "../skills"`, "repository nope does not name any entry", "must reference one repository by id or exact path", "needs a path inside the repository", "checkout source x names a dir, not a repository"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %q in:\n%s", want, joined)
 		}
@@ -82,7 +82,7 @@ func TestRepositoryExportsMaterialize(t *testing.T) {
 	})
 	writeTestWorkspace(t, root, fmt.Sprintf(`{"version": 4, "tree": {
 	  "tools": {
-	    "$group": {"agents": {"skills": ".agents/skills", "context": "AGENTS.md"}},
+	    "$group": {"exports": {"skills": ".agents/skills", "context": "AGENTS.md"}},
 	    "a": {"$repo": {"id": "a", "git": %q}},
 	    "b": {"$repo": {"id": "b", "git": %q}}
 	  },

@@ -8,7 +8,7 @@ import (
 )
 
 // Repository exports lift a repository's own agent context into the
-// agents block: `agents` on a $repo, or on a $group for every descendant,
+// agents block: `exports` on a $repo, or on a $group for every descendant,
 // names a path inside the checkout per primitive, and that path joins the
 // primitive's sources as a checkout source of the repository, read from
 // the local checkout's working tree and active while the repository is
@@ -36,7 +36,7 @@ func exportSources(model *Model, primitive string) SrcList {
 		if entry.Kind != EntryRepo {
 			continue
 		}
-		if rel := entry.Repo.Agents[primitive]; rel != "" {
+		if rel := entry.Repo.Exports[primitive]; rel != "" {
 			sources = append(sources, SrcEntry{Repo: &Ref{ID: entry.Identity}, Path: rel, export: true})
 		}
 	}
@@ -46,7 +46,7 @@ func exportSources(model *Model, primitive string) SrcList {
 // hasExports reports whether any repository exports anything.
 func hasExports(model *Model) bool {
 	for _, entry := range model.Entries {
-		if entry.Kind == EntryRepo && len(entry.Repo.Agents) > 0 {
+		if entry.Kind == EntryRepo && len(entry.Repo.Exports) > 0 {
 			return true
 		}
 	}
@@ -78,7 +78,7 @@ func (m *materializer) checkoutSource(source SrcEntry) (abs string, key string, 
 // condition does not match, or it is a checkout source whose repository is
 // not installed or lacks the path.
 func (m *materializer) gatedOff(source SrcEntry) bool {
-	if source.OnlyWhen != nil && !conditionMetIn(m.model, m.evidence, *source.OnlyWhen) {
+	if m.scopedOff(source.scope, source.OnlyWhen) {
 		return true
 	}
 	if source.Repo != nil {
@@ -121,6 +121,12 @@ func exportHeader(model *Model, source SrcEntry) []byte {
 	return []byte(fmt.Sprintf("## %s\n\nExported by the repository at `%s`; it applies to that project.\n\n", path, path))
 }
 
+// scopeHeader frames a context section from a group's agents block with
+// the group it applies to.
+func scopeHeader(scope string) []byte {
+	return []byte(fmt.Sprintf("## %s\n\nApplies to the repositories under `%s`.\n\n", scope, scope))
+}
+
 // validateCheckoutSource checks a checkout source: a single-target
 // reference naming a repository, and a safe path inside it.
 func validateCheckoutSource(result *validationResult, model *Model, owner string, source SrcEntry) {
@@ -146,7 +152,7 @@ func validateCheckoutSource(result *validationResult, model *Model, owner string
 	}
 }
 
-// validateExports checks the agents field of repositories and groups:
+// validateExports checks the exports field of repositories and groups:
 // exportable keys with safe paths. Repositories carry inherited keys, so
 // a group's mistake is reported once, by message.
 func validateExports(result *validationResult, model *Model) {
@@ -162,17 +168,17 @@ func validateExports(result *validationResult, model *Model) {
 		var agents map[string]string
 		switch entry.Kind {
 		case EntryRepo:
-			agents = entry.Repo.Agents
+			agents = entry.Repo.Exports
 		case EntryGroup:
-			agents = entry.Group.Agents
+			agents = entry.Group.Exports
 		}
 		for _, key := range sortedKeys(mapToBool(agents)) {
 			if !exportable(key) {
-				report(fmt.Sprintf("agents export %q is not exportable; use %s", key, strings.Join(exportableKeys, ", ")))
+				report(fmt.Sprintf("export %q is not exportable; use %s", key, strings.Join(exportableKeys, ", ")))
 				continue
 			}
 			if err := validateSafePath(agents[key]); err != nil {
-				report(fmt.Sprintf("agents export %s has an invalid path %q: %s", key, agents[key], err))
+				report(fmt.Sprintf("export %s has an invalid path %q: %s", key, agents[key], err))
 			}
 		}
 	}

@@ -18,6 +18,7 @@ type Hook struct {
 	Command  string     `json:"command"`
 	Timeout  int        `json:"timeout,omitempty"` // seconds
 	OnlyWhen *Condition `json:"onlyWhen,omitempty"`
+	scope    string     // from a group's agents block: the group path gating the hook
 }
 
 // hookEvents is the neutral vocabulary, in the order hooks are reported.

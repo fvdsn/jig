@@ -433,12 +433,12 @@ func (m *materializer) entryInactive(entry Entry) bool {
 // whose condition matches, and plugin sources gated off or unresolved.
 func (m *materializer) managedInactive(doc *managedDoc) bool {
 	for _, server := range doc.servers {
-		if server.OnlyWhen == nil || conditionMetIn(m.model, m.evidence, *server.OnlyWhen) {
+		if _, ok := m.activeServer(server); ok {
 			return false
 		}
 	}
 	for _, hook := range doc.hooks {
-		if hook.OnlyWhen == nil || conditionMetIn(m.model, m.evidence, *hook.OnlyWhen) {
+		if !m.scopedOff(hook.scope, hook.OnlyWhen) {
 			return false
 		}
 	}

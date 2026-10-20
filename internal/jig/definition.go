@@ -21,6 +21,7 @@ type SrcEntry struct {
 	plugin   string     // derived from agents.plugins: the plugin directory (skills, agents, commands) this source contributes
 	embedded string     // a pack carried by the binary (see skill.go)
 	export   bool       // a repository export (see exports.go): a context section is framed with its origin
+	scope    string     // from a group's agents block: the group path, which gates the source and frames a context section
 }
 
 // describe renders a source for output: the git spec or the local path.
@@ -100,7 +101,7 @@ type Repo struct {
 	Meta        map[string]string `json:"meta,omitempty"` // user-defined metadata, opaque to jig
 	DependsOn   []Dependency      `json:"dependsOn,omitempty"`
 	OnlyWhen    *Condition        `json:"onlyWhen,omitempty"`
-	Agents      map[string]string `json:"agents,omitempty"` // exports: agents block primitive to a path inside the checkout (see exports.go)
+	Exports     map[string]string `json:"exports,omitempty"` // agents block primitive to a path inside the checkout (see exports.go)
 }
 
 type File struct {
@@ -112,6 +113,7 @@ type File struct {
 	copyPath    string            // Copy resolved to the target's tree path after flattening
 	rules       SrcList           // derived root context file with the instructions folded in after its sources
 	managed     *managedDoc       // derived configuration document in which jig owns only the keys it wrote
+	context     bool              // a derived root context file: scoped and exported sections are framed
 	Description string            `json:"description,omitempty"`
 	Executable  bool              `json:"executable,omitempty"`
 	Archived    bool              `json:"archived,omitempty"`
@@ -195,7 +197,8 @@ type Group struct {
 	Meta        map[string]string `json:"meta,omitempty"` // user-defined metadata, inherited per key by descendants
 	DependsOn   []Dependency      `json:"dependsOn,omitempty"`
 	OnlyWhen    *Condition        `json:"onlyWhen,omitempty"`
-	Agents      map[string]string `json:"agents,omitempty"` // exports for every descendant repository, inherited per key
+	Exports     map[string]string `json:"exports,omitempty"` // exports for every descendant repository, inherited per key
+	Agents      *AgentsBlock      `json:"agents,omitempty"`  // an agents block scoped to the group (see expandAgents)
 }
 
 // Ref is a schema reference: exactly one of ID, Path, and Tags selects the

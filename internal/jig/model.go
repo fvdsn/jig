@@ -47,7 +47,7 @@ type inheritedGroup struct {
 	Meta        map[string]string
 	DependsOn   []Dependency
 	Conditions  []Condition
-	Agents      map[string]string // exports inherited per key
+	Exports     map[string]string // exports inherited per key
 }
 
 // treeNode is the normalized tree: multi-segment keys like "a/b" are split
@@ -85,7 +85,10 @@ func flattenDefinition(def *Definition, harnesses []string) (Model, error) {
 		return model, err
 	}
 	if def.Version < 4 && hasExports(&model) {
-		return model, errors.New("repository exports (agents on $repo or $group) require version 4; set version: 4")
+		return model, errors.New("repository exports (exports on $repo or $group) require version 4; set version: 4")
+	}
+	if def.Version < 4 && len(groupBlocks(&model)) > 0 {
+		return model, errors.New("a group's agents block requires version 4; set version: 4")
 	}
 	if err := expandAgents(def.Agents, harnesses, &model); err != nil {
 		return model, err
@@ -183,7 +186,7 @@ func flattenTreeNode(node *treeNode, path string, inherited inheritedGroup, mode
 				return fmt.Errorf("invalid $repo at %s: %s", path, err)
 			}
 			repo = applyInheritedRepo(repo, inherited)
-			repo.Agents = mergeMeta(inherited.Agents, repo.Agents)
+			repo.Exports = mergeMeta(inherited.Exports, repo.Exports)
 			model.Entries[path] = Entry{
 				Path:       path,
 				Identity:   identityOr(repo.ID, path),
@@ -370,7 +373,7 @@ func mergeGroup(inherited inheritedGroup, group Group) inheritedGroup {
 		Meta:        mergeMeta(inherited.Meta, group.Meta),
 		DependsOn:   append([]Dependency{}, inherited.DependsOn...),
 		Conditions:  append([]Condition{}, inherited.Conditions...),
-		Agents:      mergeMeta(inherited.Agents, group.Agents),
+		Exports:     mergeMeta(inherited.Exports, group.Exports),
 	}
 	if group.Description != "" {
 		merged.Description = group.Description

@@ -24,6 +24,8 @@ type MCPServer struct {
 	URL      string            `json:"url,omitempty"`
 	Headers  map[string]string `json:"headers,omitempty"`
 	OnlyWhen *Condition        `json:"onlyWhen,omitempty"`
+	scope    string            // from a group's agents block: the group path gating the server
+	fallback *MCPServer        // the server of the same name this one overrides, used while this one is gated off
 }
 
 func (s MCPServer) remote() bool { return s.URL != "" }
@@ -354,19 +356,32 @@ func (m *materializer) activeContent(doc *managedDoc) (servers map[string]MCPSer
 		return nil, nil, nil, resolved, err
 	}
 	for name, server := range doc.servers {
-		if server.OnlyWhen != nil && !conditionMetIn(m.model, m.evidence, *server.OnlyWhen) {
+		active, ok := m.activeServer(server)
+		if !ok {
 			delete(servers, name)
 			continue
 		}
-		servers[name] = server
+		servers[name] = active
 	}
 	for _, hook := range doc.hooks {
-		if hook.OnlyWhen != nil && !conditionMetIn(m.model, m.evidence, *hook.OnlyWhen) {
+		if m.scopedOff(hook.scope, hook.OnlyWhen) {
 			continue
 		}
 		hooks = append(hooks, hook)
 	}
 	return servers, hooks, skipped, resolved, nil
+}
+
+// activeServer picks the server to write for a name: the declared one
+// when its scope and condition match, else the one it overrides, and so
+// on; ok is false when none applies.
+func (m *materializer) activeServer(server MCPServer) (MCPServer, bool) {
+	for current := &server; current != nil; current = current.fallback {
+		if !m.scopedOff(current.scope, current.OnlyWhen) {
+			return *current, true
+		}
+	}
+	return MCPServer{}, false
 }
 
 // pluginFeeds reads the .mcp.json (in the Claude plugin shape,
