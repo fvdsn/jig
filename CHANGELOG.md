@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v4.8.1 — 2026-10-20
 
 - Fixes: `jig status` no longer reports as missing the entries sync
   would not write: a file or dir whose every source is gated off (a
