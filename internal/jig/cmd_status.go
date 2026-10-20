@@ -200,6 +200,23 @@ func fileStatusLine(ws *Workspace, entry Entry, activeFiles map[string]bool) (st
 		targetEntry, _ := ws.Model.entry(entry.File.linkPath, EntryFile)
 		return symlinkStatusLine(entry.Path, targetEntry.Path, expectedAbs), true
 	}
+	if stateFile.Managed {
+		missing, modified, err := managedStatus(expectedAbs, stateFile)
+		switch {
+		case err != nil:
+			return statusLine{glyphConflict, filePath, "", err.Error()}, true
+		case missing+modified > 0:
+			var notes []string
+			if missing > 0 {
+				notes = append(notes, fmt.Sprintf("%d missing", missing))
+			}
+			if modified > 0 {
+				notes = append(notes, fmt.Sprintf("%d modified", modified))
+			}
+			return statusLine{glyphDirty, filePath, "", strings.Join(notes, ", ")}, true
+		}
+		return statusLine{glyphClean, filePath, "", ""}, true
+	}
 	currentHash, err := fileSHA256(expectedAbs)
 	if err != nil {
 		return statusLine{glyphConflict, filePath, "", err.Error()}, true

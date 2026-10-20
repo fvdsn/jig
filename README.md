@@ -153,11 +153,17 @@ Coding agents read skills and root instructions from harness-specific places: `.
     "commands": ["git@github.com:acme/meta.git#commands"],
     "plugins": [
       { "src": "git@github.com:acme/pdlc-plugins.git", "onlyWhen": { "tags": ["pdlc"] } }
-    ]
+    ],
+    "mcp": {
+      "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"], "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" } },
+      "billing-api": { "url": "https://mcp.example.com/sse", "onlyWhen": { "path": "billing/*" } }
+    }
   },
   "tree": {}
 }
 ```
+
+`mcp` declares MCP servers once, in the standard shape, and jig writes each harness's own configuration document (`.mcp.json`, `.vscode/mcp.json` and `.github/mcp.json`, `.cursor/mcp.json`, `opencode.json`, `.gemini/settings.json`, `.kiro/settings/mcp.json`, `.codex/config.toml`) in that harness's shape, with `${NAME}` references translated to `${env:NAME}` where the harness wants them. These documents are the user's: jig owns only the keys it wrote, keeps and reports a key that conflicts with or was edited by the user, removes its keys when a server leaves the schema, and deletes a document only if it created it. A plugin's `.mcp.json` feeds the same map.
 
 `plugins` sources are plugins in the Claude Code plugin layout, or marketplaces of them: each plugin is kept whole under `.agents/plugins/`, and its skills, agents, and commands feed the lists above as if declared there, with the links from a skill or agent to the plugin's shared `references/` rewritten so they resolve from wherever the harness reads them. One line installs an organization's whole plugin library for every harness, Copilot and Codex included.
 

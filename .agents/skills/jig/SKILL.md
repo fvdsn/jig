@@ -428,7 +428,11 @@ Skills and root instructions for coding agents are better declared once in the t
     "plugins": [
       { "src": "git@github.com:acme/pdlc-plugins.git", "onlyWhen": { "tags": ["pdlc"] } },
       "git@github.com:acme/pdlc-plugins.git#delivery/review-code"
-    ]
+    ],
+    "mcp": {
+      "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"], "env": { "GITHUB_TOKEN": "${GITHUB_TOKEN}" } },
+      "billing-api": { "url": "https://mcp.example.com/sse", "headers": { "Authorization": "Bearer ${TOKEN}" }, "onlyWhen": { "path": "billing/*" } }
+    }
   },
   "tree": {}
 }
@@ -444,7 +448,8 @@ Rules:
 - Which harnesses are materialized is per machine, never in the schema: the `harnesses` list in `.jig/config.json`, or detection from the harness directories in the home folder when the list is absent. Removing a harness makes its aliases stale (`jig sync --prune` removes them); adding one derives them on the next sync.
 - A derived path the tree also declares is a validation error, so a schema migrates one primitive at a time: move `.agents/skills` into `agents.skills` and delete the tree entry and its aliases. A tree entry may `link` to a derived entry by identity for a harness path jig does not know.
 - `plugins` is a source list of plugins in the Claude Code plugin layout (`.claude-plugin/plugin.json`, or `.plugin/`, or `.cursor-plugin/`, beside `skills/`, `agents/`, `commands/`) or marketplaces (`.claude-plugin/marketplace.json` listing plugins by relative path; a marketplace source installs them all, a plugin source one). Each plugin is kept whole in the store `.agents/plugins/<name>/` (identity `agents-plugins`), and its `skills/`, `agents/`, and `commands/` feed those primitives before the explicit lists, so an explicit declaration wins on a same-named skill. Relative markdown links from a skill or agent to files elsewhere in the plugin (its `references/`, say) are rewritten to point into the store. Marketplace entries whose source is not a path inside the repository are skipped and reported. A plugin's `apm.yml` dependencies are not followed: declare them as sources.
-- `agents` requires `"version": 4`. The other primitives of the spec (`mcp`, `hooks`) are not implemented yet and are refused by name.
+- `mcp` is a map from server name (letters, digits, `_ . -`) to a server: `command`, `args`, `env` for a local one, `url`, `headers` for a remote one, exactly one of `command` and `url`, plus `onlyWhen`. Jig derives one managed document per harness in use (`.mcp.json` for Claude, `.github/mcp.json` and `.vscode/mcp.json` for Copilot, `.cursor/mcp.json`, `opencode.json`, `.gemini/settings.json`, `.kiro/settings/mcp.json`, `.codex/config.toml`; identities `agents-mcp-<harness>`, `agents-mcp-copilot-vscode`), each in the harness's own shape, with `${NAME}` and `${env:NAME}` references translated to the harness's form. A managed document is the user's file: jig owns only the keys it wrote (state records them with value hashes), upserts them, removes them when a server leaves the schema or is gated off, keeps and reports a key the user already had with another value (conflict) or edited after jig wrote it (modified; `jig rm` refuses it unless forced), writes JSON back with its key order kept, leaves a document that is not valid JSON alone, and deletes a document only if it created it and nothing is left. Codex's `config.toml` is edited table by table. With no harness in use nothing is written. A plugin's `.mcp.json` feeds the map, explicit servers winning on a name.
+- `agents` requires `"version": 4`. The remaining primitive of the spec (`hooks`) is not implemented yet and is refused by name.
 
 ## Conditional Nodes
 

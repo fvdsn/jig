@@ -174,8 +174,8 @@ func TestAgentsBlockRequiresVersion4(t *testing.T) {
 // so are unknown fields, so a schema never silently loses declarations.
 func TestAgentsBlockRejectsUnimplementedAndUnknownFields(t *testing.T) {
 	var def Definition
-	err := json.Unmarshal([]byte(`{"version": 4, "agents": {"mcp": {}}, "tree": {}}`), &def)
-	if err == nil || !strings.Contains(err.Error(), "agents.mcp is not supported by this jig yet") {
+	err := json.Unmarshal([]byte(`{"version": 4, "agents": {"hooks": []}, "tree": {}}`), &def)
+	if err == nil || !strings.Contains(err.Error(), "agents.hooks is not supported by this jig yet") {
 		t.Fatalf("planned field = %v", err)
 	}
 	err = json.Unmarshal([]byte(`{"version": 4, "agents": {"skilz": []}, "tree": {}}`), &def)

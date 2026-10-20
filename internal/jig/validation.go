@@ -93,6 +93,9 @@ func validateDefinition(def *Definition) validationResult {
 				result.Errors = append(result.Errors, fmt.Sprintf("repo %s missing git", path))
 			}
 		case EntryFile:
+			if entry.File.managed != nil {
+				continue // the mcp map is validated once, below
+			}
 			validateSources(&result, &model, path, EntryFile, entry.File.Src, entry.File.Link, entry.File.Copy)
 			if entry.File.Executable && entry.File.Link != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("file %s cannot use executable with link", path))
@@ -109,6 +112,9 @@ func validateDefinition(def *Definition) validationResult {
 		}
 	}
 
+	if def.Agents != nil {
+		validateMCP(&result, &model, def.Agents.MCP)
+	}
 	for _, cycle := range detectCycles(sortedRepoPaths(&model), repoDependencyPaths(&model)) {
 		result.Warnings = append(result.Warnings, "dependency cycle detected: "+strings.Join(cycle, " -> "))
 	}

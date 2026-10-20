@@ -99,6 +99,7 @@ type File struct {
 	Copy        *Ref              `json:"copy,omitempty"` // single-target: materialize another $file's sources as a real file
 	copyPath    string            // Copy resolved to the target's tree path after flattening
 	rules       SrcList           // derived root context file with the instructions folded in after its sources
+	managed     *managedDoc       // derived configuration document in which jig owns only the keys it wrote
 	Description string            `json:"description,omitempty"`
 	Executable  bool              `json:"executable,omitempty"`
 	Archived    bool              `json:"archived,omitempty"`

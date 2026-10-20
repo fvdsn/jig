@@ -55,6 +55,11 @@ func deleteTrackedFile(root string, rel string, stateFile StateFile, policy modi
 	if !pathEntryExists(abs) {
 		return false, nil
 	}
+	if stateFile.Managed {
+		// Only jig's keys go; the document is the user's.
+		keptKeys, err := deleteManagedKeys(root, rel, stateFile, policy)
+		return keptKeys > 0, err
+	}
 	if stateFile.SHA256 != "" && policy != deleteModified {
 		modified := isSymlink(abs)
 		if !modified {

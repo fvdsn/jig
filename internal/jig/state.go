@@ -33,11 +33,14 @@ type StateRepo struct {
 }
 
 type StateFile struct {
-	Path    string `json:"path"`
-	Src     string `json:"src,omitempty"`
-	Link    string `json:"link,omitempty"`
-	SHA256  string `json:"sha256,omitempty"`
-	SrcBlob string `json:"srcBlob,omitempty"` // git blob id of the source file when written
+	Path    string            `json:"path"`
+	Src     string            `json:"src,omitempty"`
+	Link    string            `json:"link,omitempty"`
+	SHA256  string            `json:"sha256,omitempty"`
+	SrcBlob string            `json:"srcBlob,omitempty"` // git blob id of the source file when written
+	Managed bool              `json:"managed,omitempty"` // a managed document: jig owns Keys inside it, not the file
+	Created bool              `json:"created,omitempty"` // jig created the managed document, so it may delete it when empty
+	Keys    map[string]string `json:"keys,omitempty"`    // managed document: key path to the hash of the value jig wrote
 }
 
 func emptyState() State {

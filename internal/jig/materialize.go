@@ -205,6 +205,9 @@ func activeSourceURLs(model *Model, plan plan, evidence map[string]bool) []strin
 			if kind == EntryFile && entry.File.rules != nil {
 				addSources(entry.File.rules, parseItemSrc)
 			}
+			if kind == EntryFile && entry.File.managed != nil {
+				addSources(entry.File.managed.plugins, parseDirSrc)
+			}
 		}
 	}
 	add(EntryFile, plan.Files, parseFileSrc)

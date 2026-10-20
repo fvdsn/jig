@@ -20,6 +20,9 @@ func (m *materializer) ensureFile(filePath string) error {
 	if file.Link != nil {
 		return m.ensureLink(entry)
 	}
+	if file.managed != nil {
+		return m.ensureManaged(entry)
+	}
 	srcs, err := effectiveSources(m.model, entry)
 	if err != nil {
 		return err

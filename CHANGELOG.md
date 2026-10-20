@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- The `agents` block gains `mcp`: MCP servers declared once in the
+  standard shape and written into each harness's own configuration
+  document (`.mcp.json`, `.github/mcp.json` and `.vscode/mcp.json`,
+  `.cursor/mcp.json`, `opencode.json`, `.gemini/settings.json`,
+  `.kiro/settings/mcp.json`, `.codex/config.toml`) in that harness's
+  shape, with environment references translated to the harness's
+  syntax. These are managed documents: jig owns only the keys it wrote,
+  keeps and reports conflicting or edited keys, removes its keys when
+  a server leaves the schema, preserves the document's key order, and
+  deletes a document only if it created it. A plugin's `.mcp.json`
+  feeds the same map. Only `hooks` remains unimplemented.
+
 ## v4.3.1 — 2026-10-20
 
 - Fixes: with two or more harnesses fed by a plugin source that has

@@ -71,6 +71,7 @@ func testMarketplace(t *testing.T, dir string) {
 		"alpha/agents/reviewer.md":          "---\nname: reviewer\ndescription: Reviews\n---\nUse [the rules](../references/rules.md#core).\n",
 		"alpha/references/rules.md":         "# Rules\n",
 		"alpha/README.md":                   "alpha readme\n",
+		"alpha/.mcp.json":                   `{"mcpServers": {"jumpstart": {"type": "http", "url": "https://mcp.example.com/mcp"}}}`,
 		"delivery/beta/.plugin/plugin.json": `{"name": "beta"}`,
 		"delivery/beta/commands/deploy.md":  "---\ndescription: Deploy\n---\nDeploy $ARGUMENTS\n",
 	})
@@ -103,7 +104,7 @@ func TestAgentsBlockMaterializesPlugins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(sortedEntryPaths(&model), " "); got != ".agents/plugins .claude/agents .claude/commands .claude/skills" {
+	if got := strings.Join(sortedEntryPaths(&model), " "); got != ".agents/plugins .claude/agents .claude/commands .claude/skills .mcp.json" {
 		t.Fatalf("entries = %s", got)
 	}
 	if store := model.Entries[".agents/plugins"]; store.Identity != "agents-plugins" || !store.Dir.store {
@@ -153,6 +154,13 @@ func TestAgentsBlockMaterializesPlugins(t *testing.T) {
 		t.Fatalf(".codex/agents/reviewer =\n%s", got)
 	}
 	read(".claude/commands/deploy.md")
+	// The plugin's .mcp.json feeds the MCP documents.
+	if got := read(".mcp.json"); !strings.Contains(got, "\"jumpstart\"") || !strings.Contains(got, "\"type\": \"http\"") {
+		t.Fatalf(".mcp.json =\n%s", got)
+	}
+	if got := read(".codex/config.toml"); !strings.Contains(got, "[mcp_servers.jumpstart]\nurl = \"https://mcp.example.com/mcp\"") {
+		t.Fatalf(".codex/config.toml =\n%s", got)
+	}
 	if !strings.Contains(out.String(), "skipped plugin remote:") {
 		t.Fatalf("expected the remote entry to be reported:\n%s", out.String())
 	}

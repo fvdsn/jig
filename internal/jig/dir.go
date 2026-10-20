@@ -264,6 +264,45 @@ type dirSource struct {
 	pathspecs []string       // plugin source: the subtrees to archive
 }
 
+// pluginRoot resolves a plugin source to its tree (git mirror or local
+// directory), with the name it lands under in the store, its state key,
+// and the id covering its content.
+func (m *materializer) pluginRoot(source SrcEntry) (root pluginTree, base string, key string, id string, err error) {
+	if source.Dir != "" {
+		localAbs, err := expandLocalSource(source.Dir)
+		if err != nil {
+			return pluginTree{}, "", "", "", definitionError{err}
+		}
+		digest, err := localTreeDigest(localAbs)
+		if err != nil {
+			return pluginTree{}, "", "", "", err
+		}
+		return pluginTree{local: localAbs}, filepath.Base(localAbs), "dir:" + source.Dir, digest, nil
+	}
+	parsed, err := parseDirSrc(source.Src)
+	if err != nil {
+		return pluginTree{}, "", "", "", definitionError{err}
+	}
+	mirror, err := m.fetcher.mirror(parsed.GitURL)
+	if err != nil {
+		return pluginTree{}, "", "", "", err
+	}
+	srcPath, err := resolveSrcPath(mirror, parsed)
+	if err != nil {
+		return pluginTree{}, "", "", "", definitionError{err}
+	}
+	ref := "HEAD^{tree}"
+	if srcPath != "" {
+		ref = "HEAD:" + srcPath
+	}
+	out, err := git(mirror, "rev-parse", ref)
+	if err != nil {
+		return pluginTree{}, "", "", "", fmt.Errorf("subtree not found: %s", shortError(err))
+	}
+	tree := strings.TrimSpace(out)
+	return pluginTree{mirror: mirror, tree: tree}, sourceBaseName(parsed, srcPath), source.Src, tree, nil
+}
+
 // pluginRoute maps a path prefix inside a plugin source's tree
 // ("alpha/skills/") to the plugin whose files it holds, so one archive of
 // the whole source can be routed file by file.
@@ -298,40 +337,9 @@ func (m *materializer) resolvePluginSource(source SrcEntry) ([]dirSource, string
 		}
 		return []dirSource{cached.source}, cached.key, cached.id, cached.skipped, nil
 	}
-	var root pluginTree
-	var base, key, id string
-	if source.Dir != "" {
-		localAbs, err := expandLocalSource(source.Dir)
-		if err != nil {
-			return nil, "", "", nil, definitionError{err}
-		}
-		digest, err := localTreeDigest(localAbs)
-		if err != nil {
-			return nil, "", "", nil, err
-		}
-		root, base, key, id = pluginTree{local: localAbs}, filepath.Base(localAbs), "dir:"+source.Dir, digest
-	} else {
-		parsed, err := parseDirSrc(source.Src)
-		if err != nil {
-			return nil, "", "", nil, definitionError{err}
-		}
-		mirror, err := m.fetcher.mirror(parsed.GitURL)
-		if err != nil {
-			return nil, "", "", nil, err
-		}
-		srcPath, err := resolveSrcPath(mirror, parsed)
-		if err != nil {
-			return nil, "", "", nil, definitionError{err}
-		}
-		ref := "HEAD^{tree}"
-		if srcPath != "" {
-			ref = "HEAD:" + srcPath
-		}
-		out, err := git(mirror, "rev-parse", ref)
-		if err != nil {
-			return nil, "", "", nil, fmt.Errorf("subtree not found: %s", shortError(err))
-		}
-		root, base, key, id = pluginTree{mirror: mirror, tree: strings.TrimSpace(out)}, sourceBaseName(parsed, srcPath), source.Src, strings.TrimSpace(out)
+	root, base, key, id, err := m.pluginRoot(source)
+	if err != nil {
+		return nil, "", "", nil, err
 	}
 	plugins, skipped, err := root.manifest()
 	if err != nil {
