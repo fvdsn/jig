@@ -742,7 +742,6 @@ Coding agents read their context from harness-specific places: skills from `.age
   "version": 4,
   "agents": {
     "skills": [
-      "https://github.com/fvdsn/jig/tree/master/.agents/skills",
       "git@github.com:anthropics/skills.git#skills/frontend-design",
       {
         "src": "git@github.com:org/meta.git#skills/api-agent-skills",
@@ -811,7 +810,7 @@ The block is pure expansion: at load time it becomes tree entries at the harness
 
 Rules:
 
-- A derived entry whose path is also declared in `tree` is a validation error: the explicit form and the block cannot both own a path. A schema may use both forms for different paths, which is how an existing schema migrates one primitive at a time.
+- A derived entry whose path is also declared in `tree` is a validation error: the explicit form and the block cannot both own a path. A schema may use both forms for different paths, which is how an existing schema migrates one primitive at a time. The one exception is the skills entry a schema without any skills of its own still derives for [the jig skill](#the-jig-skill), which joins a declared directory instead.
 - Derived entries carry no `tags` or `meta` and are not archived. Their identities are fixed names (`agents-skills`, `agents-context`, …, suffixed by harness for per-harness entries), so they can be targeted by `--id` and by `link` references from the tree.
 - An entry is derived per location something on the machine reads, and nowhere else. The canonical entry of a primitive is derived when a listed harness reads the canonical location (alone or in addition to its own), or when no harness is listed. A listed harness that reads a different location gets an alias of the canonical entry: a link dir, a copy dir where the harness is known not to follow symlinks, or a link file. When the canonical entry is not derived, the harness's own path is the real entry instead, with the sources attached directly: a Claude-only machine gets `.claude/skills` and `CLAUDE.md` and nothing else, so its search tools never see a skill twice. Aliases follow their target's activation, as `$dir.link` and `$file.link` do. Identities are fixed per path, so a changed harness list converges in place: adding Codex to that machine derives `.agents/skills` and turns `.claude/skills` into a copy of it, and the existing manifest carries over.
 
@@ -834,6 +833,17 @@ When the config has no `harnesses` field, jig detects the harnesses from the mac
 A list of sources, merged in order into the canonical skills directory with `$dir` multi-source semantics (last source wins on a conflicting path, shadowed files reported).
 
 A source is a skill pack: a directory whose children are `<name>/SKILL.md` skill directories. A source whose root itself contains a `SKILL.md` is a single skill and lands under its own directory name (the last path segment of the source), which is how every harness identifies a skill. This is the one content-dependent rule in the block.
+
+### The jig skill
+
+Jig ships its own skill, the one under `.agents/skills/jig` in its repository, inside the binary, and installs it in every workspace: a coding agent in a jig workspace should know how to drive jig, and the skill that explains a command should be the one the installed binary runs. The skill is therefore a property of the binary, not of the schema, and is never declared.
+
+Rules:
+
+- The embedded skill is a skill pack of one skill that jig prepends to `agents.skills` in every schema, agents block or not and whatever the version, so an explicit skill named `jig` shadows it under the usual last-wins rule and is reported as shadowing. The skills primitive is then expanded by the rules above even when the schema has no block: `.agents/skills/jig` where the canonical entry is derived, and the harness copies the machine's harness list asks for. A version 3 schema is not required to become version 4 for this; the version requirement applies to a block the schema declares.
+- Where the skills primitive would derive an entry at a path the tree declares as a `$dir` with its own sources, the embedded pack joins that directory's sources first instead of colliding, so a schema that assembles `.agents/skills` or `.claude/skills` by hand keeps working and gets the skill. A declared `link` or `copy` at such a path is left alone: it follows its target, which carries the pack.
+- The source is recorded in state as `embedded:jig-skill@<version>` with the content hashes of its files, so a sync on the same version transfers nothing and an upgraded binary rewrites the skill on its next sync, reported as an update like any changed source. The safety rules apply: a locally modified `SKILL.md` is reported and left alone.
+- `jig skill` prints the embedded skill to standard output, for a reader who wants it somewhere jig does not write.
 
 ### `agents.context`
 
@@ -940,7 +950,7 @@ Each source is gated by its own `onlyWhen`. The canonical entry of a primitive i
 - Every source must parse by the `$file` / `$dir` rules; every `onlyWhen` must be satisfiable, as for conditional nodes.
 - `mcp` keys must be valid server names (`[A-Za-z0-9_.-]+`); a definition must have exactly one of `command` and `url`.
 - `hooks` events must be in the neutral vocabulary; a hook must have a command; a matcher is allowed on the tool events only.
-- Derived paths must not collide with declared tree paths.
+- Derived paths must not collide with declared tree paths, except that the jig skill joins a declared skills directory (see [The jig skill](#the-jig-skill)).
 - `harnesses` in `.jig/config.json`, when present, must contain known harness names only.
 - `plugins` sources must parse by the `$dir` rules; a local source must be a `dir`.
 
@@ -1334,7 +1344,7 @@ If the first argument is an existing local file, Jig creates `.jig/source/` as a
 
 If the first argument is not an existing local file, Jig treats it as a Git URL.
 
-If no argument is given, Jig starts a fresh workspace in the current directory: `.jig/source/` is created as a fresh Git repository containing a starter `jig.yaml` whose `agents` block pulls the official jig skill into the workspace's skills. The workspace is then cloned immediately so the starter content materializes. A fetch failure during this initial clone does not fail the init (`jig sync` retries later), and the command prints next steps for describing repositories and sharing the schema.
+If no argument is given, Jig starts a fresh workspace in the current directory: `.jig/source/` is created as a fresh Git repository containing a starter `jig.yaml` with the current version and an empty tree. The workspace is then cloned immediately, which installs [the jig skill](#the-jig-skill) so coding agents in the fresh workspace know how to drive it, and the command prints next steps for describing repositories and sharing the schema.
 
 If `workspace-dir` is omitted, the current working directory is used.
 
@@ -1414,6 +1424,10 @@ Validation should catch:
 - Invalid `link` references (wrong kind, self-reference, wrong arity).
 
 Dependency cycles should be detected and reported, but they do not necessarily make the file invalid.
+
+### `jig skill`
+
+Prints the embedded jig skill (`SKILL.md`) to standard output, the same content jig installs under `.agents/skills/jig` in every workspace. It needs no workspace.
 
 ### `jig list [path]`
 
