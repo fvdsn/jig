@@ -1222,7 +1222,7 @@ If the first argument is an existing local file, Jig creates `.jig/source/` as a
 
 If the first argument is not an existing local file, Jig treats it as a Git URL.
 
-If no argument is given, Jig starts a fresh workspace in the current directory: `.jig/source/` is created as a fresh Git repository containing a starter `jig.json` whose only entry pulls the official jig skill into `.agents/skills`. The workspace is then cloned immediately so the starter content materializes. A fetch failure during this initial clone does not fail the init (`jig sync` retries later), and the command prints next steps for describing repositories and sharing the schema.
+If no argument is given, Jig starts a fresh workspace in the current directory: `.jig/source/` is created as a fresh Git repository containing a starter `jig.json` whose `agents` block pulls the official jig skill into the workspace's skills. The workspace is then cloned immediately so the starter content materializes. A fetch failure during this initial clone does not fail the init (`jig sync` retries later), and the command prints next steps for describing repositories and sharing the schema.
 
 If `workspace-dir` is omitted, the current working directory is used.
 

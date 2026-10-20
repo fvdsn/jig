@@ -41,7 +41,9 @@ Start a brand-new workspace from scratch (no schema yet):
 jig init
 ```
 
-This creates `.jig/source/` as a fresh local Git repository containing a starter `jig.json` and materializes it immediately. The starter schema pulls the official jig skill into `.agents/skills`, so coding agents in the workspace know how to use jig. Edit `.jig/source/jig.json` to describe your repositories, then push `.jig/source` to a shared remote so teammates can `jig init <url>`.
+This creates `.jig/source/` as a fresh local Git repository containing a starter `jig.json` and materializes it immediately. The starter schema's `agents` block pulls the official jig skill into `.agents/skills`, so coding agents in the workspace know how to use jig. Edit `.jig/source/jig.json` to describe your repositories, then push `.jig/source` to a shared remote so teammates can `jig init <url>`.
+
+Init prints one `harnesses:` line: the coding-agent harnesses the `agents` block is materialized for, detected from their directories in your home (`~/.claude`, `~/.codex`, ...). `jig init <url> --harness claude,codex` (or `--harness none`) records a choice in `.jig/config.json` instead of detecting; edit that file to change it later. See Agent Context below.
 
 From a remote Git-hosted Jig definition:
 
@@ -77,11 +79,11 @@ When initialized from a local file, `.jig/source/` is created as a fresh Git rep
 
 ## Definition Shape
 
-The definition uses a top-level `tree`.
+The definition uses a top-level `tree`, and optionally an `agents` block (version 4).
 
 ```json
 {
-  "version": 3,
+  "version": 4,
   "tree": {
     "platform/auth": {
       "$repo": {
@@ -378,7 +380,7 @@ Declare whole subtrees with `$dir`. The subtree of the source repository is mate
 }
 ```
 
-A `$dir` can instead declare `link` to become a relative symlink to another `$dir` entry, or `copy` to materialize the target's sources as a second real directory (for consumers that do not follow symlinks reliably — some agent harnesses reading skill directories) — for example one real `.agents/skills` aliased into every harness path:
+A `$dir` can instead declare `link` to become a relative symlink to another `$dir` entry, or `copy` to materialize the target's sources as a second real directory (for consumers that do not follow symlinks reliably — some agent harnesses reading skill directories) — for example one real `.agents/skills` aliased into every harness path (the `agents` block below does this for you; the explicit form is for paths jig does not know):
 
 ```json
 {
@@ -397,6 +399,39 @@ Rules:
 - Files the user adds inside the directory are never touched.
 - A `$dir` defines exactly one of `src`, `link`, or `copy`. Link and copy dirs are active only when their target dir is active; removing a link dir removes only the symlink, and a copy converges on the target's sources on every sync.
 - `$dir` supports `description`, `archived`, `tags`, `meta`, and `onlyWhen` like `$file`, but not `executable`.
+
+## Agent Context
+
+Skills and root instructions for coding agents are better declared once in the top-level `agents` block than as `$dir` and `$file` entries at harness paths. The block names what the workspace provides and never where a harness reads it:
+
+```json
+{
+  "version": 4,
+  "agents": {
+    "skills": [
+      "https://github.com/fvdsn/jig/tree/master/.agents/skills",
+      "git@github.com:anthropics/skills.git#skills/frontend-design",
+      { "src": "git@github.com:acme/billing-skills.git#skills", "onlyWhen": { "path": "billing/*" } },
+      { "dir": "~/.config/acme/skills", "optional": true }
+    ],
+    "context": [
+      "git@github.com:acme/meta.git#context/workspace.md",
+      { "src": "git@github.com:acme/meta.git#context/billing.md", "onlyWhen": { "path": "billing/*" } },
+      { "file": "~/.config/acme/AGENTS.md", "optional": true }
+    ]
+  },
+  "tree": {}
+}
+```
+
+Rules:
+
+- `skills` is a source list in the `$dir` grammar, merged into `.agents/skills` (last wins on conflicts, per-source `onlyWhen`, local `dir` sources). A source is a skill pack: a directory of `<name>/SKILL.md`. A source whose root is itself a `SKILL.md` is one skill and lands under its own name (`frontend-design/SKILL.md` above).
+- `context` is a source list in the `$file` grammar, concatenated into `AGENTS.md`.
+- Jig derives the entries at load time: `.agents/skills` (identity `agents-skills`) and `AGENTS.md` (identity `agents-context`) always, plus an alias per harness in use: `.claude/skills` and `.kiro/skills` as real directories, `CLAUDE.md`, `GEMINI.md`, and `.github/copilot-instructions.md` as links (identities `agents-skills-claude`, `agents-context-claude`, ...). Codex, Copilot, Cursor, OpenCode, and Windsurf read the canonical locations. The derived entries behave like declared ones in `list`, `status`, `sync`, `rm`, and state.
+- Which harnesses are materialized is per machine, never in the schema: the `harnesses` list in `.jig/config.json`, or detection from the harness directories in the home folder when the list is absent. Removing a harness makes its aliases stale (`jig sync --prune` removes them); adding one derives them on the next sync.
+- A derived path the tree also declares is a validation error, so a schema migrates one primitive at a time: move `.agents/skills` into `agents.skills` and delete the tree entry and its aliases. A tree entry may `link` to a derived entry by identity for a harness path jig does not know.
+- `agents` requires `"version": 4`. The other primitives of the spec (`instructions`, `subagents`, `commands`, `mcp`, `hooks`) are not implemented yet and are refused by name.
 
 ## Conditional Nodes
 

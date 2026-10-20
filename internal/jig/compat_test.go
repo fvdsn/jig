@@ -35,7 +35,7 @@ func TestNewerVersionsAreRefused(t *testing.T) {
 
 	// Schema guard goes through loadWorkspace.
 	root2 := t.TempDir()
-	writeTestWorkspace(t, root2, `{"version": 4, "tree": {}}`)
+	writeTestWorkspace(t, root2, `{"version": 5, "tree": {}}`)
 	t.Chdir(root2)
 	if _, err := loadWorkspace(false); err == nil || !strings.Contains(err.Error(), "upgrade jig") {
 		t.Fatalf("schema guard: %v", err)

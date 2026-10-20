@@ -14,7 +14,7 @@ func TestDefinitionChangesTrackGroupsByIdentity(t *testing.T) {
       "$group": { "id": "shared-group" }
     }
   }
-}`))
+}`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func TestDefinitionChangesTrackGroupsByIdentity(t *testing.T) {
       "$group": { "id": "shared-group" }
     }
   }
-}`))
+}`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

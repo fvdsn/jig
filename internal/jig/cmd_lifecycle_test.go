@@ -24,7 +24,7 @@ func TestLifecycleCommandsInheritedFromGroups(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

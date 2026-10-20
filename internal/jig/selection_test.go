@@ -65,7 +65,7 @@ func TestSelectNodesAppliesPathArchiveAndOrdering(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestSelectNodesIncludesInstalledArchivedNodes(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestTrailingSlashPathMatchesGroup(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestNoEntriesMatchError(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +248,7 @@ func TestUnknownPathSuggestion(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

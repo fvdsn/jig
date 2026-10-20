@@ -59,7 +59,7 @@ jig rm services/checkout        # uninstall
 
 | Command | Description |
 | --- | --- |
-| `init [<git-url\|file> [dir]]` | Create a workspace from a schema repository or a local draft file; no args starts a fresh starter schema |
+| `init [<git-url\|file> [dir]]` | Create a workspace from a schema repository or a local draft file; no args starts a fresh starter schema (`--harness a,b` picks the coding-agent harnesses, otherwise detected) |
 | `list [path]` | List the catalog: groups, repos, files, dirs |
 | `tags [path]` | List the tags in scope, with entry counts |
 | `info <path>` | Show one entry's metadata |
@@ -91,7 +91,7 @@ A JSON tree where paths are the directory layout. Repos, files, and dirs are lea
 
 ```json
 {
-  "version": 3,
+  "version": 4,
   "tree": {
     "platform": {
       "$group": { "description": "Shared platform services", "tags": ["backend"] },
@@ -126,29 +126,33 @@ A JSON tree where paths are the directory layout. Repos, files, and dirs are lea
 
 Files and dirs follow the repositories around them: a support file placed inside a group is materialized whenever any repo of that group is installed; root-level files follow the workspace as a whole.
 
-## Agent skills
+## Agent context
 
-`$dir` is a natural fit for assembling one agent-skills directory for the whole workspace from several skill repositories. Jig itself ships a skill at `.agents/skills/jig/SKILL.md` that teaches agents how to drive it — use it as a source:
+Coding agents read skills and root instructions from harness-specific places: `.agents/skills` or `.claude/skills`, `AGENTS.md` or `CLAUDE.md`. The `agents` block declares what the workspace provides once, with no harness path in it, and jig materializes it for the harnesses used on each machine:
 
 ```json
 {
-  "tree": {
-    ".agents/skills": {
-      "$dir": {
-        "id": "agent-skills",
-        "src": [
-          "https://github.com/fvdsn/jig/tree/master/.agents/skills",
-          { "src": "git@github.com:acme/billing-skills.git#skills",
-            "onlyWhen": { "path": "billing/*" } }
-        ]
-      }
-    },
-    ".claude/skills": { "$dir": { "id": "claude-skills", "copy": {"path": ".agents/skills"} } }
-  }
+  "version": 4,
+  "agents": {
+    "skills": [
+      "https://github.com/fvdsn/jig/tree/master/.agents/skills",
+      "git@github.com:anthropics/skills.git#skills/frontend-design",
+      { "src": "git@github.com:acme/billing-skills.git#skills",
+        "onlyWhen": { "path": "billing/*" } },
+      { "dir": "~/.config/acme/skills", "optional": true }
+    ],
+    "context": [
+      "git@github.com:acme/meta.git#context/workspace.md",
+      { "file": "~/.config/acme/AGENTS.md", "optional": true }
+    ]
+  },
+  "tree": {}
 }
 ```
 
-`jig sync` merges the sources into `.agents/skills` (last wins on conflicts, `onlyWhen` gates per source) and aliases it into harness-specific paths via `link` (symlink) or `copy` (real directory, for harnesses that do not follow symlinks) — every agent working in the workspace then knows how to use jig. Add `{ "dir": "~/.config/acme/skills", "optional": true }` as a final source and each user can extend the skill set machine-wide; a source that is temporarily unavailable (say a pending MR) is reported while the rest still materialize. Note the first source is a directory URL pasted straight from the GitHub UI; jig resolves it to the clone URL and subtree path.
+`skills` sources are skill packs (directories of `<name>/SKILL.md`) or single skills (a directory whose root is a `SKILL.md`, landing under its own name), merged into `.agents/skills` with the `$dir` rules: last wins on conflicts, `onlyWhen` gates per source, local sources extend the set per user. `context` sources are concatenated into `AGENTS.md` with the `$file` rules. Jig itself ships a skill at `.agents/skills/jig/SKILL.md` that teaches agents how to drive it; the first source above pulls it in, and a bare `jig init` starts from exactly that.
+
+Which harnesses get their own alias (`.claude/skills` as a real directory, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md` as links) is not in the schema: it depends on the person, not the team. `jig init` detects the harnesses installed on the machine from their home directories and prints the list; `jig init --harness claude,codex` (or `none`) records a choice in `.jig/config.json` instead. The derived entries show up in `jig list` and `jig status` like declared ones, and a tree entry can still `link` to them by identity (`agents-skills`, `agents-context`) for a harness jig does not know.
 
 ## How it works
 

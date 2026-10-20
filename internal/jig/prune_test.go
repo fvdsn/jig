@@ -164,7 +164,7 @@ func TestSyncPruneDeletesStaleEntriesSafely(t *testing.T) {
 // modified file keeps the whole directory, like jig rm without --force.
 func TestSyncPruneKeepsModifiedStaleDirs(t *testing.T) {
 	root := t.TempDir()
-	model, err := flattenDefinition(testDefinition(t, `{"version": 3, "tree": {"keep": {"$repo": {"git": "git@example.com:keep.git"}}}}`))
+	model, err := flattenDefinition(testDefinition(t, `{"version": 3, "tree": {"keep": {"$repo": {"git": "git@example.com:keep.git"}}}}`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

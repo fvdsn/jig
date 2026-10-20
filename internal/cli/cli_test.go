@@ -166,3 +166,10 @@ func TestGitForwardsEverythingAfterGit(t *testing.T) {
 		t.Fatalf("jig git = %v, want usage error", err)
 	}
 }
+
+func TestInitHarnessFlagIsValidated(t *testing.T) {
+	err := cmdInit([]string{"git@example.com:config.git", "--harness", "claude,emacs"}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), `unknown harness "emacs"`) {
+		t.Fatalf("expected the harness list to be validated, got %v", err)
+	}
+}

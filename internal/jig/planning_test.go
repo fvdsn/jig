@@ -35,7 +35,7 @@ func TestResolveDependenciesRecursiveAndOptional(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestResolvePlanSkipDepsKeepsOnlyRoots(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestResolveDependenciesDoesNotIncludeRootInCycle(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestResolveDependenciesExcludesConditionalRoot(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestResolvePlanForGroupDeduplicatesDependencies(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestCloneAllRootsIncludeAllRepositories(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +275,7 @@ func TestResolvePlanSkipsArchivedReposUnlessIncluded(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +344,7 @@ func TestArchivedFilesAreSkippedUnlessIncluded(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,7 +398,7 @@ func TestResolvePlanIncludesInstalledOptionalDependencyForSync(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -440,7 +440,7 @@ func TestResolvePlanActivatesOnlyWhenFileAndRepo(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,7 +477,7 @@ func TestIncludeExplicitFilesAddsRequestedFilesAndLinkTargets(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

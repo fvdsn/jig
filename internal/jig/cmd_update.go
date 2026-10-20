@@ -61,7 +61,7 @@ func updateSchema(ws *Workspace, out io.Writer) error {
 	if len(validation.Errors) > 0 {
 		return validation.asError("invalid upstream schema")
 	}
-	if _, err := flattenDefinition(&incoming); err != nil {
+	if _, err := flattenDefinition(&incoming, ws.Harnesses); err != nil {
 		return err
 	}
 
@@ -81,7 +81,7 @@ func updateSchema(ws *Workspace, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, ws.Harnesses)
 	if err != nil {
 		return err
 	}

@@ -32,7 +32,7 @@ func TestFileLinkValidationAndOrdering(t *testing.T) {
 	if len(result.Errors) > 0 {
 		t.Fatalf("unexpected validation errors: %#v", result.Errors)
 	}
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

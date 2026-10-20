@@ -151,7 +151,7 @@ func TestDependenciesResolveByIdTagsAndSubtree(t *testing.T) {
 	if errors := validateDefinition(def).Errors; len(errors) != 0 {
 		t.Fatalf("unexpected validation errors: %#v", errors)
 	}
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestConditionsByIdAndExactPath(t *testing.T) {
 	if errors := validateDefinition(def).Errors; len(errors) != 0 {
 		t.Fatalf("unexpected validation errors: %#v", errors)
 	}
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

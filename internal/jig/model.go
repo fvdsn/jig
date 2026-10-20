@@ -61,16 +61,25 @@ func newTreeNode() *treeNode {
 	return &treeNode{markers: map[string]json.RawMessage{}, children: map[string]*treeNode{}}
 }
 
-func flattenDefinition(def *Definition) (Model, error) {
+// flattenDefinition turns a parsed schema into the model: the tree entries
+// plus the entries the agents block derives for the given harnesses (nil
+// derives the canonical entries only).
+func flattenDefinition(def *Definition, harnesses []string) (Model, error) {
 	model := Model{Entries: map[string]Entry{}}
 	if def.Tree == nil {
 		return model, errors.New("missing tree")
+	}
+	if def.Agents != nil && def.Version < 4 {
+		return model, errors.New("the agents block requires version 4; set version: 4")
 	}
 	root := newTreeNode()
 	if err := insertTreeMap(root, def.Tree, ""); err != nil {
 		return model, err
 	}
 	if err := flattenTreeNode(root, "", inheritedGroup{}, &model); err != nil {
+		return model, err
+	}
+	if err := expandAgents(def.Agents, harnesses, &model); err != nil {
 		return model, err
 	}
 	resolveLinkPaths(&model)

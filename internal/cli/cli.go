@@ -241,6 +241,7 @@ var initFlags = map[string]flagKind{
 	"--with-optional-deps": boolFlag,
 	"--archived":           boolFlag,
 	"--tags":               valueFlag,
+	"--harness":            valueFlag,
 }
 
 // checkDepsFlags rejects the contradictory dependency selectors.
@@ -262,10 +263,12 @@ type commandDoc struct {
 
 var commandDocs = []commandDoc{
 	{"init",
-		[]string{"init [git-url-or-file [workspace-dir]] [--path <path>] [--clone [path]] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b]"},
+		[]string{"init [git-url-or-file [workspace-dir]] [--path <path>] [--clone [path]] [--no-deps] [--with-optional-deps] [--archived] [--tags a,b] [--harness a,b|none]"},
 		[]string{
 			"Initialize a workspace: clone the schema repository into .jig/source, optionally cloning a path.",
 			"With no arguments, start a fresh workspace here with a starter schema in .jig/source.",
+			"--harness records which coding-agent harnesses the schema's agents block is materialized for;",
+			"without it, jig detects them from the harness directories in your home.",
 		}},
 	{"validate",
 		[]string{"validate [schema-file]"},
@@ -462,6 +465,13 @@ func cmdInit(args []string, out io.Writer) error {
 	}
 	if len(parsed.Positionals) == 2 {
 		options.WorkspaceDir = parsed.Positionals[1]
+	}
+	if value, ok := parsed.Values["--harness"]; ok {
+		harnesses, err := jig.ParseHarnesses(value)
+		if err != nil {
+			return err
+		}
+		options.Harnesses = &harnesses
 	}
 	return jig.Init(options, out)
 }

@@ -829,3 +829,70 @@ func TestEnsureDirLocalSources(t *testing.T) {
 		t.Fatalf("A = %q, want git content restored", data)
 	}
 }
+
+// In a skills-layout dir, a source whose root is itself a skill lands under
+// its own name, so the harness still finds <name>/SKILL.md; packs merge at
+// the root as before. A copy alias of the dir lays out the same.
+func TestSkillsLayoutNestsSingleSkills(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	pack := testSkillsSource(t, root, "pack", map[string]string{"A/SKILL.md": "A\n"})
+	single := filepath.Join(root, "anthropic-skills")
+	testFileSource(t, single, map[string]string{"skills/frontend-design/SKILL.md": "fd\n", "skills/frontend-design/ref/a.md": "ref\n"})
+	whole := filepath.Join(root, "repo-skill.git")
+	testFileSource(t, whole, map[string]string{"SKILL.md": "whole\n"})
+	local := filepath.Join(root, "home", "my-skill")
+	if err := os.MkdirAll(local, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(local, "SKILL.md"), []byte("local\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sources := SrcList{{Src: pack + "#skills"}, {Src: single + "#skills/frontend-design"}, {Src: whole}, {Dir: local}}
+	state := emptyState()
+	model := Model{Entries: map[string]Entry{
+		".agents/skills": {Path: ".agents/skills", Identity: "agents-skills", Kind: EntryDir,
+			Dir: &Dir{ID: "agents-skills", Src: sources, skills: true}},
+		".claude/skills": {Path: ".claude/skills", Identity: "agents-skills-claude", Kind: EntryDir,
+			Dir: &Dir{Copy: &Ref{ID: "agents-skills"}}},
+		"plain": {Path: "plain", Identity: "plain", Kind: EntryDir,
+			Dir: &Dir{Src: SrcList{{Src: single + "#skills/frontend-design"}}}},
+	}}
+	resolveLinkPaths(&model)
+	for _, path := range []string{".agents/skills", ".claude/skills", "plain"} {
+		var out bytes.Buffer
+		if err := newMaterializer(&out, root, &model, &state, newFileFetcher(), nil, nil, true).ensureDir(path); err != nil {
+			t.Fatalf("ensureDir %s: %v\n%s", path, err, out.String())
+		}
+	}
+	for _, dir := range []string{".agents/skills", ".claude/skills"} {
+		for rel, want := range map[string]string{
+			"A/SKILL.md":               "A\n",
+			"frontend-design/SKILL.md": "fd\n",
+			"frontend-design/ref/a.md": "ref\n",
+			"repo-skill/SKILL.md":      "whole\n",
+			"my-skill/SKILL.md":        "local\n",
+		} {
+			data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(dir), filepath.FromSlash(rel)))
+			if err != nil || string(data) != want {
+				t.Fatalf("%s/%s = %q, %v", dir, rel, data, err)
+			}
+		}
+		if pathExists(filepath.Join(root, filepath.FromSlash(dir), "SKILL.md")) {
+			t.Fatalf("%s has a SKILL.md at its root", dir)
+		}
+	}
+	// Without the skills layout the same source merges at the root.
+	if data, _ := os.ReadFile(filepath.Join(root, "plain", "SKILL.md")); string(data) != "fd\n" {
+		t.Fatalf("plain dir = %q", data)
+	}
+	// The manifest records the nested paths, so the second run is clean.
+	var out bytes.Buffer
+	if err := newMaterializer(&out, root, &model, &state, newFileFetcher(), nil, nil, true).ensureDir(".agents/skills"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "present-dir: .agents/skills") {
+		t.Fatalf("second run = %q", out.String())
+	}
+}

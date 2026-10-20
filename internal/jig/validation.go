@@ -11,8 +11,9 @@ type validationResult struct {
 	Warnings []string
 }
 
-// schemaVersion is the schema format this jig reads and writes.
-const schemaVersion = 3
+// schemaVersion is the schema format this jig reads and writes. Version 3
+// is still read: version 4 only adds the optional agents block.
+const schemaVersion = 4
 
 // schemaVersionError is the one place the version policy lives: older
 // versions are refused with the migration they need, newer ones with an
@@ -23,7 +24,7 @@ func schemaVersionError(version int) error {
 		return errors.New("the schema uses version 1, which predates structured references; update refs (see specs: References) and set version: 3")
 	case version == 2:
 		return errors.New("the schema uses version 2, which predates local sources; set version: 3 (no other changes needed)")
-	case version == schemaVersion:
+	case version == 3, version == schemaVersion:
 		return nil
 	case version > schemaVersion:
 		return fmt.Errorf("the schema uses version %d, which this jig does not understand; upgrade jig", version)
@@ -40,7 +41,10 @@ func validateDefinition(def *Definition) validationResult {
 		result.Errors = append(result.Errors, err.Error())
 	}
 
-	model, err := flattenDefinition(def)
+	// Validation derives the agents block for every known harness, so a
+	// collision with a per-harness alias is an error on every machine, not
+	// only on the ones that use that harness.
+	model, err := flattenDefinition(def, knownHarnesses)
 	if err != nil {
 		result.Errors = append(result.Errors, err.Error())
 		return result

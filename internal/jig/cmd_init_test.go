@@ -44,7 +44,7 @@ func TestInitFromLocalFileCreatesSourceCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := flattenDefinition(def); err != nil {
+	if _, err := flattenDefinition(def, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !isGitRepo(filepath.Join(workspacePath, sourceDir)) {
@@ -83,7 +83,7 @@ func TestInitBareCreatesStarterWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,5 +144,66 @@ func TestInitFromLocalFileRejectsPathFlag(t *testing.T) {
 	}, ioDiscard{})
 	if err == nil || err.Error() != "--path can only be used with Git sources" {
 		t.Fatalf("expected --path error, got %v", err)
+	}
+}
+
+// Init records the harness list when given and leaves detection on
+// otherwise, and says which on its one harness line.
+func TestInitRecordsHarnesses(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	if err := os.MkdirAll(filepath.Join(home, ".codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	detected := filepath.Join(t.TempDir(), "detected")
+	var out bytes.Buffer
+	if err := Init(InitOptions{WorkspaceDir: detected}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "harnesses: codex (detected)\n") {
+		t.Fatalf("detected init output:\n%s", out.String())
+	}
+	config, err := loadConfig(detected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Harnesses != nil {
+		t.Fatalf("detection must not be recorded: %v", *config.Harnesses)
+	}
+
+	chosen := filepath.Join(t.TempDir(), "chosen")
+	harnesses := []string{"claude", "gemini"}
+	out.Reset()
+	if err := Init(InitOptions{WorkspaceDir: chosen, Harnesses: &harnesses}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "harnesses: claude, gemini (--harness)\n") {
+		t.Fatalf("chosen init output:\n%s", out.String())
+	}
+	config, err = loadConfig(chosen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Harnesses == nil || strings.Join(*config.Harnesses, ",") != "claude,gemini" {
+		t.Fatalf("recorded harnesses = %v", config.Harnesses)
+	}
+	// The starter schema's agents block derives the claude alias for the
+	// recorded list.
+	ws, err := loadWorkspaceAt(chosen, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := ws.Model.entry(".claude/skills", EntryDir); !ok || ws.HarnessSource != "configured" {
+		t.Fatalf("entries = %v (%s)", sortedEntryPaths(&ws.Model), ws.HarnessSource)
+	}
+
+	none := []string{}
+	out.Reset()
+	if err := Init(InitOptions{WorkspaceDir: filepath.Join(t.TempDir(), "none"), Harnesses: &none}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "harnesses: none (--harness)\n") {
+		t.Fatalf("none init output:\n%s", out.String())
 	}
 }

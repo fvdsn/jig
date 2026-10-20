@@ -28,7 +28,7 @@ func TestFlattenDefinitionWithSlashShorthandAndFile(t *testing.T) {
   }
 }`)
 
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestFlattenDefinitionRejectsAPathDefinedTwice(t *testing.T) {
     "services/api": { "$repo": { "git": "git@example.com:two.git" } }
   }
 }`)
-	_, err := flattenDefinition(def)
+	_, err := flattenDefinition(def, nil)
 	if err == nil || !strings.Contains(err.Error(), "services/api defines $repo more than once") {
 		t.Fatalf("expected a duplicate path error, got %v", err)
 	}
@@ -68,7 +68,7 @@ func TestFlattenDefinitionAssignsGroupIdentities(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestGroupArchivedIsInheritedByReposAndFiles(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ func TestGroupInheritanceAppliesMetadataAndDependencies(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestGroupOnlyWhenIsInheritedByReposAndFiles(t *testing.T) {
     }
   }
 }`)
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

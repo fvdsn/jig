@@ -54,7 +54,9 @@ func (m *materializer) ensureDir(dirPath string) error {
 		mirror string
 		tree   string
 		local  string // local directory source; mirror is empty
+		prefix string // directory the source's files land under; "" for the root
 	}
+	skillsLayout := skillsLayoutOf(m.model, entry)
 	var sources []resolvedSource
 	var treeOIDs []string
 	resolved, err := m.resolveSources(srcs, func(source SrcEntry) (string, error) {
@@ -67,7 +69,11 @@ func (m *materializer) ensureDir(dirPath string) error {
 			if err != nil {
 				return "", err
 			}
-			sources = append(sources, resolvedSource{local: localAbs, tree: digest})
+			prefix := ""
+			if skillsLayout && pathExists(filepath.Join(localAbs, skillFile)) {
+				prefix = filepath.Base(localAbs) + "/"
+			}
+			sources = append(sources, resolvedSource{local: localAbs, tree: digest, prefix: prefix})
 			treeOIDs = append(treeOIDs, digest)
 			return "dir:" + source.Dir, nil
 		}
@@ -95,7 +101,13 @@ func (m *materializer) ensureDir(dirPath string) error {
 		if objType, err := git(mirror, "cat-file", "-t", treeOID); err != nil || strings.TrimSpace(objType) != "tree" {
 			return "", fmt.Errorf("%s is not a directory in the source repository", srcPath)
 		}
-		sources = append(sources, resolvedSource{mirror: mirror, tree: treeOID})
+		prefix := ""
+		if skillsLayout {
+			if _, err := git(mirror, "cat-file", "-e", treeOID+":"+skillFile); err == nil {
+				prefix = sourceBaseName(parsed, srcPath) + "/"
+			}
+		}
+		sources = append(sources, resolvedSource{mirror: mirror, tree: treeOID, prefix: prefix})
 		treeOIDs = append(treeOIDs, treeOID)
 		return source.Src, nil
 	})
@@ -136,9 +148,9 @@ func (m *materializer) ensureDir(dirPath string) error {
 	for i := len(sources) - 1; i >= 0; i-- {
 		var err error
 		if sources[i].local != "" {
-			err = materializeLocalTree(sources[i].local, expectedAbs, oldManifest, newManifest, &counts)
+			err = materializeLocalTree(sources[i].local, sources[i].prefix, expectedAbs, oldManifest, newManifest, &counts)
 		} else {
-			err = materializeTree(sources[i].mirror, sources[i].tree, expectedAbs, oldManifest, newManifest, &counts)
+			err = materializeTree(sources[i].mirror, sources[i].tree, sources[i].prefix, expectedAbs, oldManifest, newManifest, &counts)
 		}
 		if err != nil {
 			return err
@@ -180,6 +192,38 @@ func (m *materializer) ensureDir(dirPath string) error {
 	m.state.Dirs[entry.Identity] = StateDir{Path: entry.Path, Src: srcKey, Tree: combinedTree, Files: newManifest}
 	fmt.Fprintln(m.out, dirMessage(dirPath, hasState, counts)+note)
 	return nil
+}
+
+// skillFile marks a directory as one skill. A skills-layout source whose
+// root holds it is a single skill rather than a pack of them, and lands
+// under its own name so the harness still sees <name>/SKILL.md.
+const skillFile = "SKILL.md"
+
+// skillsLayoutOf reports whether a dir entry merges skill sources, through
+// its own flag or, for a copy alias, its target's.
+func skillsLayoutOf(model *Model, entry Entry) bool {
+	if entry.Dir.skills {
+		return true
+	}
+	if entry.Dir.Copy != nil {
+		if target, ok := model.entry(entry.Dir.copyPath, EntryDir); ok {
+			return target.Dir.skills
+		}
+	}
+	return false
+}
+
+// sourceBaseName names a git source by the last segment of its subtree
+// path, or of the repository URL when the whole tree is the source.
+func sourceBaseName(parsed fileSrc, srcPath string) string {
+	if srcPath != "" {
+		return filepath.Base(filepath.FromSlash(srcPath))
+	}
+	url := strings.TrimSuffix(strings.TrimRight(parsed.GitURL, "/"), ".git")
+	if i := strings.LastIndexAny(url, "/:"); i >= 0 {
+		url = url[i+1:]
+	}
+	return url
 }
 
 type dirCounts struct {
@@ -237,7 +281,7 @@ func manifestClean(dirAbs string, manifest map[string]string) bool {
 // order, so the last listed source claims a conflicted path first); files
 // matching the old manifest (untouched) are overwritten; locally modified
 // files are kept and counted.
-func materializeTree(mirror string, treeOID string, dirAbs string, oldManifest map[string]string, manifest map[string]string, counts *dirCounts) error {
+func materializeTree(mirror string, treeOID string, prefix string, dirAbs string, oldManifest map[string]string, manifest map[string]string, counts *dirCounts) error {
 	cmd := exec.Command("git", "archive", treeOID)
 	cmd.Dir = mirror
 	stdout, err := cmd.StdoutPipe()
@@ -247,7 +291,7 @@ func materializeTree(mirror string, treeOID string, dirAbs string, oldManifest m
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	if err := mergeArchive(stdout, dirAbs, oldManifest, manifest, counts); err != nil {
+	if err := mergeArchive(stdout, prefix, dirAbs, oldManifest, manifest, counts); err != nil {
 		// Stopping mid-stream leaves git blocked on a pipe nobody reads;
 		// kill it so Wait returns instead of hanging.
 		_ = cmd.Process.Kill()
@@ -260,8 +304,9 @@ func materializeTree(mirror string, treeOID string, dirAbs string, oldManifest m
 	return nil
 }
 
-// mergeArchive merges every regular file of a tar stream into dirAbs.
-func mergeArchive(stream io.Reader, dirAbs string, oldManifest map[string]string, manifest map[string]string, counts *dirCounts) error {
+// mergeArchive merges every regular file of a tar stream into dirAbs,
+// under prefix.
+func mergeArchive(stream io.Reader, prefix string, dirAbs string, oldManifest map[string]string, manifest map[string]string, counts *dirCounts) error {
 	reader := tar.NewReader(stream)
 	for {
 		header, err := reader.Next()
@@ -274,7 +319,7 @@ func mergeArchive(stream io.Reader, dirAbs string, oldManifest map[string]string
 		if header.Typeflag != tar.TypeReg {
 			continue
 		}
-		rel := filepath.ToSlash(filepath.Clean(header.Name))
+		rel := prefix + filepath.ToSlash(filepath.Clean(header.Name))
 		content, err := io.ReadAll(reader)
 		if err != nil {
 			return err
@@ -339,8 +384,8 @@ func mergeFileIntoDir(rel string, content []byte, mode os.FileMode, dirAbs strin
 }
 
 // materializeLocalTree merges a local directory's regular files into dirAbs
-// under the same manifest rules as a git tree source.
-func materializeLocalTree(localAbs string, dirAbs string, oldManifest map[string]string, manifest map[string]string, counts *dirCounts) error {
+// under prefix, with the same manifest rules as a git tree source.
+func materializeLocalTree(localAbs string, prefix string, dirAbs string, oldManifest map[string]string, manifest map[string]string, counts *dirCounts) error {
 	return filepath.WalkDir(localAbs, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -360,7 +405,7 @@ func materializeLocalTree(localAbs string, dirAbs string, oldManifest map[string
 		if err != nil {
 			return err
 		}
-		return mergeFileIntoDir(filepath.ToSlash(rel), content, info.Mode().Perm(), dirAbs, oldManifest, manifest, counts)
+		return mergeFileIntoDir(prefix+filepath.ToSlash(rel), content, info.Mode().Perm(), dirAbs, oldManifest, manifest, counts)
 	})
 }
 

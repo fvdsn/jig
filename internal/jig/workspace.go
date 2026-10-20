@@ -23,17 +23,20 @@ const (
 var schemaCandidates = []string{".jig.json", "jig.json", "schema.json"}
 
 type Config struct {
-	Version int    `json:"version"`
-	Schema  string `json:"schema"` // schema file path inside the source checkout
+	Version   int       `json:"version"`
+	Schema    string    `json:"schema"`              // schema file path inside the source checkout
+	Harnesses *[]string `json:"harnesses,omitempty"` // harnesses the agents block materializes for; nil means detect
 }
 
 type Workspace struct {
-	Root   string
-	Subdir string // where the command runs, relative to Root; "" at the root
-	Config Config
-	Def    Definition
-	Model  Model
-	State  State
+	Root          string
+	Subdir        string // where the command runs, relative to Root; "" at the root
+	Config        Config
+	Harnesses     []string // effective harness list: configured, or detected on this machine
+	HarnessSource string   // "configured" or "detected"
+	Def           Definition
+	Model         Model
+	State         State
 
 	unlock    func()          // releases the workspace lock; set when loaded with state
 	installed *InstalledNodes // memoized installedNodes scan; nil until asked
@@ -79,6 +82,7 @@ func loadWorkspaceAt(root string, subdir string, withState bool) (*Workspace, er
 		return nil, err
 	}
 	ws := &Workspace{Root: root, Subdir: subdir, Config: config}
+	ws.Harnesses, ws.HarnessSource = effectiveHarnesses(config)
 	if withState {
 		// Commands that mutate state hold an exclusive lock so concurrent
 		// jig runs cannot silently drop each other's updates.
@@ -97,7 +101,7 @@ func loadWorkspaceAt(root string, subdir string, withState bool) (*Workspace, er
 		ws.Close()
 		return nil, err
 	}
-	model, err := flattenDefinition(def)
+	model, err := flattenDefinition(def, ws.Harnesses)
 	if err != nil {
 		ws.Close()
 		return nil, err
@@ -213,6 +217,11 @@ func loadConfig(root string) (Config, error) {
 	}
 	if err := validateSafePath(config.Schema); err != nil {
 		return Config{}, fmt.Errorf("invalid schema path in workspace config: %s", err)
+	}
+	if config.Harnesses != nil {
+		if err := validateHarnesses(*config.Harnesses); err != nil {
+			return Config{}, fmt.Errorf("invalid harnesses in workspace config: %s", err)
+		}
 	}
 	return config, nil
 }

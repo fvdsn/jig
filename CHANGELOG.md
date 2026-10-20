@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- Schema version 4 adds the top-level `agents` block: `skills` and
+  `context` source lists declare the workspace's agent context once,
+  with no harness path, and jig derives the `.agents/skills` and
+  `AGENTS.md` entries plus an alias per harness in use (`.claude/skills`
+  as a copy, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`
+  as links). A skills source whose root is itself a `SKILL.md` lands
+  under its own name. Version 3 schemas keep working unchanged; the
+  other primitives of the spec (instructions, subagents, commands, mcp,
+  hooks) are refused by name until implemented.
+- Which harnesses are materialized is per machine: `jig init` detects
+  them from the harness directories in the home folder and prints the
+  list, or `jig init --harness claude,codex` (or `none`) records a
+  choice as `harnesses` in `.jig/config.json`.
+- The starter schema of a bare `jig init` uses the `agents` block.
+
 ## v3.0.0 — 2026-10-19
 
 - Breaking: the commands that act on checkouts (`sync`, `setup`,

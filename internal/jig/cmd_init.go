@@ -18,22 +18,18 @@ type InitOptions struct {
 	IncludeArchived bool
 	SkipDeps        bool // clone only the selected repos, without their dependencies
 	Tags            []string
+	Harnesses       *[]string // --harness: record this list (empty for none); nil leaves detection on
 }
 
-// sampleSchema seeds a bare "jig init": a starter schema whose only entry
-// pulls the official jig skill, so coding agents in the fresh workspace
-// already know how to drive and evolve it.
+// sampleSchema seeds a bare "jig init": a starter schema whose only
+// declaration pulls the official jig skill, so coding agents in the fresh
+// workspace already know how to drive and evolve it.
 const sampleSchema = `{
-  "version": 3,
-  "tree": {
-    ".agents/skills": {
-      "$dir": {
-        "id": "agent-skills",
-        "description": "Skills for AI agents working in this workspace",
-        "src": ["https://github.com/fvdsn/jig/tree/master/.agents/skills"]
-      }
-    }
-  }
+  "version": 4,
+  "agents": {
+    "skills": ["https://github.com/fvdsn/jig/tree/master/.agents/skills"]
+  },
+  "tree": {}
 }
 `
 
@@ -78,11 +74,12 @@ func Init(options InitOptions, out io.Writer) error {
 	if len(validation.Errors) > 0 {
 		return validation.asError("invalid schema")
 	}
-	if _, err := flattenDefinition(def); err != nil {
+	config := Config{Version: 1, Schema: schemaPath, Harnesses: options.Harnesses}
+	if _, err := flattenDefinition(def, harnessesOf(config)); err != nil {
 		return err
 	}
 
-	if err := saveConfig(workspaceDir, Config{Version: 1, Schema: schemaPath}); err != nil {
+	if err := saveConfig(workspaceDir, config); err != nil {
 		return err
 	}
 	if err := saveState(workspaceDir, emptyState()); err != nil {
@@ -90,6 +87,7 @@ func Init(options InitOptions, out io.Writer) error {
 	}
 
 	fmt.Fprintf(out, "initialized workspace at %s\n", workspaceDir)
+	reportHarnesses(out, config)
 	if options.Clone {
 		ws, err := loadWorkspaceAt(workspaceDir, "", true)
 		if err != nil {
@@ -142,6 +140,21 @@ func resumeInit(workspaceDir string, options InitOptions, out io.Writer) error {
 	}
 
 	fmt.Fprintf(out, "workspace already initialized at %s; finishing setup\n", workspaceDir)
+	if options.Harnesses != nil {
+		// A rerun with --harness converges the harness list like the rest
+		// of the setup; the derived entries follow on the next load.
+		ws.Config.Harnesses = options.Harnesses
+		if err := saveConfig(workspaceDir, ws.Config); err != nil {
+			return err
+		}
+		ws.Harnesses, ws.HarnessSource = effectiveHarnesses(ws.Config)
+		model, err := flattenDefinition(&ws.Def, ws.Harnesses)
+		if err != nil {
+			return err
+		}
+		ws.Model = model
+		reportHarnesses(out, ws.Config)
+	}
 	if err := updateSchema(ws, out); err != nil {
 		fmt.Fprintf(out, "schema not updated: %s\n", shortError(err))
 	}
@@ -163,6 +176,27 @@ func cloneIntoWorkspace(ws *Workspace, options InitOptions, out io.Writer) error
 		return err
 	}
 	return cloneErr
+}
+
+// harnessesOf resolves the harness list a config materializes for.
+func harnessesOf(config Config) []string {
+	harnesses, _ := effectiveHarnesses(config)
+	return harnesses
+}
+
+// reportHarnesses prints the one line that makes the harness list visible:
+// which harnesses the agents block materializes for and where the list
+// came from, so a surprising detection shows up right at init.
+func reportHarnesses(out io.Writer, config Config) {
+	harnesses, source := effectiveHarnesses(config)
+	switch {
+	case source == "configured":
+		fmt.Fprintf(out, "harnesses: %s (--harness)\n", describeHarnesses(harnesses))
+	case len(harnesses) == 0:
+		fmt.Fprintln(out, "harnesses: none (nothing detected; use --harness to choose)")
+	default:
+		fmt.Fprintf(out, "harnesses: %s (detected)\n", describeHarnesses(harnesses))
+	}
 }
 
 // isGitSource reports whether sourceArg names a git repository rather than a

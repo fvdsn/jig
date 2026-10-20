@@ -63,6 +63,7 @@ func (s *SrcList) UnmarshalJSON(data []byte) error {
 type Definition struct {
 	Version int                        `json:"version"`
 	Source  *Source                    `json:"source,omitempty"`
+	Agents  *AgentsBlock               `json:"agents,omitempty"` // version 4: agent context, expanded into derived entries
 	Tree    map[string]json.RawMessage `json:"tree"`
 }
 
@@ -119,6 +120,7 @@ type Dir struct {
 	Tags        []string          `json:"tags,omitempty"`
 	Meta        map[string]string `json:"meta,omitempty"` // user-defined metadata, opaque to jig
 	OnlyWhen    *Condition        `json:"onlyWhen,omitempty"`
+	skills      bool              // derived skills dir: a source that is one skill lands under its own name
 }
 
 // targetPath returns the resolved tree path this entry aliases, whether as a
