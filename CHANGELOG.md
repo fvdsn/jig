@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v5.0.0 — 2026-10-20
 
 - `jig update` and `jig sync` decode an upstream YAML schema by its
   name, and follow the schema file when it is renamed upstream
