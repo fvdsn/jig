@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- The `agents` block gains `hooks`, its last primitive: commands run
+  on lifecycle events, declared once in a neutral vocabulary
+  (`sessionStart`, `beforeToolUse`, `afterToolUse`, `beforePrompt`,
+  `stop`, with a tool-name `matcher` on the tool events) and written
+  into each harness's hook document in its own event names and shape
+  (`.claude/settings.json`, `.codex/hooks.json`, `.cursor/hooks.json`,
+  `.gemini/settings.json`, `.windsurf/hooks.json`,
+  `.github/hooks/jig.json`), tool names translated where the harness
+  has its own. Hook documents follow the managed-document rules of
+  `mcp`, owning elements by their matcher and command. A hook a harness
+  cannot take is reported as skipped. A plugin's `hooks/hooks.json`
+  feeds the list.
+
 ## v4.4.0 — 2026-10-20
 
 - The `agents` block gains `mcp`: MCP servers declared once in the

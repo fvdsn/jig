@@ -94,7 +94,7 @@ func validateDefinition(def *Definition) validationResult {
 			}
 		case EntryFile:
 			if entry.File.managed != nil {
-				continue // the mcp map is validated once, below
+				continue // the mcp map and hooks list are validated once, below
 			}
 			validateSources(&result, &model, path, EntryFile, entry.File.Src, entry.File.Link, entry.File.Copy)
 			if entry.File.Executable && entry.File.Link != nil {
@@ -114,6 +114,7 @@ func validateDefinition(def *Definition) validationResult {
 
 	if def.Agents != nil {
 		validateMCP(&result, &model, def.Agents.MCP)
+		validateHooks(&result, &model, def.Agents.Hooks)
 	}
 	for _, cycle := range detectCycles(sortedRepoPaths(&model), repoDependencyPaths(&model)) {
 		result.Warnings = append(result.Warnings, "dependency cycle detected: "+strings.Join(cycle, " -> "))

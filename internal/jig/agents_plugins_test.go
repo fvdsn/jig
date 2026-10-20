@@ -72,6 +72,7 @@ func testMarketplace(t *testing.T, dir string) {
 		"alpha/references/rules.md":         "# Rules\n",
 		"alpha/README.md":                   "alpha readme\n",
 		"alpha/.mcp.json":                   `{"mcpServers": {"jumpstart": {"type": "http", "url": "https://mcp.example.com/mcp"}}}`,
+		"alpha/hooks/hooks.json":            `{"hooks": {"PostToolUse": [{"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/lint.sh", "timeout": 5}]}], "PreCompact": [{"hooks": [{"type": "command", "command": "x"}]}]}}`,
 		"delivery/beta/.plugin/plugin.json": `{"name": "beta"}`,
 		"delivery/beta/commands/deploy.md":  "---\ndescription: Deploy\n---\nDeploy $ARGUMENTS\n",
 	})
@@ -104,7 +105,7 @@ func TestAgentsBlockMaterializesPlugins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(sortedEntryPaths(&model), " "); got != ".agents/plugins .claude/agents .claude/commands .claude/skills .mcp.json" {
+	if got := strings.Join(sortedEntryPaths(&model), " "); got != ".agents/plugins .claude/agents .claude/commands .claude/settings.json .claude/skills .mcp.json" {
 		t.Fatalf("entries = %s", got)
 	}
 	if store := model.Entries[".agents/plugins"]; store.Identity != "agents-plugins" || !store.Dir.store {
@@ -163,6 +164,18 @@ func TestAgentsBlockMaterializesPlugins(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "skipped plugin remote:") {
 		t.Fatalf("expected the remote entry to be reported:\n%s", out.String())
+	}
+	// The plugin's hooks/hooks.json feeds the hook documents, with the
+	// plugin root pointing into the store; its PreCompact hook has no
+	// neutral event and is reported.
+	if got := read(".claude/settings.json"); !strings.Contains(got, "\"PostToolUse\"") || !strings.Contains(got, "\"matcher\": \"Edit|Write\"") || !strings.Contains(got, "\"command\": \".agents/plugins/pdlc-lib/alpha/scripts/lint.sh\"") || !strings.Contains(got, "\"timeout\": 5") {
+		t.Fatalf(".claude/settings.json =\n%s", got)
+	}
+	if got := read(".codex/hooks.json"); !strings.Contains(got, "\"PostToolUse\"") {
+		t.Fatalf(".codex/hooks.json =\n%s", got)
+	}
+	if !strings.Contains(out.String(), "skipped plugin pdlc-lib/alpha PreCompact hooks: no neutral event") {
+		t.Fatalf("expected the PreCompact hook to be reported:\n%s", out.String())
 	}
 
 	out.Reset()
@@ -267,7 +280,7 @@ func TestAgentsBlockPluginWithoutCommandsForTwoHarnesses(t *testing.T) {
 	if err := Clone(CloneOptions{}, &out); err != nil {
 		t.Fatalf("clone: %v\n%s", err, out.String())
 	}
-	if strings.Count(out.String(), "inactive-dir:") != 2 || strings.Contains(out.String(), "skipped") {
+	if strings.Count(out.String(), "inactive-dir:") != 2 || strings.Contains(out.String(), "skipped plugin remote") {
 		t.Fatalf("expected both commands dirs inactive:\n%s", out.String())
 	}
 	for _, rel := range []string{".claude/agents/reviewer.md", ".opencode/agents/reviewer.md", ".claude/skills/pdlc-review/SKILL.md", ".agents/skills/pdlc-review/SKILL.md"} {

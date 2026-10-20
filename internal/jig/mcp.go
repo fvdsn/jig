@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -31,54 +32,83 @@ var mcpServerName = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
 // managedDoc makes a $file entry a managed document: a configuration file
 // in which jig owns the keys it wrote and nothing else. It is derived per
-// harness document from the mcp map (and later the hooks list) and from
-// the plugins' .mcp.json files.
+// harness document from the mcp map and the hooks list, and from the
+// plugins' .mcp.json and hooks/hooks.json files. A document carries
+// servers when shape is set, hooks when hookFormat is set, or both.
 type managedDoc struct {
-	harness string
-	shape   string // how servers are rendered (see renderMCPServer)
-	servers map[string]MCPServer
-	plugins SrcList // plugin sources whose .mcp.json feeds the document
+	harness    string
+	shape      string // how servers are rendered (see renderMCPServer); "" for no servers
+	hookFormat string // how hooks are rendered (see hookFormats); "" for no hooks
+	servers    map[string]MCPServer
+	hooks      []Hook
+	plugins    SrcList // plugin sources whose files feed the document
 }
 
-// mcpDocument is one harness's MCP configuration file.
-type mcpDocument struct {
+// managedDocument is one harness's configuration file in the matrix.
+type managedDocument struct {
 	path   string
-	shape  string
-	suffix string // identity suffix when a harness has several documents
+	shape  string // MCP shape, "" when the document carries no servers
+	hooks  string // hook format, "" when it carries no hooks
+	suffix string // identity suffix when a harness has several MCP documents
 }
 
-// mcpDocuments is the mcp row of the matrix, per harness. Windsurf reads
-// MCP servers from a global file only and is absent. Codex's TOML document
-// is handled by the same entry with the toml shape.
-var mcpDocuments = map[string][]mcpDocument{
-	"claude":   {{path: ".mcp.json", shape: "claude"}},
-	"codex":    {{path: ".codex/config.toml", shape: "codex"}},
-	"copilot":  {{path: ".github/mcp.json", shape: "copilot"}, {path: ".vscode/mcp.json", shape: "vscode", suffix: "vscode"}},
-	"cursor":   {{path: ".cursor/mcp.json", shape: "cursor"}},
+// managedDocuments is the mcp and hooks rows of the matrix, per harness.
+// Windsurf reads MCP servers from a global file only; OpenCode has no
+// command hooks and Kiro's hooks are agent triggers, so those cells are
+// absent. Gemini keeps both in one settings file: one entry owns both.
+var managedDocuments = map[string][]managedDocument{
+	"claude":   {{path: ".mcp.json", shape: "claude"}, {path: ".claude/settings.json", hooks: "claude"}},
+	"codex":    {{path: ".codex/config.toml", shape: "codex"}, {path: ".codex/hooks.json", hooks: "codex"}},
+	"copilot":  {{path: ".github/mcp.json", shape: "copilot"}, {path: ".vscode/mcp.json", shape: "vscode", suffix: "vscode"}, {path: ".github/hooks/jig.json", hooks: "copilot"}},
+	"cursor":   {{path: ".cursor/mcp.json", shape: "cursor"}, {path: ".cursor/hooks.json", hooks: "cursor"}},
 	"opencode": {{path: "opencode.json", shape: "opencode"}},
-	"gemini":   {{path: ".gemini/settings.json", shape: "gemini"}},
+	"gemini":   {{path: ".gemini/settings.json", shape: "gemini", hooks: "gemini"}},
 	"kiro":     {{path: ".kiro/settings/mcp.json", shape: "kiro"}},
+	"windsurf": {{path: ".windsurf/hooks.json", hooks: "windsurf"}},
 }
 
-const agentsMCPIdentity = "agents-mcp"
+const (
+	agentsMCPIdentity   = "agents-mcp"
+	agentsHooksIdentity = "agents-hooks"
+)
 
-// expandMCP derives one managed document per harness document in use.
-// There is no shared document, so nothing is canonical and nothing is
-// derived when no harness is listed.
-func expandMCP(block *AgentsBlock, harnesses []string, model *Model) error {
-	if len(block.MCP) == 0 && len(block.Plugins) == 0 {
-		return nil
-	}
+// expandManaged derives one managed document per harness document in
+// use that has something to carry. There is no shared document, so
+// nothing is canonical and nothing is derived when no harness is listed.
+func expandManaged(block *AgentsBlock, harnesses []string, model *Model) error {
+	servers := len(block.MCP) > 0 || len(block.Plugins) > 0
+	hooks := len(block.Hooks) > 0 || len(block.Plugins) > 0
 	for _, harness := range harnesses {
-		for _, doc := range mcpDocuments[harness] {
-			identity := agentsMCPIdentity + "-" + harness
+		for _, doc := range managedDocuments[harness] {
+			carries := (doc.shape != "" && servers) || (doc.hooks != "" && hooks)
+			if !carries {
+				continue
+			}
+			identity := agentsHooksIdentity + "-" + harness
+			if doc.shape != "" {
+				identity = agentsMCPIdentity + "-" + harness
+			}
 			if doc.suffix != "" {
 				identity += "-" + doc.suffix
 			}
+			what := "MCP servers"
+			switch {
+			case doc.shape != "" && doc.hooks != "":
+				what = "MCP servers and hooks"
+			case doc.hooks != "":
+				what = "Hooks"
+			}
+			managed := &managedDoc{harness: harness, shape: doc.shape, hookFormat: doc.hooks, plugins: pluginSources(block.Plugins, "mcp")}
+			if doc.shape != "" {
+				managed.servers = block.MCP
+			}
+			if doc.hooks != "" {
+				managed.hooks = block.Hooks
+			}
 			entry := Entry{Path: doc.path, Identity: identity, Kind: EntryFile, File: &File{
 				ID:          identity,
-				Description: fmt.Sprintf("MCP servers from the agents block, as %s reads them", harness),
-				managed:     &managedDoc{harness: harness, shape: doc.shape, servers: block.MCP, plugins: pluginSources(block.Plugins, "mcp")},
+				Description: fmt.Sprintf("%s from the agents block, as %s reads them", what, harness),
+				managed:     managed,
 			}}
 			if err := addDerived(model, entry); err != nil {
 				return err
@@ -220,28 +250,108 @@ func renderMCPServer(shape string, server MCPServer) *jsonObject {
 	return o
 }
 
-// keyPath renders a path for state and messages.
+// Managed keys are named by path, "a/b/c" for a nested key, and an element
+// of an array by its container's path and its identity, "hooks/Stop#id":
+// state and messages use these names, and the item helpers below read and
+// write a document by them.
 func keyPath(path []string) string { return strings.Join(path, "/") }
 
 func splitKeyPath(key string) []string { return strings.Split(key, "/") }
 
-// activeServers collects the document's servers: the plugins' .mcp.json
-// servers first, then the block's, so an explicit declaration wins on a
-// name; each gated by its condition.
-func (m *materializer) activeServers(doc *managedDoc) (map[string]MCPServer, resolvedSources, error) {
-	servers := map[string]MCPServer{}
-	resolved, err := m.resolveSources(doc.plugins, func(source SrcEntry) (string, error) {
-		found, key, err := m.pluginMCPServers(source)
+func splitItemKey(key string) (path []string, id string) {
+	if i := strings.LastIndex(key, "#"); i >= 0 {
+		return splitKeyPath(key[:i]), key[i+1:]
+	}
+	return splitKeyPath(key), ""
+}
+
+// getItem finds a key's value, or the element of the array with the
+// key's identity.
+func getItem(root *jsonObject, key string) (any, bool) {
+	path, id := splitItemKey(key)
+	value, ok := root.getPath(path)
+	if !ok || id == "" {
+		return value, ok
+	}
+	list, _ := value.([]any)
+	for _, element := range list {
+		if hookIdentity(element) == id {
+			return element, true
+		}
+	}
+	return nil, false
+}
+
+// setItem assigns a key, or replaces the array element with the key's
+// identity in place, appending it when new.
+func setItem(root *jsonObject, key string, value any) error {
+	path, id := splitItemKey(key)
+	if id == "" {
+		return root.setPath(path, value)
+	}
+	current, ok := root.getPath(path)
+	if !ok {
+		return root.setPath(path, []any{value})
+	}
+	list, isList := current.([]any)
+	if !isList {
+		return fmt.Errorf("%s is not an array", keyPath(path))
+	}
+	for i, element := range list {
+		if hookIdentity(element) == id {
+			list[i] = value
+			return root.setPath(path, list)
+		}
+	}
+	return root.setPath(path, append(list, value))
+}
+
+// removeItem deletes a key, or the array element with the key's identity,
+// and the containers that leaves empty.
+func removeItem(root *jsonObject, key string) {
+	path, id := splitItemKey(key)
+	if id == "" {
+		root.removePath(path)
+		return
+	}
+	current, ok := root.getPath(path)
+	list, isList := current.([]any)
+	if !ok || !isList {
+		return
+	}
+	var kept []any
+	for _, element := range list {
+		if hookIdentity(element) != id {
+			kept = append(kept, element)
+		}
+	}
+	if len(kept) == 0 {
+		root.removePath(path)
+		return
+	}
+	_ = root.setPath(path, kept)
+}
+
+// activeContent collects what the document carries: the plugins' servers
+// and hooks first, then the block's, so an explicit declaration wins on
+// a name or identity; each gated by its condition. skipped lists the
+// plugin hooks with no neutral equivalent.
+func (m *materializer) activeContent(doc *managedDoc) (servers map[string]MCPServer, hooks []Hook, skipped []string, resolved resolvedSources, err error) {
+	servers = map[string]MCPServer{}
+	resolved, err = m.resolveSources(doc.plugins, func(source SrcEntry) (string, error) {
+		found, foundHooks, foundSkipped, key, err := m.pluginFeeds(source, doc.shape != "", doc.hookFormat != "")
 		if err != nil {
 			return "", err
 		}
 		for name, server := range found {
 			servers[name] = server
 		}
+		hooks = append(hooks, foundHooks...)
+		skipped = append(skipped, foundSkipped...)
 		return key, nil
 	})
 	if err != nil {
-		return nil, resolved, err
+		return nil, nil, nil, resolved, err
 	}
 	for name, server := range doc.servers {
 		if server.OnlyWhen != nil && !conditionMetIn(m.model, m.evidence, *server.OnlyWhen) {
@@ -250,41 +360,94 @@ func (m *materializer) activeServers(doc *managedDoc) (map[string]MCPServer, res
 		}
 		servers[name] = server
 	}
-	return servers, resolved, nil
+	for _, hook := range doc.hooks {
+		if hook.OnlyWhen != nil && !conditionMetIn(m.model, m.evidence, *hook.OnlyWhen) {
+			continue
+		}
+		hooks = append(hooks, hook)
+	}
+	return servers, hooks, skipped, resolved, nil
 }
 
-// pluginMCPServers reads the .mcp.json of every plugin of a source, in
-// the Claude plugin shape ({"mcpServers": {...}}).
-func (m *materializer) pluginMCPServers(source SrcEntry) (map[string]MCPServer, string, error) {
-	root, _, key, _, err := m.pluginRoot(source)
+// pluginFeeds reads the .mcp.json (in the Claude plugin shape,
+// {"mcpServers": {...}}) and hooks/hooks.json of every plugin of a source.
+func (m *materializer) pluginFeeds(source SrcEntry, wantServers bool, wantHooks bool) (servers map[string]MCPServer, hooks []Hook, skipped []string, key string, err error) {
+	root, base, key, _, err := m.pluginRoot(source)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, nil, "", err
 	}
 	plugins, _, err := root.manifest()
 	if err != nil {
-		return nil, "", err
+		return nil, nil, nil, "", err
 	}
-	servers := map[string]MCPServer{}
+	servers = map[string]MCPServer{}
 	for _, rel := range plugins {
-		file := ".mcp.json"
-		if rel != "" {
-			file = rel + "/.mcp.json"
+		in := func(file string) string {
+			if rel == "" {
+				return file
+			}
+			return rel + "/" + file
 		}
-		data, ok := root.readFile(file)
-		if !ok {
-			continue
+		label := "plugin " + path.Join(base, rel)
+		if data, ok := root.readFile(in(".mcp.json")); ok && wantServers {
+			var doc struct {
+				Servers map[string]MCPServer `json:"mcpServers"`
+			}
+			if err := json.Unmarshal(data, &doc); err != nil {
+				return nil, nil, nil, "", fmt.Errorf("%s: invalid .mcp.json: %s", label, err)
+			}
+			for name, server := range doc.Servers {
+				servers[name] = server
+			}
 		}
-		var doc struct {
-			Servers map[string]MCPServer `json:"mcpServers"`
-		}
-		if err := json.Unmarshal(data, &doc); err != nil {
-			return nil, "", fmt.Errorf("plugin %s: invalid .mcp.json: %s", rel, err)
-		}
-		for name, server := range doc.Servers {
-			servers[name] = server
+		if data, ok := root.readFile(in("hooks/hooks.json")); ok && wantHooks {
+			found, foundSkipped, err := parsePluginHooks(data, path.Join(agentsPluginsPath, base, rel), label)
+			if err != nil {
+				return nil, nil, nil, "", err
+			}
+			hooks = append(hooks, found...)
+			skipped = append(skipped, foundSkipped...)
 		}
 	}
-	return servers, key, nil
+	return servers, hooks, skipped, key, nil
+}
+
+// desiredItems renders what the document should hold, in writing order:
+// the version key first when the format has one, the servers by name,
+// then the hooks in declaration order. skipped lists the hooks the
+// harness cannot take.
+func desiredItems(doc *managedDoc, servers map[string]MCPServer, hooks []Hook) (keys []string, items map[string]any, skipped []string) {
+	items = map[string]any{}
+	add := func(key string, value any) {
+		if _, seen := items[key]; !seen {
+			keys = append(keys, key)
+		}
+		items[key] = value
+	}
+	if doc.shape != "" {
+		container := mcpContainer(doc.shape)
+		for _, name := range sortedMCPNames(servers) {
+			add(keyPath([]string{container, name}), renderMCPServer(doc.shape, servers[name]))
+		}
+	}
+	if doc.hookFormat != "" {
+		var elements []hookElement
+		for _, hook := range hooks {
+			rendered, reason := renderHook(doc.hookFormat, doc.harness, hook)
+			if reason != "" {
+				skipped = append(skipped, fmt.Sprintf("hook %s %q: %s", hook.Event, hook.Command, reason))
+				continue
+			}
+			elements = append(elements, rendered...)
+		}
+		if len(elements) > 0 && hookFormats[doc.hookFormat].version {
+			add("version", json.Number("1"))
+		}
+		for _, element := range elements {
+			add(keyPath([]string{"hooks", element.event})+"#"+hookIdentity(element.value), element.value)
+		}
+	}
+	return keys, items, skipped
 }
 
 // ensureManaged converges a managed document: jig's keys are upserted,
@@ -305,21 +468,26 @@ func (m *materializer) ensureManaged(entry Entry) error {
 			m.state.Files[entry.Identity] = record
 		}
 	}
-	servers, resolved, err := m.activeServers(doc)
+	servers, hooks, skipped, resolved, err := m.activeContent(doc)
 	if err != nil {
 		return err
 	}
-	if len(servers) == 0 {
-		return m.ensureWithoutSources(entry, hasState)
+	keys, desired, skippedHooks := desiredItems(doc, servers, hooks)
+	skipped = append(skipped, skippedHooks...)
+	report := func() {
+		for _, line := range skipped {
+			fmt.Fprintf(m.out, "  skipped %s\n", line)
+		}
+	}
+	if len(desired) == 0 {
+		err := m.ensureWithoutSources(entry, hasState)
+		report()
+		return err
 	}
 	if doc.shape == "codex" {
-		return m.ensureManagedTOML(entry, servers, resolved.note())
-	}
-
-	desired := map[string]any{}
-	container := mcpContainer(doc.shape)
-	for _, name := range sortedMCPNames(servers) {
-		desired[keyPath([]string{container, name})] = renderMCPServer(doc.shape, servers[name])
+		err := m.ensureManagedTOML(entry, servers, resolved.note())
+		report()
+		return err
 	}
 
 	existed := pathExists(expectedAbs)
@@ -338,7 +506,7 @@ func (m *materializer) ensureManaged(entry Entry) error {
 		if _, wanted := desired[key]; wanted {
 			continue
 		}
-		current, ok := root.getPath(splitKeyPath(key))
+		current, ok := getItem(root, key)
 		if !ok {
 			continue
 		}
@@ -346,14 +514,14 @@ func (m *materializer) ensureManaged(entry Entry) error {
 			counts.abandoned++
 			continue
 		}
-		root.removePath(splitKeyPath(key))
+		removeItem(root, key)
 		counts.removed++
 		changed = true
 	}
-	for _, key := range sortedKeys(mapToBoolAny(desired)) {
+	for _, key := range keys {
 		value := desired[key]
 		hash := jsonHash(value)
-		current, exists := root.getPath(splitKeyPath(key))
+		current, exists := getItem(root, key)
 		recorded, tracked := record.Keys[key]
 		switch {
 		case exists && !tracked && jsonHash(current) != hash:
@@ -368,7 +536,7 @@ func (m *materializer) ensureManaged(entry Entry) error {
 			counts.present++
 			continue
 		}
-		if err := root.setPath(splitKeyPath(key), value); err != nil {
+		if err := setItem(root, key, value); err != nil {
 			return err
 		}
 		newKeys[key] = hash
@@ -382,6 +550,7 @@ func (m *materializer) ensureManaged(entry Entry) error {
 	}
 	m.state.Files[entry.Identity] = StateFile{Path: entry.Path, Src: "managed", Managed: true, Created: created, Keys: newKeys}
 	fmt.Fprintln(m.out, managedMessage(entry.Path, existed, changed, counts)+resolved.note())
+	report()
 	return nil
 }
 
@@ -419,14 +588,6 @@ func managedMessage(path string, existed bool, changed bool, counts managedCount
 		return verb + ": " + path
 	}
 	return fmt.Sprintf("%s: %s (%s)", verb, path, strings.Join(parts, ", "))
-}
-
-func mapToBoolAny(m map[string]any) map[string]bool {
-	set := make(map[string]bool, len(m))
-	for key := range m {
-		set[key] = true
-	}
-	return set
 }
 
 // loadManagedJSON reads a document as an ordered object, or starts an
@@ -479,7 +640,7 @@ func deleteManagedKeys(root string, rel string, stateFile StateFile, policy modi
 	}
 	changed := false
 	for _, key := range sortedKeys(mapToBool(stateFile.Keys)) {
-		current, ok := object.getPath(splitKeyPath(key))
+		current, ok := getItem(object, key)
 		if !ok {
 			continue
 		}
@@ -490,7 +651,7 @@ func deleteManagedKeys(root string, rel string, stateFile StateFile, policy modi
 			kept++
 			continue
 		}
-		object.removePath(splitKeyPath(key))
+		removeItem(object, key)
 		changed = true
 	}
 	if object.empty() && stateFile.Created && kept == 0 {
@@ -517,7 +678,7 @@ func managedStatus(abs string, stateFile StateFile) (missing int, modified int, 
 		return 0, 0, err
 	}
 	for key, hash := range stateFile.Keys {
-		current, ok := object.getPath(splitKeyPath(key))
+		current, ok := getItem(object, key)
 		switch {
 		case !ok:
 			missing++

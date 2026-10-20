@@ -839,7 +839,7 @@ MCP servers are configuration, not files: each harness reads them from a documen
 - A key jig wants to write that already exists with a different value and is not recorded in state is a conflict: the user's value is kept and the conflict reported, mirroring a locally modified file.
 - A key recorded in state whose value the user changed is kept and reported as modified; `jig rm` refuses to remove it unless forced.
 - JSON is decoded with its key order preserved and written back with two-space indentation; new keys go last. A document that does not parse (JSONC with comments, say) is reported and left alone. Codex's `config.toml` is edited table by table: jig owns whole `[mcp_servers.<name>]` tables and leaves every other line as it is.
-- Array-valued keys (every hooks format) are owned by value: state records each element jig wrote, sync removes the recorded elements and appends the current ones, and an element the user edited counts as modified.
+- An element of an array-valued key (every hooks format) is owned by its identity, the matcher and command of a hook, the way a server is owned by its name: state records the element's hash under `hooks/<event>#<identity>`, sync replaces or appends it in place, an element the user already had with the same identity and another value is a conflict, and an owned element whose other fields the user edited is modified.
 
 Per harness, the container key and the server shape:
 
@@ -851,14 +851,15 @@ Per harness, the container key and the server shape:
 
 ### `agents.hooks`
 
-A list of hook objects: `event`, an optional `matcher` (a tool-name pattern, meaningful on the tool events), `command`, an optional `timeout` in seconds, and `onlyWhen`. Only command hooks exist. Events use a harness-neutral vocabulary that jig maps onto each harness's own: `sessionStart`, `beforeToolUse`, `afterToolUse`, `beforePrompt`, `stop`. A harness with no equivalent for an event is reported as skipped for that hook, never silently dropped. A plugin's `hooks/hooks.json` feeds this list, in the Claude hook file shape.
+A list of hook objects: `event`, an optional `matcher` (a tool-name pattern, allowed on the tool events only), `command`, an optional `timeout` in seconds, and `onlyWhen`. Only command hooks exist. Events use a harness-neutral vocabulary that jig maps onto each harness's own: `sessionStart`, `beforeToolUse`, `afterToolUse`, `beforePrompt`, `stop`. Matchers name tools in Claude's vocabulary (`Edit|Write`, `Bash`); jig translates the names a harness calls differently and passes patterns and unknown names through where the harness matches on its own names. A hook a harness cannot take, for lack of the event or of a way to express the matcher, is reported as skipped under the document's line, never silently dropped. A plugin's `hooks/hooks.json` feeds this list, in the Claude hook file shape, with `${CLAUDE_PLUGIN_ROOT}` pointing at the plugin's copy in the store.
 
-Hooks are written with the managed-document rules of `agents.mcp`, since most harnesses keep them inside a document shared with other settings:
+Hooks are written with the managed-document rules of `agents.mcp`, since most harnesses keep them inside a document shared with other settings; an element is owned by its matcher and command:
 
-- Claude `.claude/settings.json`, Codex `.codex/hooks.json`, and Gemini `.gemini/settings.json`: the nested matcher schema under `hooks` (`SessionStart`, `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`), Gemini with timeouts in milliseconds.
-- Cursor `.cursor/hooks.json`: a `version` 1 document with camelCase events (`sessionStart`, `preToolUse`, `postToolUse`, `beforeSubmitPrompt`, `stop`); matchers apply to the tool events only.
-- Windsurf `.windsurf/hooks.json`: its own event names, mapped the same way.
-- Copilot `.github/hooks/<name>.json`: one file per hook set with camelCase events (`agentStop` for stop). These are whole files jig generates, so they are plain `$file` entries, not managed documents.
+- Claude `.claude/settings.json` and Codex `.codex/hooks.json`: the nested matcher schema under `hooks` (`SessionStart`, `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `Stop`), one matcher group per hook.
+- Gemini `.gemini/settings.json`: the same nested schema with Gemini's events (`SessionStart`, `BeforeTool`, `AfterTool`, `BeforeAgent`, `AfterAgent`), tool names (`run_shell_command`, `replace`, `write_file`, ...), and timeouts in milliseconds. The document also carries Gemini's MCP servers: one entry owns both.
+- Cursor `.cursor/hooks.json`: a `version` 1 document with flat elements and camelCase events (`sessionStart`, `preToolUse`, `postToolUse`, `beforeSubmitPrompt`, `stop`), tool names translated (`Shell`, `Write`).
+- Windsurf `.windsurf/hooks.json`: flat elements under Windsurf's events. `beforePrompt` and `stop` are `pre_user_prompt` and `post_cascade_response`; the tool events are per tool kind (`pre_run_command`, `post_write_code`, `pre_mcp_tool_use`, `pre_read_code`, ...), so a tool hook lands on the kinds its matcher names, or on every kind without a matcher, and a matcher that is a pattern is skipped. Windsurf has no session start.
+- Copilot `.github/hooks/jig.json`: a `version` 1 document with flat elements (`type` command, `bash`, `timeoutSec`) under camelCase events (`sessionStart`, `preToolUse`, `postToolUse`, `userPromptSubmitted`, `agentStop`). Copilot hooks have no matcher, so a hook with one is skipped.
 - OpenCode has no command hooks and Kiro's hooks are event-driven agent triggers, a different thing: both are not read.
 
 ### Materialization matrix
@@ -873,7 +874,7 @@ The canonical locations follow the convergence of the harnesses on `.agents/skil
 | subagents | `.agents/agents/` | `.claude/agents/` | `.codex/agents/*.toml` | `.github/agents/*.agent.md` | `.cursor/agents/` | `.opencode/agents/` | not read | not read | `.kiro/agents/` |
 | commands | `.agents/commands/` | `.claude/commands/` | not read | not read | `.cursor/commands/` | `.opencode/commands/` | `.gemini/commands/*.toml` | `.windsurf/workflows/` | not read |
 | mcp | — | `.mcp.json` | `.codex/config.toml` | `.github/mcp.json` + `.vscode/mcp.json` | `.cursor/mcp.json` | `opencode.json` | `.gemini/settings.json` | not read | `.kiro/settings/mcp.json` |
-| hooks | — | `.claude/settings.json` | `.codex/hooks.json` | `.github/hooks/<name>.json` | `.cursor/hooks.json` | not read | `.gemini/settings.json` | `.windsurf/hooks.json` | not read |
+| hooks | — | `.claude/settings.json` | `.codex/hooks.json` | `.github/hooks/jig.json` | `.cursor/hooks.json` | not read | `.gemini/settings.json` | `.windsurf/hooks.json` | not read |
 
 Plugins have no row: a plugin's store at `.agents/plugins/` is read only through the links rewritten into the files above, and its contents feed the rows above. "canonical" means the harness reads the canonical location and no alias is derived. "not read" means the harness has no such primitive and nothing is derived. "unsupported" means the harness has the primitive in a format jig does not transform yet; the harness is reported as skipped for that primitive (no cell says so today). The `.claude/skills` alias is a copy rather than a link because Claude Code's symlink handling has regressed repeatedly; the other aliases are links. Only the columns of the configured harnesses are derived, and the canonical column when one of them reads it or none is configured. Copilot reads `AGENTS.md` as well as its own instructions file, so its context alias is in addition to the canonical entry. The matrix is maintained against the harnesses' documentation and against [APM](https://github.com/microsoft/apm)'s target catalog, which serves as the reference for per-harness paths, naming conventions, and hook events.
 
@@ -886,7 +887,7 @@ Each source is gated by its own `onlyWhen`. The canonical entry of a primitive i
 - `agents` requires `version` 4 or later.
 - Every source must parse by the `$file` / `$dir` rules; every `onlyWhen` must be satisfiable, as for conditional nodes.
 - `mcp` keys must be valid server names (`[A-Za-z0-9_.-]+`); a definition must have exactly one of `command` and `url`.
-- `hooks` events must be in the neutral vocabulary.
+- `hooks` events must be in the neutral vocabulary; a hook must have a command; a matcher is allowed on the tool events only.
 - Derived paths must not collide with declared tree paths.
 - `harnesses` in `.jig/config.json`, when present, must contain known harness names only.
 - `plugins` sources must parse by the `$dir` rules; a local source must be a `dir`.

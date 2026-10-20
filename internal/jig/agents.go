@@ -15,9 +15,8 @@ import (
 // machine's harnesses read (see expandAgents), so everything downstream
 // sees ordinary tree entries.
 //
-// Skills, context, instructions, subagents, commands, plugins, and mcp are
-// implemented; hooks are refused rather than ignored, so a schema never
-// silently loses them.
+// Every primitive of the spec is implemented; an unknown field is an
+// error, so a schema never silently loses anything.
 type AgentsBlock struct {
 	Skills       SrcList              // skill packs merged into the skills directory
 	Context      SrcList              // sections concatenated into the root context file
@@ -26,11 +25,8 @@ type AgentsBlock struct {
 	Commands     SrcList              // command files, or directories of them
 	Plugins      SrcList              // plugins and marketplaces in the Claude plugin layout (see plugin.go)
 	MCP          map[string]MCPServer // MCP servers by name (see mcp.go)
+	Hooks        []Hook               // lifecycle hooks (see hooks.go)
 }
-
-// agentsPlannedFields are spec'd primitives this jig does not implement
-// yet; they get a dedicated error instead of the unknown-field one.
-var agentsPlannedFields = []string{"hooks"}
 
 func (block *AgentsBlock) UnmarshalJSON(data []byte) error {
 	var fields map[string]json.RawMessage
@@ -62,12 +58,12 @@ func (block *AgentsBlock) UnmarshalJSON(data []byte) error {
 				return fmt.Errorf("invalid agents.mcp: %s", err)
 			}
 			continue
-		default:
-			for _, planned := range agentsPlannedFields {
-				if key == planned {
-					return fmt.Errorf("agents.%s is not supported by this jig yet; upgrade jig or declare it with $file and $dir entries", key)
-				}
+		case "hooks":
+			if err := json.Unmarshal(fields[key], &block.Hooks); err != nil {
+				return fmt.Errorf("invalid agents.hooks: %s", err)
 			}
+			continue
+		default:
 			return fmt.Errorf("unknown agents field %q", key)
 		}
 		if err := json.Unmarshal(fields[key], target); err != nil {
@@ -266,7 +262,7 @@ func expandAgents(block *AgentsBlock, harnesses []string, model *Model) error {
 			return err
 		}
 	}
-	if err := expandMCP(block, harnesses, model); err != nil {
+	if err := expandManaged(block, harnesses, model); err != nil {
 		return err
 	}
 	for _, primitive := range agentsPrimitives {

@@ -170,15 +170,11 @@ func TestAgentsBlockRequiresVersion4(t *testing.T) {
 	}
 }
 
-// Spec'd primitives this jig does not implement are refused by name, and
-// so are unknown fields, so a schema never silently loses declarations.
-func TestAgentsBlockRejectsUnimplementedAndUnknownFields(t *testing.T) {
+// Unknown fields are refused, so a schema never silently loses
+// declarations.
+func TestAgentsBlockRejectsUnknownFields(t *testing.T) {
 	var def Definition
-	err := json.Unmarshal([]byte(`{"version": 4, "agents": {"hooks": []}, "tree": {}}`), &def)
-	if err == nil || !strings.Contains(err.Error(), "agents.hooks is not supported by this jig yet") {
-		t.Fatalf("planned field = %v", err)
-	}
-	err = json.Unmarshal([]byte(`{"version": 4, "agents": {"skilz": []}, "tree": {}}`), &def)
+	err := json.Unmarshal([]byte(`{"version": 4, "agents": {"skilz": []}, "tree": {}}`), &def)
 	if err == nil || !strings.Contains(err.Error(), `unknown agents field "skilz"`) {
 		t.Fatalf("unknown field = %v", err)
 	}
