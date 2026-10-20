@@ -15,19 +15,20 @@ import (
 // machine's harnesses read (see expandAgents), so everything downstream
 // sees ordinary tree entries.
 //
-// Skills, context, subagents, and commands are implemented; the other
-// primitives of the spec (instructions, mcp, hooks) are refused rather
-// than ignored, so a schema never silently loses them.
+// Skills, context, instructions, subagents, and commands are implemented;
+// the other primitives of the spec (mcp, hooks) are refused rather than
+// ignored, so a schema never silently loses them.
 type AgentsBlock struct {
-	Skills    SrcList // skill packs merged into the skills directory
-	Context   SrcList // sections concatenated into the root context file
-	Subagents SrcList // subagent files, or directories of them
-	Commands  SrcList // command files, or directories of them
+	Skills       SrcList // skill packs merged into the skills directory
+	Context      SrcList // sections concatenated into the root context file
+	Instructions SrcList // rule files, or directories of them (see rules.go)
+	Subagents    SrcList // subagent files, or directories of them
+	Commands     SrcList // command files, or directories of them
 }
 
 // agentsPlannedFields are spec'd primitives this jig does not implement
 // yet; they get a dedicated error instead of the unknown-field one.
-var agentsPlannedFields = []string{"instructions", "mcp", "hooks"}
+var agentsPlannedFields = []string{"mcp", "hooks"}
 
 func (block *AgentsBlock) UnmarshalJSON(data []byte) error {
 	var fields map[string]json.RawMessage
@@ -46,6 +47,8 @@ func (block *AgentsBlock) UnmarshalJSON(data []byte) error {
 			target = &block.Skills
 		case "context":
 			target = &block.Context
+		case "instructions":
+			target = &block.Instructions
 		case "subagents":
 			target = &block.Subagents
 		case "commands":
@@ -71,11 +74,28 @@ func (block *AgentsBlock) UnmarshalJSON(data []byte) error {
 // canonical location; one marked notRead has no such primitive.
 type harnessAlias struct {
 	path           string
-	copy           bool         // a real directory for a harness that does not follow symlinks
-	readsCanonical bool         // the harness reads the canonical location too; the alias is in addition
-	notRead        bool         // the harness has no such primitive; nothing is derived for it
-	transform      dirTransform // per-file transform into the harness's own format
+	copy           bool   // a real directory for a harness that does not follow symlinks
+	readsCanonical bool   // the harness reads the canonical location too; the alias is in addition
+	notRead        bool   // the harness has no such primitive; nothing is derived for it
+	transform      string // per-file transform into the harness's own format (a dirTransforms key)
 }
+
+// dirTransforms are the per-file conversions into a harness's own format,
+// by name; derived entries carry the name so models stay comparable.
+var dirTransforms = map[string]dirTransform{
+	"codex-agent":    codexAgentTransform,
+	"copilot-agent":  copilotAgentTransform,
+	"gemini-command": geminiCommandTransform,
+	"claude-rule":    claudeRuleTransform,
+	"copilot-rule":   copilotRuleTransform,
+	"cursor-rule":    cursorRuleTransform,
+	"windsurf-rule":  windsurfRuleTransform,
+	"kiro-rule":      kiroRuleTransform,
+}
+
+// foldingHarnesses have no per-file rules: their root context file
+// carries the instructions folded in after the context sources.
+var foldingHarnesses = map[string]bool{"codex": true, "opencode": true, "gemini": true}
 
 // agentsPrimitive is one row of the materialization matrix: the canonical
 // location and identity of a primitive, and its per-harness aliases.
@@ -93,9 +113,10 @@ type agentsPrimitive struct {
 // The matrix. The canonical locations follow the harnesses' convergence on
 // .agents/ and AGENTS.md. Claude Code's symlink handling has regressed
 // repeatedly, so its skills alias is a copy; the rest are links. Copilot
-// reads AGENTS.md as well as its own instructions file. Subagents and
-// commands have no shared location yet: every harness reads its own
-// directory, and Codex subagents and Gemini commands are TOML.
+// reads AGENTS.md as well as its own instructions file. Instructions,
+// subagents, and commands have no shared location yet: every harness reads
+// its own directory in its own frontmatter or format, and the harnesses
+// without per-file rules get the instructions folded into their root file.
 var agentsPrimitives = []agentsPrimitive{
 	{
 		name: "skills", kind: EntryDir, path: ".agents/skills", identity: "agents-skills",
@@ -115,12 +136,26 @@ var agentsPrimitives = []agentsPrimitive{
 		},
 	},
 	{
+		name: "instructions", kind: EntryDir, path: ".agents/rules", identity: "agents-instructions",
+		description: "Instructions from the agents block", items: true,
+		aliases: map[string]harnessAlias{
+			"claude":   {path: ".claude/rules", copy: true, transform: "claude-rule"},
+			"codex":    {notRead: true},
+			"copilot":  {path: ".github/instructions", copy: true, transform: "copilot-rule"},
+			"cursor":   {path: ".cursor/rules", copy: true, transform: "cursor-rule"},
+			"opencode": {notRead: true},
+			"gemini":   {notRead: true},
+			"windsurf": {path: ".windsurf/rules", copy: true, transform: "windsurf-rule"},
+			"kiro":     {path: ".kiro/steering", copy: true, transform: "kiro-rule"},
+		},
+	},
+	{
 		name: "subagents", kind: EntryDir, path: ".agents/agents", identity: "agents-subagents",
 		description: "Subagents from the agents block", items: true,
 		aliases: map[string]harnessAlias{
 			"claude":   {path: ".claude/agents", copy: true},
-			"codex":    {path: ".codex/agents", copy: true, transform: codexAgentTransform},
-			"copilot":  {path: ".github/agents", copy: true, transform: copilotAgentTransform},
+			"codex":    {path: ".codex/agents", copy: true, transform: "codex-agent"},
+			"copilot":  {path: ".github/agents", copy: true, transform: "copilot-agent"},
 			"cursor":   {path: ".cursor/agents", copy: true},
 			"opencode": {path: ".opencode/agents", copy: true},
 			"gemini":   {notRead: true},
@@ -137,7 +172,7 @@ var agentsPrimitives = []agentsPrimitive{
 			"copilot":  {notRead: true},
 			"cursor":   {path: ".cursor/commands", copy: true},
 			"opencode": {path: ".opencode/commands", copy: true},
-			"gemini":   {path: ".gemini/commands", copy: true, transform: geminiCommandTransform},
+			"gemini":   {path: ".gemini/commands", copy: true, transform: "gemini-command"},
 			"windsurf": {path: ".windsurf/workflows", copy: true},
 			"kiro":     {notRead: true},
 		},
@@ -159,6 +194,8 @@ func (p agentsPrimitive) sources(block *AgentsBlock) SrcList {
 		return block.Skills
 	case "context":
 		return block.Context
+	case "instructions":
+		return block.Instructions
 	case "subagents":
 		return block.Subagents
 	case "commands":
@@ -204,6 +241,12 @@ func expandAgents(block *AgentsBlock, harnesses []string, model *Model) error {
 		if len(sources) == 0 {
 			continue
 		}
+		if primitive.name == "context" {
+			if err := expandContext(primitive, block, harnesses, model); err != nil {
+				return err
+			}
+			continue
+		}
 		canonical := canonicalRead(harnesses, primitive.aliases)
 		if canonical {
 			if err := addDerived(model, primitive.entry(primitive.path, primitive.identity, primitive.description, sources, nil, harnessAlias{})); err != nil {
@@ -227,6 +270,55 @@ func expandAgents(block *AgentsBlock, harnesses []string, model *Model) error {
 			if err := addDerived(model, primitive.entry(alias.path, identity, description, sources, target, alias)); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+// expandContext derives the root context files. They follow the generic
+// rules, with one more: a root file read by a harness without per-file
+// rules carries the instructions folded in (APM's rule, so no harness
+// ever loses a rule), and an alias whose folding differs from the
+// canonical file's is a real file composed from the same sources instead
+// of a link to it. Without instructions nothing folds and every alias is
+// a link, as before.
+func expandContext(p agentsPrimitive, block *AgentsBlock, harnesses []string, model *Model) error {
+	sources, rules := block.Context, block.Instructions
+	canonical := canonicalRead(harnesses, p.aliases)
+	foldCanonical := len(rules) > 0 && len(harnesses) == 0
+	for _, harness := range harnesses {
+		if alias, ok := p.aliases[harness]; (!ok || alias.readsCanonical) && foldingHarnesses[harness] && len(rules) > 0 {
+			foldCanonical = true
+		}
+	}
+	if canonical {
+		entry := p.entry(p.path, p.identity, p.description, sources, nil, harnessAlias{})
+		if foldCanonical {
+			entry.File.rules = rules
+		}
+		if err := addDerived(model, entry); err != nil {
+			return err
+		}
+	}
+	for _, harness := range harnesses {
+		alias, ok := p.aliases[harness]
+		if !ok || alias.notRead {
+			continue
+		}
+		foldAlias := len(rules) > 0 && foldingHarnesses[harness]
+		identity := p.identity + "-" + harness
+		description := fmt.Sprintf("%s, as %s reads it", p.description, harness)
+		var entry Entry
+		if canonical && foldAlias == foldCanonical {
+			entry = p.entry(alias.path, identity, description, sources, &Ref{ID: p.identity}, alias)
+		} else {
+			entry = p.entry(alias.path, identity, description, sources, nil, alias)
+			if foldAlias {
+				entry.File.rules = rules
+			}
+		}
+		if err := addDerived(model, entry); err != nil {
+			return err
 		}
 	}
 	return nil

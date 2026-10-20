@@ -181,6 +181,16 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, insta
 // so their mirrors can be freshened in parallel up front.
 func activeSourceURLs(model *Model, plan plan, evidence map[string]bool) []string {
 	urls := map[string]bool{}
+	addSources := func(sources SrcList, parse func(string) (fileSrc, error)) {
+		for _, source := range sources {
+			if source.OnlyWhen != nil && !conditionMetIn(model, evidence, *source.OnlyWhen) {
+				continue
+			}
+			if parsed, err := parse(source.Src); err == nil {
+				urls[parsed.GitURL] = true
+			}
+		}
+	}
 	add := func(kind EntryKind, paths []string, parse func(string) (fileSrc, error)) {
 		for _, path := range paths {
 			entry, ok := model.entry(path, kind)
@@ -191,17 +201,13 @@ func activeSourceURLs(model *Model, plan plan, evidence map[string]bool) []strin
 			if err != nil {
 				continue
 			}
-			for _, source := range sources {
-				if source.OnlyWhen != nil && !conditionMetIn(model, evidence, *source.OnlyWhen) {
-					continue
-				}
-				if parsed, err := parse(source.Src); err == nil {
-					urls[parsed.GitURL] = true
-				}
+			addSources(sources, parse)
+			if kind == EntryFile && entry.File.rules != nil {
+				addSources(entry.File.rules, parseItemSrc)
 			}
 		}
 	}
 	add(EntryFile, plan.Files, parseFileSrc)
-	add(EntryDir, plan.Dirs, parseDirSrc)
+	add(EntryDir, plan.Dirs, parseItemSrc)
 	return sortedKeys(urls)
 }

@@ -777,11 +777,21 @@ A source is a skill pack: a directory whose children are `<name>/SKILL.md` skill
 
 ### `agents.context`
 
-A list of sources concatenated in order into the canonical root context file, with `$file` multi-source semantics (newline between parts, partial regeneration rules, removal when every source is gated off). The harness root files are links to it.
+A list of sources concatenated in order into the canonical root context file, with `$file` multi-source semantics (newline between parts, partial regeneration rules, removal when every source is gated off). The harness root files are links to it, except where [instructions](#agentsinstructions) make their content differ: a root file read by a harness without per-file rules carries the instructions folded in, and an alias whose folding differs from the canonical file's is a real file composed from the same sources instead of a link.
 
 ### `agents.instructions`
 
-A list of sources, each a directory of per-topic markdown rule files, merged like skills into a canonical rules directory. Harnesses that read per-file rules get them as files, transformed where the harness requires a naming or frontmatter convention (see the matrix). Harnesses that do not read per-file rules get them folded into their root context file, appended after the `context` sources under a heading per rule, so no instruction is silently lost; the root context file of a harness that does read per-file rules omits them, so context is not duplicated.
+A list of sources in the subagents and commands grammar (directories of markdown rule files, or single files, git or local), merged into a rules directory per harness. A rule is a markdown file with a neutral frontmatter: `description`, and `paths`, a list of globs or a comma-separated string (`applyTo` and `globs` are accepted as synonyms, so rules written for Copilot or APM work as they are; commas inside brace alternation belong to the glob). A rule without `paths` is always on. The rule keeps its file name, with an `.instructions` suffix of the stem dropped.
+
+Harnesses with per-file rules get each rule under their own frontmatter, the body untouched:
+
+- Claude Code: `.claude/rules/<name>.md`, `paths` as a list, no frontmatter when always on.
+- Copilot: `.github/instructions/<name>.instructions.md`, `description` and `applyTo` as a comma list, `**` when always on.
+- Cursor: `.cursor/rules/<name>.mdc`, `description` (the body's first sentence when the rule has none), `globs` as a comma list with `alwaysApply: false`, or `alwaysApply: true`.
+- Windsurf: `.windsurf/rules/<name>.md`, `trigger: glob` with `globs` as a list, or `trigger: always_on`.
+- Kiro: `.kiro/steering/<name>.md`, `inclusion: fileMatch` with `fileMatchPattern` as a list, or `inclusion: always`.
+
+Harnesses without per-file rules (Codex, OpenCode, Gemini) get the rules folded into their root context file, after the `context` sources, under an `## Instructions` heading with one `### <description or name>` section per rule and the scope stated as an `Applies to:` line, since the harness cannot act on it. The folding rule is APM's: a root file folds when any harness in use that reads it has no per-file rules, and omits the rules when every harness in use that reads it has them. `AGENTS.md` is shared, so with Codex and Copilot both in use it folds and Copilot sees each rule twice, in `.github/instructions` and in `AGENTS.md`, rather than Codex seeing none. `CLAUDE.md` never folds, `GEMINI.md` always does, and with no harness in use the canonical `AGENTS.md` folds for whatever reads it. A folded root file records the rules' tree ids with its source blobs, so a changed rule rewrites it like a changed section.
 
 ### `agents.subagents` and `agents.commands`
 

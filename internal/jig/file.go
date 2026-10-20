@@ -117,6 +117,21 @@ func (m *materializer) ensureFile(filePath string) error {
 	if resolved.none() {
 		return m.ensureWithoutSources(entry, hasState)
 	}
+	// A root context file for a harness without per-file rules carries
+	// the instructions after its own sources. Their ids join the blob
+	// list, so a changed rule rewrites the file like a changed section.
+	if file.rules != nil && len(resolved.keys) > 0 {
+		rules, ids, rulesResolved, err := m.readRuleSources(file.rules)
+		if err != nil {
+			return err
+		}
+		if fold := renderFold(rules); fold != nil {
+			parts = append(parts, fold)
+		}
+		blobs = append(blobs, ids...)
+		resolved.keys = append(resolved.keys, rulesResolved.keys...)
+		resolved.unavailable = append(resolved.unavailable, rulesResolved.unavailable...)
+	}
 	note := resolved.note()
 
 	// With no source resolvable there is nothing to generate: the

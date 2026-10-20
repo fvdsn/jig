@@ -324,7 +324,7 @@ func manifestClean(dirAbs string, manifest map[string]string) bool {
 // has one, under the manifest rules of mergeFileIntoDir.
 type dirMerger struct {
 	prefix      string
-	transform   dirTransform
+	transform   string
 	dirAbs      string
 	oldManifest map[string]string
 	manifest    map[string]string
@@ -332,8 +332,8 @@ type dirMerger struct {
 }
 
 func (g *dirMerger) add(rel string, content []byte, mode os.FileMode) error {
-	if g.transform != nil {
-		rel, content = g.transform(rel, content)
+	if transform := dirTransforms[g.transform]; transform != nil {
+		rel, content = transform(rel, content)
 	}
 	return mergeFileIntoDir(g.prefix+rel, content, mode, g.dirAbs, g.oldManifest, g.manifest, &g.counts)
 }

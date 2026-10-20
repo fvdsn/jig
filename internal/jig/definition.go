@@ -97,6 +97,7 @@ type File struct {
 	linkPath    string            // Link resolved to the target's tree path after flattening
 	Copy        *Ref              `json:"copy,omitempty"` // single-target: materialize another $file's sources as a real file
 	copyPath    string            // Copy resolved to the target's tree path after flattening
+	rules       SrcList           // derived root context file with the instructions folded in after its sources
 	Description string            `json:"description,omitempty"`
 	Executable  bool              `json:"executable,omitempty"`
 	Archived    bool              `json:"archived,omitempty"`
@@ -122,7 +123,7 @@ type Dir struct {
 	OnlyWhen    *Condition        `json:"onlyWhen,omitempty"`
 	skills      bool              // derived skills dir: a source that is one skill lands under its own name
 	items       bool              // derived dir whose sources may be single files, landing under their basename
-	transform   dirTransform      // derived dir written in a harness's own format, one file at a time
+	transform   string            // derived dir written in a harness's own format, one file at a time (see dirTransforms)
 }
 
 // targetPath returns the resolved tree path this entry aliases, whether as a

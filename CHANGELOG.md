@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- The `agents` block gains `instructions`: rule files (markdown with a
+  `description` and a `paths` glob list; `applyTo` works too) written
+  under each harness's own frontmatter in `.claude/rules`,
+  `.github/instructions`, `.cursor/rules` (`.mdc`), `.windsurf/rules`,
+  and `.kiro/steering`, and folded into the root context file of the
+  harnesses without per-file rules (Codex, OpenCode, Gemini) under an
+  `## Instructions` heading. A root file folds when any harness in use
+  that reads it has no per-file rules, as APM does; an alias whose
+  folding differs from the canonical file's becomes a real file instead
+  of a link. Only `mcp` and `hooks` remain unimplemented.
+- Fixes: the per-harness entries written in a harness's own format
+  (Codex subagents, Gemini commands, Copilot subagents) were reported
+  as changed on every schema update.
+
 ## v4.1.0 — 2026-10-20
 
 - The `agents` block gains `subagents` and `commands`: source lists

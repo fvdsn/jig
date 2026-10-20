@@ -31,13 +31,13 @@ func TestAgentsBlockExpandsSubagentsAndCommands(t *testing.T) {
 		t.Fatalf("entries = %v", got)
 	}
 	claude := model.Entries[".claude/agents"]
-	if claude.Identity != "agents-subagents-claude" || len(claude.Dir.Src) != 2 || claude.Dir.Copy != nil || !claude.Dir.items || claude.Dir.transform != nil {
+	if claude.Identity != "agents-subagents-claude" || len(claude.Dir.Src) != 2 || claude.Dir.Copy != nil || !claude.Dir.items || claude.Dir.transform != "" {
 		t.Fatalf("claude subagents = %+v", claude.Dir)
 	}
-	if codex := model.Entries[".codex/agents"]; codex.Dir.transform == nil || len(codex.Dir.Src) != 2 {
+	if codex := model.Entries[".codex/agents"]; codex.Dir.transform == "" || len(codex.Dir.Src) != 2 {
 		t.Fatalf("codex subagents = %+v", codex.Dir)
 	}
-	if gemini := model.Entries[".gemini/commands"]; gemini.Dir.transform == nil || gemini.Identity != "agents-commands-gemini" {
+	if gemini := model.Entries[".gemini/commands"]; gemini.Dir.transform == "" || gemini.Identity != "agents-commands-gemini" {
 		t.Fatalf("gemini commands = %+v", gemini.Dir)
 	}
 
