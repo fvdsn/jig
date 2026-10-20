@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v4.2.0 — 2026-10-20
 
 - The `agents` block gains `instructions`: rule files (markdown with a
   `description` and a `paths` glob list; `applyTo` works too) written
