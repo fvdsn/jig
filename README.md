@@ -95,7 +95,8 @@ jig clone platform  # check out more of it
 Commands that act on checkouts are scoped to the current directory: run `jig pull` inside `services/` and only
 `services/` is pulled.
 
-`jig --help` lists every command, and `jig skill` prints the full reference your agent reads.
+See the [documentation](docs/README.md) for more. `jig --help` lists every command, and `jig skill` prints the full
+reference your agent reads.
 
 ## Agent context
 
