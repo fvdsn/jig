@@ -25,6 +25,30 @@ and manages checkouts; it does not build your code.
 Jig is made to be driven by your agent. Every workspace comes with a skill that teaches your agent how to use jig,
 so most of the time you ask the agent and it runs the commands.
 
+## Agent context
+
+The `agents` block of the schema declares everything your agents should get, once, in a harness-neutral way:
+
+- `AGENTS.md` context, assembled from shared and per-project sections
+- skills
+- path-scoped rules (instructions)
+- subagents
+- slash commands
+- plugins and marketplaces in the Claude Code layout
+- MCP servers
+- hooks
+
+Jig writes each of these where and how each harness expects it: Claude Code, Codex, GitHub Copilot, Cursor,
+OpenCode, Gemini CLI, Windsurf and Kiro. Context is only installed for the harnesses detected on your machine, or the
+ones you pick with `--harness`, so a Claude-only machine gets `CLAUDE.md` and `.claude/` and nothing else. Settings
+files you also edit by hand, like `.mcp.json` or `.claude/settings.json`, are merged with your changes rather than
+overwritten.
+
+If you know [APM](https://microsoft.github.io/apm/), jig covers the same kinds of context. What jig adds is the tie
+to the workspace: context can follow what is checked out, so the billing MCP server and skills appear only when a
+billing repository is in your workspace, and a repository can ship its own skills or `AGENTS.md` section for the
+workspace to pick up.
+
 ## Install
 
 ```sh
@@ -57,8 +81,14 @@ This creates a starter schema in `.jig/source/jig.yaml`. Describe your repositor
 version: 4
 
 agents:
+  context:
+    - git@github.com:acme/agent-config.git#AGENTS.md
   skills:
-    - git@github.com:acme/agent-skills.git
+    - git@github.com:acme/agent-config.git#skills
+  mcp:
+    github:
+      command: npx
+      args: [-y, "@modelcontextprotocol/server-github"]
 
 tree:
   platform/auth:
