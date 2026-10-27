@@ -158,6 +158,7 @@ func applyPlan(out io.Writer, ws *Workspace, plan plan, opts applyOptions, insta
 		activeRepos[repoPath] = true
 	}
 	m := newMaterializer(out, ws.Root, &ws.Model, &ws.State, newFileFetcher(), activeRepos, installedRepos, opts.Sync)
+	defer m.fetcher.close()
 	m.fetcher.prefetchMirrors(activeSourceURLs(m.model, plan, m.evidence))
 	for _, filePath := range plan.Files {
 		if err := m.ensureFile(filePath); err != nil {

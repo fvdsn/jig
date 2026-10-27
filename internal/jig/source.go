@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // A src copied from a forge's web UI carries a "<ref>/<path>" tail whose
@@ -234,9 +235,13 @@ func parseItemSrc(src string) (fileSrc, error) {
 }
 
 // fileFetcher reads file content and blob ids from source repositories,
-// freshening each repository's cache mirror at most once per run.
+// freshening each repository's cache mirror at most once per run. When the
+// cache is unavailable it reads from a throwaway shallow bare clone instead,
+// kept for the run and removed by close.
 type fileFetcher struct {
 	mirrors map[string]mirrorResult
+	mu      sync.Mutex
+	temps   []string
 }
 
 type mirrorResult struct {
@@ -252,9 +257,40 @@ func (f *fileFetcher) mirror(gitURL string) (string, error) {
 	if cached, ok := f.mirrors[gitURL]; ok {
 		return cached.dir, cached.err
 	}
-	dir, err := freshMirror(gitURL)
-	f.mirrors[gitURL] = mirrorResult{dir, err}
-	return dir, err
+	result := f.resolve(gitURL)
+	f.mirrors[gitURL] = result
+	return result.dir, result.err
+}
+
+// resolve returns a git directory holding the source repository: its cache
+// mirror, or a throwaway shallow bare clone when the cache is disabled or
+// failed. Safe to call concurrently.
+func (f *fileFetcher) resolve(gitURL string) mirrorResult {
+	if dir, err := freshMirror(gitURL); err == nil {
+		return mirrorResult{dir: dir}
+	}
+	tmp, err := os.MkdirTemp("", "jig-source-*")
+	if err != nil {
+		return mirrorResult{err: err}
+	}
+	f.mu.Lock()
+	f.temps = append(f.temps, tmp)
+	f.mu.Unlock()
+	dir := filepath.Join(tmp, "repo.git")
+	if _, err := git("", "clone", "--quiet", "--bare", "--depth", "1", gitURL, dir); err != nil {
+		return mirrorResult{err: err}
+	}
+	return mirrorResult{dir: dir}
+}
+
+// close removes the throwaway clones made for the run.
+func (f *fileFetcher) close() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, tmp := range f.temps {
+		_ = os.RemoveAll(tmp)
+	}
+	f.temps = nil
 }
 
 // prefetchMirrors freshens the mirrors of the given URLs concurrently, so
@@ -266,9 +302,8 @@ func (f *fileFetcher) prefetchMirrors(gitURLs []string) {
 	tracker := newProgress(len(gitURLs))
 	forEachParallel(len(gitURLs), func(i int) {
 		tracker.start(gitURLs[i])
-		dir, err := freshMirror(gitURLs[i])
+		results[i] = f.resolve(gitURLs[i])
 		tracker.finish(gitURLs[i])
-		results[i] = mirrorResult{dir, err}
 	})
 	tracker.close()
 	for i, gitURL := range gitURLs {
@@ -276,55 +311,30 @@ func (f *fileFetcher) prefetchMirrors(gitURLs []string) {
 	}
 }
 
-// content returns the source file's content and blob id. When the cache is
-// unavailable it falls back to a throwaway shallow clone; the blob id is
-// empty in that case.
+// content returns the source file's content and blob id.
 func (f *fileFetcher) content(src string) ([]byte, string, error) {
 	parsed, err := parseFileSrc(src)
 	if err != nil {
 		return nil, "", err
 	}
-	dir, mirrorErr := f.mirror(parsed.GitURL)
-	if mirrorErr == nil {
-		path, err := resolveSrcFilePath(dir, parsed)
-		if err != nil {
-			return nil, "", err
-		}
-		blob, err := git(dir, "rev-parse", "HEAD:"+path)
-		if err != nil {
-			return nil, "", err
-		}
-		blob = strings.TrimSpace(blob)
-		out, err := git(dir, "cat-file", "blob", blob)
-		if err != nil {
-			return nil, "", err
-		}
-		return []byte(out), blob, nil
-	}
-	data, err := fetchGitFileDirect(parsed)
-	return data, "", err
-}
-
-// fetchGitFileDirect reads a file from the repository's default branch via a
-// throwaway shallow clone, for when the cache is unavailable.
-func fetchGitFileDirect(parsed fileSrc) ([]byte, error) {
-	tmp, err := os.MkdirTemp("", "jig-source-*")
+	dir, err := f.mirror(parsed.GitURL)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	defer func() { _ = os.RemoveAll(tmp) }()
-	repoDir := filepath.Join(tmp, "repo")
-	if _, err := git("", "clone", "--quiet", "--depth", "1", parsed.GitURL, repoDir); err != nil {
-		return nil, err
-	}
-	sourcePath, err := resolveSrcFilePath(repoDir, parsed)
+	path, err := resolveSrcFilePath(dir, parsed)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	if err := validateSafePath(sourcePath); err != nil {
-		return nil, err
+	blob, err := git(dir, "rev-parse", "HEAD:"+path)
+	if err != nil {
+		return nil, "", err
 	}
-	return os.ReadFile(filepath.Join(repoDir, sourcePath))
+	blob = strings.TrimSpace(blob)
+	out, err := git(dir, "cat-file", "blob", blob)
+	if err != nil {
+		return nil, "", err
+	}
+	return []byte(out), blob, nil
 }
 
 // expandLocalSource resolves a schema-declared local source path (~/ or

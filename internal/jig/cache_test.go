@@ -92,6 +92,52 @@ func TestCloneRepoFallsBackWhenCacheDisabled(t *testing.T) {
 	}
 }
 
+func TestSourcesFallBackWhenCacheDisabled(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", "")
+	remote := filepath.Join(root, "remote")
+	if err := os.MkdirAll(filepath.Join(remote, "skills", "demo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(remote, "skills", "demo", "SKILL.md"), []byte("demo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(remote, "AGENTS.md"), []byte("context\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testCommitAll(t, remote)
+
+	state := emptyState()
+	model := Model{Entries: map[string]Entry{
+		"out":       {Path: "out", Identity: "out", Kind: EntryDir, Dir: &Dir{Src: SrcList{{Src: remote + "#skills"}}}},
+		"AGENTS.md": {Path: "AGENTS.md", Identity: "agents", Kind: EntryFile, File: &File{Src: SrcList{{Src: remote + "#AGENTS.md"}}}},
+	}}
+	resolveLinkPaths(&model)
+	fetcher := newFileFetcher()
+	m := newMaterializer(ioDiscard{}, root, &model, &state, fetcher, nil, nil, true)
+	if err := m.ensureDir("out"); err != nil {
+		t.Fatalf("ensureDir: %v", err)
+	}
+	if err := m.ensureFile("AGENTS.md"); err != nil {
+		t.Fatalf("ensureFile: %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "out", "demo", "SKILL.md")); err != nil || string(data) != "demo\n" {
+		t.Fatalf("dir content = %q, %v", data, err)
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "AGENTS.md")); err != nil || string(data) != "context\n" {
+		t.Fatalf("file content = %q, %v", data, err)
+	}
+
+	temps := append([]string{}, fetcher.temps...)
+	if len(temps) != 1 {
+		t.Fatalf("throwaway clones = %v, want one per repository", temps)
+	}
+	fetcher.close()
+	if pathExists(temps[0]) {
+		t.Fatal("close left the throwaway clone behind")
+	}
+}
+
 func TestCacheCleanRespectsLastUsed(t *testing.T) {
 	root := t.TempDir()
 	cache := filepath.Join(root, "cache")
