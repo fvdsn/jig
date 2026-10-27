@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v5.0.1 — 2026-10-27
 
 - Fixes: MCP environment references now reach OpenCode and Codex.
   OpenCode reads `{env:NAME}`, not `${NAME}`, which it kept as literal
