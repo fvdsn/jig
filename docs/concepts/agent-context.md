@@ -73,13 +73,76 @@ of the file alone. A key you changed by hand is kept and reported, not overwritt
 
 ## Scoping context
 
-Context can follow what is checked out:
+Context can follow what is checked out, in three ways.
 
-- **`onlyWhen` on a source**, server, hook or plugin: active only when matching repositories are installed.
-- **Group `agents` blocks**: an `agents` block on a `$group` applies while a repository under that group is
-  installed. Its context section is titled with the group path. Where a group's skill or server has the same name as
-  the workspace's, the group's wins while it is active.
-- **Repository exports**: a repository can offer some of its own files as context.
+### `onlyWhen` on a single item
+
+Any source, MCP server, hook or plugin in an `agents` block can carry an `onlyWhen`. It is then active only while a
+matching repository is installed:
+
+```yaml
+agents:
+  skills:
+    - src: git@github.com:acme/agent-config.git#skills/api-design
+      onlyWhen: { tags: [api] }
+```
+
+### Group `agents` blocks
+
+When several items belong to the same part of the workspace, put them in an `agents` block on that part's `$group`
+instead of repeating the condition. It takes the same keys as the top-level block, and everything in it is active
+while any repository under the group is installed:
+
+```yaml
+version: 4
+
+agents:
+  context:
+    - git@github.com:acme/agent-config.git#AGENTS.md
+
+tree:
+  billing/:
+    $group:
+      agents:
+        context:
+          - git@github.com:acme/agent-config.git#context/billing.md
+        skills:
+          - git@github.com:acme/billing-skills.git#skills
+        mcp:
+          billing-api:
+            url: https://mcp.acme.dev/billing
+    invoices:
+      $repo:
+        git: git@github.com:acme/invoices.git
+    ledger:
+      $repo:
+        git: git@github.com:acme/ledger.git
+
+  frontend/web:
+    $repo:
+      git: git@github.com:acme/web.git
+```
+
+A workspace with only `frontend/web` gets the workspace context and nothing from billing. Clone
+`billing/invoices`, and the next sync adds the billing skills and the `billing-api` server, and appends a section to
+the context file:
+
+```markdown
+## billing
+
+Applies to the repositories under `billing`.
+
+(content of context/billing.md)
+```
+
+Where a group's skill or server has the same name as one in the top-level block, the group's wins while the group is
+active, and the workspace's applies otherwise. Group blocks can be nested: each applies to the repositories under its
+own group.
+
+### Repository exports
+
+A repository can offer some of its own files as context. `exports` maps a primitive (`skills`, `context`,
+`subagents` or `commands`) to a path inside the checkout:
 
 ```yaml
 services/checkout:
@@ -90,8 +153,10 @@ services/checkout:
       context: AGENTS.md
 ```
 
-While `services/checkout` is installed, its skills join the workspace's and its `AGENTS.md` becomes a section of the
-workspace context file. `exports` can also be set on a group, for every repository under it.
+While `services/checkout` is installed, its skills join the workspace's, and its `AGENTS.md` becomes a section of the
+workspace context file, titled with the repository path. The files are read from the checkout, so a change on your
+branch shows up on the next sync. Set `exports` on a group to apply it to every repository under it; repositories
+that do not have the path simply offer nothing.
 
 ## Compared to APM
 
