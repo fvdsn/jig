@@ -65,6 +65,12 @@ event and tool names are mapped, and `${VAR}` references in MCP servers are rewr
 Something a harness cannot take is reported as skipped. The [harness matrix](../reference/harness-matrix.md) has
 the details.
 
+Start the agent at the workspace root. Jig writes all agent context there, and the workspace root is usually not a
+Git repository. Harnesses look for project configuration from the current directory up to its Git root. Thus a
+session started inside a repository checkout stops at that checkout and does not read the workspace files. For MCP
+servers, this is true of OpenCode, Codex and Copilot CLI. Codex and Copilot CLI also read project configuration only
+after you trust the directory.
+
 ## Files you share with jig
 
 Some files are both jig's and yours: `.mcp.json`, `.claude/settings.json`, `.codex/config.toml` and the like. Jig
