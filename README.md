@@ -131,7 +131,34 @@ workspace only fetches what is new, and the clone hardlinks the cached git objec
 workspace is about as quick and as cheap on disk as a git worktree, but each checkout is a normal, independent
 repository. The cache is safe to delete at any time (`jig cache clean`).
 
+## More to explore
+
+- **Task workspaces in one command.**
+  `jig init <url> ~/Code/acme-cx12 --clone services/checkout --switch feature/CX-12` checks out a slice of the
+  workspace with every repository on the task branch, in seconds thanks to the cache.
+  [More](docs/getting-started/join-a-workspace.md)
+- **Context that follows the checkout.** Put an `agents` block on a group, and its skills, MCP servers and
+  `AGENTS.md` section appear only while a repository of that group is installed. Repositories can also export
+  their own skills and context to the workspace. [More](docs/concepts/agent-context.md#scoping-context)
+- **Select by capability.** Tag repositories (`api`, `go`, `frontend`), inherit tags from groups, then
+  `jig clone services --tags api`, or gate a skill on `tags: [api]` so it follows every api repository, present and
+  future. [More](docs/concepts/dependencies-and-activation.md#activation)
+- **One verb for every stack.** Declare each repository's `setup`, `fmt`, `lint` and `test` commands, and
+  `jig test` runs them all in parallel, whatever the language. [More](docs/getting-started/create-a-workspace.md#add-lifecycle-commands)
+- **A dependency graph you can query.** `jig deps --reverse platform/auth` shows who depends on a repository, and
+  `jig graph` draws the workspace as a Mermaid diagram. [More](docs/concepts/dependencies-and-activation.md)
+- **Files assembled from sections.** Build one `AGENTS.md`, or any shared file, from several sources, each included
+  only when it applies, plus optional local sources each developer can add to.
+  [More](docs/concepts/the-tree.md#files-and-directories)
+- **Safe across hundreds of repositories.** Jig never force-pushes, never drops local changes, and only touches the
+  keys it wrote in settings files you share with it. [More](docs/concepts/safety.md)
+
 ## Documentation
 
-The [documentation](docs/README.md) covers getting started, the concepts behind jig, and where each harness gets its
-agent context.
+The [documentation](docs/README.md) has:
+
+- **Getting started**: install, join an existing workspace, or build your own schema step by step.
+- **Concepts**: how the schema and workspace fit together, the tree, dependencies and activation, scoping, agent
+  context, safety, and the repository cache.
+- **Reference**: the [harness matrix](docs/reference/harness-matrix.md), showing exactly where each kind of context
+  lands for each of the eight supported harnesses.
