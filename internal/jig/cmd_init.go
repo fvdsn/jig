@@ -67,29 +67,19 @@ func Init(options InitOptions, out io.Writer) error {
 		}
 		fmt.Fprintf(out, "replacing source checkout left by a failed init: %s\n", sourceDir)
 	}
+	// Until the config is written, a failure removes what this init
+	// created, so a typo in the URL leaves no stray workspace behind.
+	undo := undoInit(workspaceDir, sourceAbs)
 	if err := os.MkdirAll(filepath.Dir(sourceAbs), 0o755); err != nil {
+		undo()
 		return err
 	}
-
-	schemaPath, err := setUpSource(options.SourceArg, options.SchemaPath, sourceAbs)
+	config, err := setUpInitSource(options, sourceAbs)
+	if err == nil {
+		err = saveConfig(workspaceDir, config)
+	}
 	if err != nil {
-		return err
-	}
-
-	def, err := loadDefinition(filepath.Join(sourceAbs, filepath.FromSlash(schemaPath)))
-	if err != nil {
-		return err
-	}
-	validation := validateDefinition(def)
-	if len(validation.Errors) > 0 {
-		return validation.asError("invalid schema")
-	}
-	config := Config{Version: 1, Schema: schemaPath, Harnesses: options.Harnesses}
-	if _, err := flattenDefinition(def, harnessesOf(config)); err != nil {
-		return err
-	}
-
-	if err := saveConfig(workspaceDir, config); err != nil {
+		undo()
 		return err
 	}
 	if err := saveState(workspaceDir, emptyState()); err != nil {
@@ -125,6 +115,41 @@ func Init(options InitOptions, out io.Writer) error {
 		fmt.Fprintln(out, "to share the workspace, push .jig/source to a Git remote; teammates run: jig init <url>")
 	}
 	return nil
+}
+
+// setUpInitSource sets up the schema checkout and checks the schema, and
+// returns the config to save for it.
+func setUpInitSource(options InitOptions, sourceAbs string) (Config, error) {
+	schemaPath, err := setUpSource(options.SourceArg, options.SchemaPath, sourceAbs)
+	if err != nil {
+		return Config{}, err
+	}
+	def, err := loadDefinition(filepath.Join(sourceAbs, filepath.FromSlash(schemaPath)))
+	if err != nil {
+		return Config{}, err
+	}
+	validation := validateDefinition(def)
+	if len(validation.Errors) > 0 {
+		return Config{}, validation.asError("invalid schema")
+	}
+	config := Config{Version: 1, Schema: schemaPath, Harnesses: options.Harnesses}
+	if _, err := flattenDefinition(def, harnessesOf(config)); err != nil {
+		return Config{}, err
+	}
+	return config, nil
+}
+
+// undoInit returns a cleanup for a failed init: it removes the workspace
+// directory if init is about to create it, else the .jig directory if init
+// is about to create that, else only the source checkout.
+func undoInit(workspaceDir string, sourceAbs string) func() {
+	target := sourceAbs
+	if !pathExists(workspaceDir) {
+		target = workspaceDir
+	} else if !pathExists(filepath.Dir(sourceAbs)) {
+		target = filepath.Dir(sourceAbs)
+	}
+	return func() { _ = os.RemoveAll(target) }
 }
 
 // resumeInit finishes the setup of an already-initialized workspace: a rerun

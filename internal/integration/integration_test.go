@@ -556,13 +556,31 @@ func TestInitRetryAfterFailure(t *testing.T) {
 	late := w.path("remotes", "late") // referenced by the schema, created later
 	schemaRemote := w.newRemote("schema", map[string]string{"jig.json": "{ not json"})
 
-	// Init fails before the config is written: the source checkout stays.
+	// Init fails before the config is written: the workspace it created is
+	// removed again.
 	out, err := w.jig(w.root, "init", schemaRemote, "ws", "--clone")
 	if err == nil {
 		t.Fatalf("expected init to fail on an invalid schema:\n%s", out)
 	}
-	if !w.exists("ws", ".jig", "source") || w.exists("ws", ".jig", "config.json") {
-		t.Fatal("expected a leftover source checkout without config")
+	if w.exists("ws") {
+		t.Fatal("expected the failed init to remove the workspace it created")
+	}
+
+	// Into an existing directory, only .jig is removed.
+	if err := os.MkdirAll(w.path("existing"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := w.jig(w.root, "init", schemaRemote, "existing"); err == nil {
+		t.Fatalf("expected init to fail on an invalid schema:\n%s", out)
+	}
+	if !w.exists("existing") || w.exists("existing", ".jig") {
+		t.Fatal("expected the failed init to remove .jig and keep the directory")
+	}
+
+	// A leftover source checkout without config (an init killed midway)
+	// is replaced by the retry.
+	if err := os.MkdirAll(w.path("ws", ".jig", "source"), 0o755); err != nil {
+		t.Fatal(err)
 	}
 
 	// Upstream fixes the schema; the retry replaces the leftover checkout,
