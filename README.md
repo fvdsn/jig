@@ -120,3 +120,13 @@ If you know [APM](https://microsoft.github.io/apm/), jig covers the same kinds o
 to the workspace: context can follow what is checked out, so the billing MCP server and skills appear only when a
 billing repository is in your workspace, and a repository can ship its own skills or `AGENTS.md` section for the
 workspace to pick up.
+
+## Fast at any size
+
+Jig is built for workspaces of hundreds or thousands of repositories. Commands run across repositories in parallel,
+so `jig pull`, `jig status` or `jig test` take about as long as the slowest repository, not the sum of all of them.
+
+Every workspace on your machine shares one repository cache. Cloning a repository you already have in another
+workspace only fetches what is new, and the clone hardlinks the cached git objects instead of copying them. A second
+workspace is about as quick and as cheap on disk as a git worktree, but each checkout is a normal, independent
+repository. The cache is safe to delete at any time (`jig cache clean`).
