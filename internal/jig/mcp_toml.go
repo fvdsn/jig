@@ -1,9 +1,11 @@
 package jig
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -16,30 +18,95 @@ import (
 
 const codexTablePrefix = "mcp_servers."
 
-// renderCodexTable renders one server as a TOML table.
-func renderCodexTable(name string, server MCPServer) string {
-	server = translateServer(server, false)
+// Codex expands no environment reference: env and header values reach
+// the server verbatim. A variable reaches a server through the keys that
+// name it instead: env_vars passes a variable of the same name to a stdio
+// server, bearer_token_env_var sends one as "Authorization: Bearer", and
+// env_http_headers fills a header with one. A reference with no such key
+// (in the command, an argument, or the url, under another name, or inside
+// a longer value) has no Codex form: the server is skipped with the
+// reason rather than written with a literal ${NAME}.
+var (
+	wholeEnvReference  = regexp.MustCompile(`^\$\{(?:env:)?([A-Za-z_][A-Za-z0-9_]*)\}$`)
+	bearerEnvReference = regexp.MustCompile(`^Bearer \$\{(?:env:)?([A-Za-z_][A-Za-z0-9_]*)\}$`)
+)
+
+// renderCodexTable renders one server as a TOML table, or reports why
+// Codex cannot take it.
+func renderCodexTable(name string, server MCPServer) (string, error) {
+	for _, value := range append([]string{server.Command, server.URL}, server.Args...) {
+		if envReference.MatchString(value) {
+			return "", errors.New("a reference in command, args, or url: Codex expands none")
+		}
+	}
+	env := map[string]string{}
+	var envVars []string
+	for _, key := range sortedKeys(mapToBool(server.Env)) {
+		value := server.Env[key]
+		if !envReference.MatchString(value) {
+			env[key] = value
+			continue
+		}
+		match := wholeEnvReference.FindStringSubmatch(value)
+		if match == nil || match[1] != key {
+			return "", fmt.Errorf("env %s: Codex passes a variable only under its own name, as \"${%s}\"", key, key)
+		}
+		envVars = append(envVars, key)
+	}
+	headers := map[string]string{}
+	envHeaders := map[string]string{}
+	bearer := ""
+	for _, key := range sortedKeys(mapToBool(server.Headers)) {
+		value := server.Headers[key]
+		if !envReference.MatchString(value) {
+			headers[key] = value
+			continue
+		}
+		if match := wholeEnvReference.FindStringSubmatch(value); match != nil {
+			envHeaders[key] = match[1]
+			continue
+		}
+		if match := bearerEnvReference.FindStringSubmatch(value); match != nil && strings.EqualFold(key, "Authorization") {
+			bearer = match[1]
+			continue
+		}
+		return "", fmt.Errorf("header %s: Codex reads a variable only as \"${NAME}\", or as Authorization \"Bearer ${NAME}\"", key)
+	}
+
 	var b strings.Builder
 	fmt.Fprintf(&b, "[%s%s]\n", codexTablePrefix, tomlKey(name))
 	if server.remote() {
 		fmt.Fprintf(&b, "url = %s\n", tomlString(server.URL))
-		if len(server.Headers) > 0 {
-			b.WriteString(tomlInlineTable("headers", server.Headers))
+		if bearer != "" {
+			fmt.Fprintf(&b, "bearer_token_env_var = %s\n", tomlString(bearer))
+		}
+		if len(headers) > 0 {
+			b.WriteString(tomlInlineTable("http_headers", headers))
+		}
+		if len(envHeaders) > 0 {
+			b.WriteString(tomlInlineTable("env_http_headers", envHeaders))
 		}
 	} else {
 		fmt.Fprintf(&b, "command = %s\n", tomlString(server.Command))
 		if len(server.Args) > 0 {
-			quoted := make([]string, len(server.Args))
-			for i, arg := range server.Args {
-				quoted[i] = tomlString(arg)
-			}
-			fmt.Fprintf(&b, "args = [%s]\n", strings.Join(quoted, ", "))
+			fmt.Fprintf(&b, "args = %s\n", tomlArray(server.Args))
 		}
-		if len(server.Env) > 0 {
-			b.WriteString(tomlInlineTable("env", server.Env))
+		if len(env) > 0 {
+			b.WriteString(tomlInlineTable("env", env))
+		}
+		if len(envVars) > 0 {
+			fmt.Fprintf(&b, "env_vars = %s\n", tomlArray(envVars))
 		}
 	}
-	return b.String()
+	return b.String(), nil
+}
+
+func tomlArray(values []string) string {
+	quoted := make([]string, len(values))
+	for i, value := range values {
+		quoted[i] = tomlString(value)
+	}
+	return "[" + strings.Join(quoted, ", ") + "]"
 }
 
 func tomlKey(name string) string {
@@ -107,8 +174,9 @@ func tableHash(lines []string) string {
 	return sha256Hex([]byte(strings.TrimRight(strings.Join(lines, ""), "\n") + "\n"))
 }
 
-// ensureManagedTOML is ensureManaged for the Codex document.
-func (m *materializer) ensureManagedTOML(entry Entry, servers map[string]MCPServer, note string) error {
+// ensureManagedTOML is ensureManaged for the Codex document, given each
+// server's rendered table by name.
+func (m *materializer) ensureManagedTOML(entry Entry, servers map[string]string, note string) error {
 	expectedAbs := m.abs(entry.Path)
 	record, hasState := m.state.Files[entry.Identity]
 	data, err := os.ReadFile(expectedAbs)
@@ -148,8 +216,8 @@ func (m *materializer) ensureManagedTOML(entry Entry, servers map[string]MCPServ
 		counts.removed++
 		changed = true
 	}
-	for _, name := range sortedMCPNames(servers) {
-		rendered := renderCodexTable(name, servers[name])
+	for _, name := range sortedKeys(mapToBool(servers)) {
+		rendered := servers[name]
 		lines := strings.SplitAfter(rendered, "\n")
 		lines = lines[:len(lines)-1]
 		hash := tableHash(lines)

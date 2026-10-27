@@ -100,7 +100,11 @@ Each rule is a markdown file with a `description` and optional `paths` globs (`a
 | Kiro | `.kiro/settings/mcp.json` |
 
 Each document is written in the harness's own shape, and `${NAME}` / `${env:NAME}` references are translated to its
-syntax. These files are shared with you: jig only adds, updates and removes the servers it declared.
+syntax: `${env:NAME}` for VS Code and Cursor, `{env:NAME}` for OpenCode, `${NAME}` for the others. Codex expands no
+reference: an env value `${NAME}` under its own name becomes `env_vars`, a header `${NAME}` becomes `env_http_headers`,
+and `Authorization: Bearer ${NAME}` becomes `bearer_token_env_var`. A server with any other reference is left out of
+the Codex document and reported as `skipped mcp server ...` in the sync output. These files are shared with you: jig
+only adds, updates and removes the servers it declared.
 
 ## Hooks
 

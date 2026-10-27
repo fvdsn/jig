@@ -146,23 +146,46 @@ func sortedMCPNames(servers map[string]MCPServer) []string {
 	return names
 }
 
-// Environment references: the neutral form is ${NAME}; VS Code and Cursor
-// read ${env:NAME}. Every document gets its harness's form whichever one
-// the schema used.
+// Environment references: the neutral form is ${NAME}, and ${env:NAME} is
+// accepted too. Every document gets its harness's form whichever one the
+// schema used: ${env:NAME} for VS Code and Cursor, {env:NAME} for
+// OpenCode, ${NAME} for the others. Codex expands no reference at all;
+// see renderCodexTable.
 var envReference = regexp.MustCompile(`\$\{(?:env:)?([A-Za-z_][A-Za-z0-9_]*)\}`)
 
-func translateEnvRefs(value string, vscodeStyle bool) string {
+type envStyle int
+
+const (
+	envDollar   envStyle = iota // ${NAME}
+	envVSCode                   // ${env:NAME}
+	envOpenCode                 // {env:NAME}
+)
+
+func shapeEnvStyle(shape string) envStyle {
+	switch shape {
+	case "vscode", "cursor":
+		return envVSCode
+	case "opencode":
+		return envOpenCode
+	}
+	return envDollar
+}
+
+func translateEnvRefs(value string, style envStyle) string {
 	return envReference.ReplaceAllStringFunc(value, func(match string) string {
 		name := envReference.FindStringSubmatch(match)[1]
-		if vscodeStyle {
+		switch style {
+		case envVSCode:
 			return "${env:" + name + "}"
+		case envOpenCode:
+			return "{env:" + name + "}"
 		}
 		return "${" + name + "}"
 	})
 }
 
-func translateServer(server MCPServer, vscodeStyle bool) MCPServer {
-	tr := func(s string) string { return translateEnvRefs(s, vscodeStyle) }
+func translateServer(server MCPServer, style envStyle) MCPServer {
+	tr := func(s string) string { return translateEnvRefs(s, style) }
 	out := server
 	out.Command = tr(server.Command)
 	out.URL = tr(server.URL)
@@ -200,7 +223,7 @@ func mcpContainer(shape string) string {
 // renderMCPServer builds a harness's server object. The shapes follow the
 // harnesses' documentation and APM's client adapters.
 func renderMCPServer(shape string, server MCPServer) *jsonObject {
-	server = translateServer(server, shape == "vscode" || shape == "cursor")
+	server = translateServer(server, shapeEnvStyle(shape))
 	o := newJSONObject()
 	switch shape {
 	case "opencode":
@@ -487,6 +510,21 @@ func (m *materializer) ensureManaged(entry Entry) error {
 	if err != nil {
 		return err
 	}
+	// Codex takes a server only when its references have a Codex form;
+	// the others leave the document and are reported.
+	var codexTables map[string]string
+	if doc.shape == "codex" {
+		codexTables = map[string]string{}
+		for _, name := range sortedMCPNames(servers) {
+			rendered, err := renderCodexTable(name, servers[name])
+			if err != nil {
+				skipped = append(skipped, fmt.Sprintf("mcp server %s: %s", name, err))
+				delete(servers, name)
+				continue
+			}
+			codexTables[name] = rendered
+		}
+	}
 	keys, desired, skippedHooks := desiredItems(doc, servers, hooks)
 	skipped = append(skipped, skippedHooks...)
 	report := func() {
@@ -500,7 +538,7 @@ func (m *materializer) ensureManaged(entry Entry) error {
 		return err
 	}
 	if doc.shape == "codex" {
-		err := m.ensureManagedTOML(entry, servers, resolved.note())
+		err := m.ensureManagedTOML(entry, codexTables, resolved.note())
 		report()
 		return err
 	}

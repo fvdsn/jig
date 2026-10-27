@@ -430,12 +430,20 @@ func (m *materializer) entryInactive(entry Entry) bool {
 
 // managedInactive reports whether a managed document has nothing to
 // carry before its plugins are resolved: no server or hook of the block
-// whose condition matches, and plugin sources gated off or unresolved.
+// whose condition matches (and, for Codex, that Codex can take), and
+// plugin sources gated off or unresolved.
 func (m *materializer) managedInactive(doc *managedDoc) bool {
-	for _, server := range doc.servers {
-		if _, ok := m.activeServer(server); ok {
-			return false
+	for name, server := range doc.servers {
+		active, ok := m.activeServer(server)
+		if !ok {
+			continue
 		}
+		if doc.shape == "codex" {
+			if _, err := renderCodexTable(name, active); err != nil {
+				continue
+			}
+		}
+		return false
 	}
 	for _, hook := range doc.hooks {
 		if !m.scopedOff(hook.scope, hook.OnlyWhen) {

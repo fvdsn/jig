@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Fixes: MCP environment references now reach OpenCode and Codex.
+  OpenCode reads `{env:NAME}`, not `${NAME}`, which it kept as literal
+  text. Codex expands no reference and has no `headers` key, so a
+  reference is now written through the keys that name a variable: an
+  env value `${NAME}` under its own name becomes `env_vars`, a header
+  `${NAME}` becomes `env_http_headers`, `Authorization: Bearer ${NAME}`
+  becomes `bearer_token_env_var`, and headers without references go to
+  `http_headers`. A server with a reference Codex cannot take is left
+  out of `.codex/config.toml` and reported as `skipped mcp server
+  <name>: <reason>`.
+
 ## v5.0.0 — 2026-10-20
 
 - `jig update` and `jig sync` decode an upstream YAML schema by its

@@ -49,7 +49,7 @@ func TestRenderMCPServer(t *testing.T) {
 		"vscode":   {`{"type":"stdio","command":"npx","args":["-y","@mcp/github"],"env":{"GITHUB_TOKEN":"${env:GITHUB_TOKEN}"}}`, `{"type":"http","url":"https://mcp.example.com/sse","headers":{"Authorization":"Bearer ${env:TOKEN}"}}`},
 		"cursor":   {`{"type":"stdio","command":"npx","args":["-y","@mcp/github"],"env":{"GITHUB_TOKEN":"${env:GITHUB_TOKEN}"}}`, `{"type":"http","url":"https://mcp.example.com/sse","headers":{"Authorization":"Bearer ${env:TOKEN}"}}`},
 		"copilot":  {`{"type":"local","command":"npx","args":["-y","@mcp/github"],"env":{"GITHUB_TOKEN":"${GITHUB_TOKEN}"},"tools":["*"]}`, `{"type":"http","url":"https://mcp.example.com/sse","headers":{"Authorization":"Bearer ${TOKEN}"}}`},
-		"opencode": {`{"type":"local","command":["npx","-y","@mcp/github"],"environment":{"GITHUB_TOKEN":"${GITHUB_TOKEN}"},"enabled":true}`, `{"type":"remote","url":"https://mcp.example.com/sse","headers":{"Authorization":"Bearer ${TOKEN}"},"enabled":true}`},
+		"opencode": {`{"type":"local","command":["npx","-y","@mcp/github"],"environment":{"GITHUB_TOKEN":"{env:GITHUB_TOKEN}"},"enabled":true}`, `{"type":"remote","url":"https://mcp.example.com/sse","headers":{"Authorization":"Bearer {env:TOKEN}"},"enabled":true}`},
 		"gemini":   {`{"command":"npx","args":["-y","@mcp/github"],"env":{"GITHUB_TOKEN":"${GITHUB_TOKEN}"}}`, `{"httpUrl":"https://mcp.example.com/sse","headers":{"Authorization":"Bearer ${TOKEN}"}}`},
 		"kiro":     {`{"command":"npx","args":["-y","@mcp/github"],"env":{"GITHUB_TOKEN":"${GITHUB_TOKEN}"}}`, `{"url":"https://mcp.example.com/sse","headers":{"Authorization":"Bearer ${TOKEN}"}}`},
 	}
@@ -61,16 +61,82 @@ func TestRenderMCPServer(t *testing.T) {
 			t.Fatalf("%s remote = %s\nwant %s", shape, got, want[1])
 		}
 	}
-	want := "[mcp_servers.github]\ncommand = \"npx\"\nargs = [\"-y\", \"@mcp/github\"]\nenv = { GITHUB_TOKEN = \"${GITHUB_TOKEN}\" }\n"
-	if got := renderCodexTable("github", local); got != want {
-		t.Fatalf("codex =\n%s\nwant\n%s", got, want)
-	}
-	if got := renderCodexTable("billing", remote); got != "[mcp_servers.billing]\nurl = \"https://mcp.example.com/sse\"\nheaders = { Authorization = \"Bearer ${TOKEN}\" }\n" {
-		t.Fatalf("codex remote =\n%s", got)
-	}
 	tables := splitTOMLTables("model = \"o3\"\n\n[mcp_servers.a]\ncommand = \"x\"\n\n[other]\nk = 1\n")
 	if len(tables) != 3 || tables[0].name != "" || tables[1].name != "mcp_servers.a" || tables[2].name != "other" {
 		t.Fatalf("tables = %+v", tables)
+	}
+}
+
+// Codex expands no reference: a variable reaches a server through the
+// keys that name it, and a reference with no such key skips the server.
+func TestRenderCodexTable(t *testing.T) {
+	cases := []struct {
+		name   string
+		server MCPServer
+		want   string
+	}{
+		{"local", MCPServer{Command: "npx", Args: []string{"-y", "@mcp/github"}, Env: map[string]string{"GITHUB_TOKEN": "${GITHUB_TOKEN}", "MODE": "read", "AWS_PROFILE": "${env:AWS_PROFILE}"}},
+			"[mcp_servers.local]\ncommand = \"npx\"\nargs = [\"-y\", \"@mcp/github\"]\nenv = { MODE = \"read\" }\nenv_vars = [\"AWS_PROFILE\", \"GITHUB_TOKEN\"]\n"},
+		{"bearer", MCPServer{URL: "https://mcp.example.com/sse", Headers: map[string]string{"authorization": "Bearer ${env:TOKEN}"}},
+			"[mcp_servers.bearer]\nurl = \"https://mcp.example.com/sse\"\nbearer_token_env_var = \"TOKEN\"\n"},
+		{"headers", MCPServer{URL: "https://mcp.example.com/sse", Headers: map[string]string{"X-Api-Key": "${API_KEY}", "X-Team": "finca"}},
+			"[mcp_servers.headers]\nurl = \"https://mcp.example.com/sse\"\nhttp_headers = { X-Team = \"finca\" }\nenv_http_headers = { X-Api-Key = \"API_KEY\" }\n"},
+	}
+	for _, c := range cases {
+		got, err := renderCodexTable(c.name, c.server)
+		if err != nil || got != c.want {
+			t.Fatalf("%s = %v\n%s\nwant\n%s", c.name, err, got, c.want)
+		}
+	}
+	unsupported := map[string]MCPServer{
+		"variable renamed":    {Command: "x", Env: map[string]string{"GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PAT}"}},
+		"reference in value":  {Command: "x", Env: map[string]string{"DSN": "postgres://${USER}@db"}},
+		"reference in args":   {Command: "x", Args: []string{"--token", "${TOKEN}"}},
+		"reference in url":    {URL: "https://${HOST}/mcp"},
+		"reference in header": {URL: "https://mcp.example.com", Headers: map[string]string{"X-Auth": "Token ${TOKEN}"}},
+		"bearer elsewhere":    {URL: "https://mcp.example.com", Headers: map[string]string{"X-Auth": "Bearer ${TOKEN}"}},
+	}
+	for label, server := range unsupported {
+		if got, err := renderCodexTable("s", server); err == nil {
+			t.Fatalf("%s rendered:\n%s", label, got)
+		}
+	}
+}
+
+// A server Codex cannot take is skipped in its document and reported,
+// and still written for the harnesses that expand references.
+func TestCodexSkipsServerWithoutCodexForm(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("JIG_CACHE_DIR", filepath.Join(root, "cache"))
+	writeTestWorkspace(t, root, `{"version": 4, "agents": {"mcp": {
+	  "github": {"command": "github-mcp-server", "args": ["stdio"], "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PAT}"}},
+	  "aws": {"command": "uvx", "args": ["awslabs.aws-api-mcp-server"], "env": {"AWS_PROFILE": "${AWS_PROFILE}"}}
+	}}, "tree": {}}`)
+	harnesses := []string{"codex", "opencode"}
+	if err := saveConfig(root, Config{Version: 1, Schema: "jig.json", Harnesses: &harnesses}); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(root)
+	var out bytes.Buffer
+	if err := Clone(CloneOptions{}, &out); err != nil {
+		t.Fatalf("clone: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "wrote-file: .codex/config.toml (1 managed keys)\n  skipped mcp server github: ") {
+		t.Fatalf("report:\n%s", out.String())
+	}
+	codex, err := os.ReadFile(filepath.Join(root, ".codex", "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(codex), "github") || !strings.Contains(string(codex), "env_vars = [\"AWS_PROFILE\"]") {
+		t.Fatalf(".codex/config.toml =\n%s", codex)
+	}
+	opencode, err := os.ReadFile(filepath.Join(root, "opencode.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(opencode), "\"GITHUB_PERSONAL_ACCESS_TOKEN\": \"{env:GITHUB_PAT}\"") {
+		t.Fatalf("opencode.json =\n%s", opencode)
 	}
 }
 
