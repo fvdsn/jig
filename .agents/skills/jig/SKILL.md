@@ -28,10 +28,11 @@ Jig also keeps a machine-wide clone cache (bare mirrors in the user cache direct
 ## Install
 
 ```sh
+brew install fvdsn/tap/jig            # macOS or Linux
 go install github.com/fvdsn/jig@latest
 ```
 
-Make sure `$(go env GOPATH)/bin` is in `PATH`.
+With `go install`, make sure `$(go env GOPATH)/bin` is in `PATH`.
 
 ## Initialize A Workspace
 
@@ -788,7 +789,7 @@ jig update
 The schema in `.jig/source/` is a normal Git working copy. To change the shared workspace definition:
 
 ```sh
-$EDITOR .jig/source/.jig.json      # edit the schema
+$EDITOR .jig/source/jig.yaml       # edit the schema (.jig/config.json names the file)
 jig validate                       # check it
 jig sync --no-update               # test it without fetching: jig reads the live file
 git -C .jig/source commit -am "describe the change"
@@ -811,8 +812,7 @@ These are intentionally separate operations.
 
 ```text
 jig update        -> update the map
-jig update --sync -> update and apply the map
-jig sync          -> apply the map to local checkout shape
+jig sync          -> update the map, then apply it to the local checkouts
 jig pull          -> update Git repository contents
 ```
 
