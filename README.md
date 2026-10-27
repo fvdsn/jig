@@ -95,8 +95,7 @@ jig clone platform  # check out more of it
 Commands that act on checkouts are scoped to the current directory: run `jig pull` inside `services/` and only
 `services/` is pulled.
 
-See the [documentation](docs/README.md) for more. `jig --help` lists every command, and `jig skill` prints the full
-reference your agent reads.
+`jig --help` lists every command, and `jig skill` prints the full reference your agent reads.
 
 ## Agent context
 
@@ -131,3 +130,8 @@ Every workspace on your machine shares one repository cache. Cloning a repositor
 workspace only fetches what is new, and the clone hardlinks the cached git objects instead of copying them. A second
 workspace is about as quick and as cheap on disk as a git worktree, but each checkout is a normal, independent
 repository. The cache is safe to delete at any time (`jig cache clean`).
+
+## Documentation
+
+The [documentation](docs/README.md) covers getting started, the concepts behind jig, and where each harness gets its
+agent context.
