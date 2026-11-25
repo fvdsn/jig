@@ -15,6 +15,9 @@ cd ~/Code/acme/services/checkout && jig pull   # only checkout
 
 To narrow a checkout command, `cd`.
 
+A [worktree](worktrees.md) is a scope of its own: inside `worktrees/<name>/` these commands act on the worktree's
+checkouts, and from the root tree they never reach into `worktrees/`.
+
 ## Schema commands: paths and filters
 
 `list`, `tags`, `info`, `deps`, `graph` and `clone` work on the schema, including entries that are not on disk yet.

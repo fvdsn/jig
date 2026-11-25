@@ -211,6 +211,8 @@ Workspace paths must:
 
 Hidden directories are allowed. For example, `.agents/skills/platform` is valid.
 
+A tree path may not be `worktrees` or lie under it: the workspace keeps its worktrees there (see Worktrees). The name is free below the top level (`tools/worktrees`).
+
 Invalid examples:
 
 ```text
@@ -256,6 +258,7 @@ CLI path arguments and pathless commands are interpreted relative to the directo
 - The commands that act on checkouts (`sync`, `setup`, `fmt`, `lint`, `test`, `pull`, `fetch`, `push`, `switch`, `status`, `diff`, `git`) take no path and no selector flags: their scope is the current subtree, and `cd` narrows it. Only the schema commands, whose subjects may not exist on disk yet (`list`, `tags`, `info`, `deps`, `graph`, `clone`, and `init --clone`), take paths, `--id`, `--tags`, and `--archived`. `rm` takes the paths to remove as its arguments. `sync --prune` requires the workspace root.
 - Resolution is CLI-side only: schema paths are unchanged and still reject `.`, `..`, and leading `/`.
 - Reported paths remain workspace-relative regardless of where the command runs.
+- Each tree is its own scope (see Worktrees). Under `worktrees/<name>/`, the directory is taken relative to the worktree root, so every path means there what it means in the root tree, and reported paths are relative to the worktree root. From the root tree no command reaches into `worktrees/`. `worktrees/` itself belongs to no tree: the commands that act on checkouts, `clone` and `rm` fail there and say to enter a worktree.
 
 ## Tree Node Rules
 
@@ -1352,6 +1355,36 @@ Rules:
   those unused for at least the given number of days), skipping mirrors
   locked by another process.
 
+## Worktrees
+
+A worktree is a second instance of part of the schema tree for one task, at `worktrees/<dir>/` in the workspace, made of git worktrees so that the root tree stays on its default branches:
+
+```text
+workspace/
+  .jig/
+  services/checkout/                    root tree: the clone, on its default branch
+  platform/auth/
+  worktrees/
+    CX-12/
+      services/checkout/                git worktree of the root clone, on branch CX-12
+      platform/auth/                    git worktree of the root clone, on branch CX-12
+```
+
+- Every checkout in a worktree is a git worktree of the root tree's clone of that repository, at the repository's schema path. The clone cache is never a worktree's repository.
+- A worktree is named after a branch, and its repositories are created on that branch, dependencies included.
+- A worktree holds repositories only. The agent context and `$file` / `$dir` entries are written in the root tree only, and activation reads the root tree, which holds every repository a worktree does.
+- Jig keeps no state for a worktree. A repository is in a worktree when a git checkout exists at its schema path there. A checkout deleted by hand comes back with `jig worktree create`; after a schema path move, a worktree's checkout stays at its old path.
+
+Commands inside a worktree:
+
+- `status`, `diff`, `fetch`, `pull`, `push`, `switch`, `git`, `setup`, `fmt`, `lint`, `test` act on the worktree's checkouts under the current directory. `status` lists the checkouts present; nothing is missing or not installed there. A switch to a branch another tree has checked out is refused by git and reported under `skipped`; that normally includes `switch --default`, the root tree being on the default branches.
+- `list`, `tags`, `info`, `deps`, `graph`, `validate`, `update` read the schema and are unchanged.
+- `clone [path]` adds the selection to the worktree, as `jig worktree create <branch> <path>` does.
+- `rm <path>...` removes those checkouts from the worktree, under the rules of `jig worktree remove`. The root tree is not touched.
+- `sync` is refused: it applies the schema to the root tree.
+
+The root tree protects the repositories worktrees hang off: see `jig rm` and `jig sync --prune`. When sync moves a clone that has worktrees, it runs `git worktree repair` there.
+
 ## Compatibility
 
 The schema, workspace config, and state files each carry a `version` field. The current schema version is 4 (the `agents` block; version 3 introduced local sources and optional source entries, version 2 structured references); workspace config and state are at version 1. When jig encounters a version newer than it understands, it must fail with an error telling the user to upgrade jig; it must never guess at newer formats or rewrite a newer state file (which would silently strip unknown fields). Future format changes bump the corresponding version.
@@ -1411,6 +1444,8 @@ jig switch --default
 jig git <git args...>
 jig status [--all]
 jig diff [--stat]
+jig worktree create <branch> <path>
+jig worktree remove <branch> [-f]
 jig update
 jig sync
 jig sync --no-update
@@ -1772,6 +1807,33 @@ Safety: removal is refused for repositories with uncommitted changes, with unpus
 A repository that has git worktrees is never removed, `--force` included: the worktrees would lose the repository behind them, with their branches and commits. The refusal names them. Worktrees whose directory is already gone do not count.
 
 Entries tracked in state whose directory is already gone can be removed too; this only drops the state entry.
+
+### `jig worktree create <branch> <path>`
+
+Creates the worktree named after `<branch>` with the repositories matching `<path>`, or adds them to it when it exists. See Worktrees for the model.
+
+- `<branch>` must be a valid branch name without `__`. The worktree's directory is `worktrees/<dir>`, where `<dir>` is the name with each `/` replaced by `__`.
+- `<path>` is required and selects as in `jig clone <path>`: position-relative, the node and its subtree, with non-optional dependencies. Repositories already in the worktree count as installed when dependencies are resolved; the root tree's do not.
+
+Steps:
+
+1. Root tree: when a repository of the selection is not installed there, `jig clone <path>` runs at the root and reports its `cloned` and `skipped` lines. Installed repositories are left alone, whatever their branch or state.
+2. Fetch: `git fetch origin` in the root clone of every repository to add, in parallel. A clone made in step 1 is not fetched again. A fetch that fails is reported under `not-fetched` and the checkout is made from what the clone last fetched.
+3. Checkout: `git worktree add` at `worktrees/<dir>/<schema path>` on the branch. The local branch is used when it exists; else it is created from `origin/<branch>` and tracks it; else it is created at the remote default branch (resolved as in `jig switch --default`) with no upstream, so that it never pushes to the default branch. The start point never depends on what the root clone has checked out.
+
+Output is one line per repository, `added: <path>` or `present: <path>` for a checkout that already exists, then `worktree: worktrees/<dir>`. A repository is reported under `skipped`, the rest proceeding and the command exiting non-zero, when git refuses the checkout (the branch is checked out in another tree, the root tree included), when the target path exists and is not a git worktree of the root clone, or when the repository is not installed in the root tree.
+
+The workspace lock is held for step 1 only. Jig records nothing about the worktree.
+
+### `jig worktree remove <branch> [-f]`
+
+Removes the worktree: every git worktree found under its directory, then the directory, and `worktrees/` when it is left empty. The argument is the branch name or the directory name. Checkouts are found by walking the directory, so one whose schema path has changed since is removed too. It is refused from inside the worktree it names.
+
+A checkout is refused, and kept, when removing it would lose work: uncommitted changes, untracked files included, or a `HEAD` that no local or remote-tracking branch contains. `-f` / `--force` overrides both. Checkouts are removed with `git worktree remove`.
+
+After each removal, the branch `<branch>` and the branch the checkout was on are deleted from the root clone when a remote-tracking branch contains their tip. Otherwise the branch is kept and reported: `kept branch: services/checkout (CX-12-second-mr, 2 unpublished commits)`. The remote default branch and a branch another tree has checked out are never deleted. `-f` does not change this.
+
+Anything else under the directory, a clone that is not a git worktree included, is listed under `kept`, a directory without checkouts named once, and the command exits non-zero; `-f` deletes it. Refused checkouts are listed under `not-removed`, the rest proceed, and the command exits non-zero.
 
 ### `jig diff`
 

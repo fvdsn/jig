@@ -4,6 +4,10 @@ Proposal to add `jig worktree create` and `jig worktree remove`: a second checko
 task, inside the same workspace, built from real git worktrees on a branch of their own, so that the root tree
 stays on default branches.
 
+Implemented on 2026-11-25; `specs/main.md` is the reference from here on. Details settled while implementing:
+`remove` is refused from inside the worktree it names; it never deletes the remote default branch or a branch
+another tree has checked out; failed fetches are listed under `not-fetched`; a checkout is reported `added`.
+
 This is a first version, deliberately without per-worktree state. What it leaves out is listed under
 [Not in this version](#not-in-this-version).
 

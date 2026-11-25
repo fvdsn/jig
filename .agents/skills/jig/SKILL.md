@@ -529,6 +529,7 @@ Commands are aware of where they run inside the workspace:
 - Path arguments resolve like filesystem paths against the current directory: `.`, `..`, `../other`, and a leading `/` anchoring to the workspace root (`jig info /platform/auth`). Escaping the workspace is an error. A path below a repository addresses that repository.
 - `jig sync` converges what is installed in the current subtree and never materializes an entry that was not cloned; `jig clone <path>` adds entries. `sync --prune` must run from the workspace root.
 - Output always shows full workspace paths.
+- A worktree (`worktrees/<name>/`, see Worktrees) is a scope of its own: inside it, paths are taken from the worktree root and the checkout commands act on its checkouts only. From the workspace root they never reach into `worktrees/`.
 
 ## Safe Paths
 
@@ -761,6 +762,14 @@ jig rm -r -f legacy
 
 Deleting a repository directory by hand does not uninstall it: `jig sync` restores tracked repositories whose directory is missing. `jig rm` is the way to uninstall.
 
+Work on a task in a worktree, a second checkout of part of the workspace on its own branch (see Worktrees):
+
+```sh
+jig worktree create feature/CX-12 services/checkout
+cd worktrees/feature__CX-12
+jig worktree remove feature/CX-12     # from outside it, once the task is merged
+```
+
 Show workspace status:
 
 ```sh
@@ -817,6 +826,25 @@ jig update        -> update the map
 jig sync          -> update the map, then apply it to the local checkouts
 jig pull          -> update Git repository contents
 ```
+
+## Worktrees
+
+The root tree of a workspace is the reference copy, on default branches. Do not create a branch or leave changes there. For a task that changes code, make a worktree:
+
+```sh
+jig worktree create <branch> <path>
+```
+
+`<path>` selects repositories as `jig clone` does, dependencies included. They are checked out a second time under `worktrees/<branch>/` (each `/` of the branch written `__`; the command prints the directory), as git worktrees of the root tree's clones, every one already on `<branch>`: the existing branch when there is one, locally or on the remote, else a new one at the freshly fetched default branch. Run it again with another path to add repositories, or `jig clone <path>` from inside.
+
+- Work inside the directory the command reports, and search there, not from the workspace root, which holds the same repositories a second time.
+- Inside a worktree `jig status`, `diff`, `pull`, `push`, `switch`, `git`, `setup`, `fmt`, `lint` and `test` act on its checkouts, and paths are taken from its root. `jig sync` runs in the root tree only; agent context and tree files exist there only.
+- `jig push -u` publishes the branch in the repositories where you committed; the others report `up to date`. `jig pull` keeps the untouched ones on the latest default branch.
+- For a second merge request in one repository, `git switch -c <other-branch>` there.
+- `jig switch --default` is refused inside a worktree, because the root tree has the default branches checked out. To go back to the mainline, `jig switch <branch>` then `jig pull`.
+- When the task is merged, `jig worktree remove <branch>` from outside the worktree. It keeps checkouts with uncommitted changes (`-f` deletes them) and reports the branches it kept because their commits exist nowhere else. `jig rm <path>` inside a worktree removes one repository from it.
+- A root tree repository that has worktrees cannot be removed with `jig rm`; remove the worktrees first.
+- `worktrees` cannot be used as a top-level path in the schema tree.
 
 ## Safety Rules
 

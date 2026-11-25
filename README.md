@@ -137,6 +137,9 @@ repository. The cache is safe to delete at any time (`jig cache clean`).
   `jig init <url> ~/Code/acme-cx12 --clone services/checkout --switch feature/CX-12` checks out a slice of the
   workspace with every repository on the task branch, in seconds thanks to the cache.
   [More](docs/getting-started/join-a-workspace.md)
+- **Or a worktree inside the workspace.** `jig worktree create feature/CX-12 services/checkout` checks the same
+  slice out a second time under `worktrees/`, on the task branch, as git worktrees. The root tree stays on its
+  default branches. [More](docs/concepts/worktrees.md)
 - **Context that follows the checkout.** Put an `agents` block on a group, and its skills, MCP servers and
   `AGENTS.md` section appear only while a repository of that group is installed. Repositories can also export
   their own skills and context to the workspace. [More](docs/concepts/agent-context.md#scoping-context)

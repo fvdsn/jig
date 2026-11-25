@@ -8,7 +8,8 @@ the mirror locally. A local clone hardlinks git's object files instead of copyin
 same repository costs little time and little disk space, close to a git worktree.
 
 Unlike a worktree, each checkout is a normal, independent repository with its `origin` pointing at the real remote.
-Nothing in a workspace depends on the cache.
+Nothing in a workspace depends on the cache. That includes [worktrees](worktrees.md), which hang off the
+workspace's own clones, never the cache.
 
 This is what makes task workspaces practical:
 

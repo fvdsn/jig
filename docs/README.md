@@ -14,6 +14,7 @@ New to jig? Start with the [README](../README.md), then one of the quickstarts.
 - [The tree](concepts/the-tree.md): repositories, groups, files and directories
 - [Dependencies and activation](concepts/dependencies-and-activation.md): what gets cloned, and when files appear
 - [Scope](concepts/scope.md): the current directory picks what a command acts on
+- [Worktrees](concepts/worktrees.md): a second checkout for one task, on its own branch
 - [Agent context](concepts/agent-context.md): one declaration, written out for every harness
 - [Safety](concepts/safety.md): what jig will and will not touch
 - [The repository cache](concepts/repository-cache.md)

@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+- `jig worktree create <branch> <path>` checks part of the workspace
+  out a second time for one task, under `worktrees/<branch>/`, with
+  every repository on that branch, dependencies included. The checkouts
+  are git worktrees of the workspace's own clones, so the root tree
+  stays on its default branches. Inside a worktree, `status`, `diff`,
+  `pull`, `push`, `switch`, `git`, `setup`, `fmt`, `lint` and `test`
+  act on its checkouts, `clone` adds to it and `rm` removes from it;
+  `sync` belongs to the root tree. `jig worktree remove <branch>`
+  removes the checkouts, keeps the ones with uncommitted changes
+  unless `-f` is given, and deletes the branches that are merged,
+  pushed or untouched.
+- Breaking: `worktrees` is reserved as a top-level path of the schema
+  tree. A schema that declares entries there fails validation.
+- `jig rm` never deletes a repository that has git worktrees, `--force`
+  included, and `jig sync --prune` keeps it: the worktrees would lose
+  their branches and commits. When sync moves such a repository, the
+  worktrees keep working.
+- `jig pull` on a branch with no upstream and no commits of its own
+  fast-forwards it to the remote default branch, where it failed
+  before. `jig push` and `jig push -u` report such a branch
+  `up to date` and no longer publish an empty branch.
+
 ## v5.0.1 — 2026-10-27
 
 - Fixes: MCP environment references now reach OpenCode and Codex.
