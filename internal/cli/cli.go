@@ -74,6 +74,8 @@ func Run(args []string, out io.Writer) error {
 		return cmdSwitch(args[1:], out)
 	case "rm":
 		return cmdRemove(args[1:], out)
+	case "worktree":
+		return cmdWorktree(args[1:], out)
 	case "status":
 		return cmdStatus(args[1:], out)
 	case "diff":
@@ -345,6 +347,17 @@ var commandDocs = []commandDoc{
 	{"rm",
 		[]string{"rm <path>... [-r|--recursive] [-f|--force]"},
 		[]string{"Uninstall repositories, files, or dirs: delete the checkout and stop tracking it. -r removes groups, -f overrides dirty/unpushed checks."}},
+	{"worktree",
+		[]string{
+			"worktree create <branch> <path>",
+			"worktree remove <branch> [-f|--force]",
+		},
+		[]string{
+			"create checks the repositories matching a path, and their dependencies, out a second time under worktrees/<branch>/, as git worktrees on that branch, so a task leaves the root tree on its default branches.",
+			"Repositories missing from the root tree are cloned there first; run it again with another path to add to the worktree.",
+			"Inside a worktree, the commands that act on checkouts act on its own.",
+			"remove deletes the worktree's checkouts and the branches that hold nothing unpublished. Checkouts with uncommitted changes are kept unless -f is given.",
+		}},
 	{"status",
 		[]string{"status [--all]"},
 		[]string{"Show the state of the installed entries; repos never installed are only counted unless --all is given."}},
@@ -717,6 +730,39 @@ func cmdRemove(args []string, out io.Writer) error {
 		Recursive: parsed.Flags["-r"] || parsed.Flags["--recursive"],
 		Force:     parsed.Flags["-f"] || parsed.Flags["--force"],
 	}, out)
+}
+
+func cmdWorktree(args []string, out io.Writer) error {
+	if len(args) == 0 {
+		return usageError("worktree")
+	}
+	switch args[0] {
+	case "create":
+		parsed, err := parseArgs(args[1:], nil)
+		if err != nil {
+			return err
+		}
+		if len(parsed.Positionals) != 2 {
+			return usageError("worktree")
+		}
+		return jig.WorktreeCreate(parsed.Positionals[0], jig.CloneOptions{
+			Selector: jig.Selector{Path: parsed.Positionals[1]},
+		}, out)
+	case "remove":
+		parsed, err := parseArgs(args[1:], map[string]flagKind{"-f": boolFlag, "--force": boolFlag})
+		if err != nil {
+			return err
+		}
+		if len(parsed.Positionals) != 1 {
+			return usageError("worktree")
+		}
+		return jig.WorktreeRemove(jig.WorktreeRemoveOptions{
+			Name:  parsed.Positionals[0],
+			Force: parsed.Flags["-f"] || parsed.Flags["--force"],
+		}, out)
+	default:
+		return usageError("worktree")
+	}
 }
 
 func cmdStatus(args []string, out io.Writer) error {

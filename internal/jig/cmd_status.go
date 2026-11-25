@@ -40,9 +40,16 @@ func Status(options StatusOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if err := ws.requireTree(); err != nil {
+		return err
+	}
 	selection, err := ws.Select(NodeQuery{})
 	if err != nil {
 		return err
+	}
+	if ws.Worktree != "" {
+		worktreeStatus(out, ws, selection)
+		return nil
 	}
 
 	installedNodes := ws.installedNodes()
@@ -96,6 +103,27 @@ func Status(options StatusOptions, out io.Writer) error {
 	return nil
 }
 
+// worktreeStatus reports the checkouts present in a worktree. Nothing is
+// missing there: a worktree holds what was added to it, and the schema's
+// files and dirs live in the root tree only.
+func worktreeStatus(out io.Writer, ws *Workspace, selection NodeSelection) {
+	repos := selection.ofKind(EntryRepo)
+	results := make([]*statusLine, len(repos))
+	forEachParallel(len(repos), func(i int) {
+		if local, ok := ws.checkout(repos[i].Path); ok {
+			line := markArchived(checkoutStatusLine(repos[i], local), repos[i])
+			results[i] = &line
+		}
+	})
+	var lines []statusLine
+	for _, line := range results {
+		if line != nil {
+			lines = append(lines, *line)
+		}
+	}
+	printStatusLines(out, lines, 0)
+}
+
 // repoInstalledOrTracked reports whether the repo is part of the workspace:
 // checked out on disk, or tracked in state (possibly with its directory
 // deleted, which sync would restore).
@@ -140,7 +168,13 @@ func repoStatusLine(ws *Workspace, entry Entry) statusLine {
 	if !isGitRepo(expectedAbs) {
 		return statusLine{glyphConflict, repoPath, "", "not a git repository"}
 	}
+	return checkoutStatusLine(entry, expectedAbs)
+}
 
+// checkoutStatusLine reports a checkout that exists: its branch, and how it
+// differs from its definition, its last commit and its upstream.
+func checkoutStatusLine(entry Entry, expectedAbs string) statusLine {
+	repoPath := entry.Path
 	branch := gitBranch(expectedAbs)
 	glyph := glyphClean
 	var notes []string

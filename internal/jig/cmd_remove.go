@@ -24,6 +24,11 @@ func Remove(options RemoveOptions, out io.Writer) error {
 		return err
 	}
 	defer ws.Close()
+	if err := ws.requireTree(); err != nil {
+		return err
+	}
+	// A worktree holds repositories only, and jig keeps no state for it.
+	inWorktree := ws.Worktree != ""
 	installed := ws.installedNodes()
 
 	var targets []Entry
@@ -43,7 +48,11 @@ func Remove(options RemoveOptions, out io.Writer) error {
 			if entry.Kind == EntryGroup {
 				continue
 			}
-			if !removable(ws, entry, installed) {
+			if inWorktree {
+				if _, ok := ws.checkout(entry.Path); entry.Kind != EntryRepo || !ok {
+					continue
+				}
+			} else if !removable(ws, entry, installed) {
 				continue
 			}
 			matches = append(matches, entry)
@@ -66,7 +75,11 @@ func Remove(options RemoveOptions, out io.Writer) error {
 	}
 
 	for _, entry := range targets {
-		if err := removeEntry(out, ws, entry, options.Force); err != nil {
+		remove := removeEntry
+		if inWorktree {
+			remove = removeFromWorktree
+		}
+		if err := remove(out, ws, entry, options.Force); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %s", entry.Path, err))
 		}
 	}

@@ -17,6 +17,13 @@ func Clone(options CloneOptions, out io.Writer) error {
 		return err
 	}
 	defer ws.Close()
+	if err := ws.requireTree(); err != nil {
+		return err
+	}
+	// Inside a worktree, clone adds to it.
+	if ws.Worktree != "" {
+		return addToWorktree(out, ws, worktreeBranchName(ws.Worktree), options)
+	}
 	// State accumulated before a skip or failure is valid and must be kept.
 	cloneErr := clonePathIntoWorkspace(out, ws, options)
 	if err := saveState(ws.Root, ws.State); err != nil {

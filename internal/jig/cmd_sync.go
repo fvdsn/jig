@@ -22,6 +22,9 @@ func Sync(options SyncOptions, out io.Writer) error {
 		return err
 	}
 	defer ws.Close()
+	if err := ws.requireRootTree(syncNeedsRootTree); err != nil {
+		return err
+	}
 	if !options.SkipUpdate {
 		if err := updateSchema(ws, out); err != nil {
 			fmt.Fprintf(out, "schema not updated: %s\n", shortError(err))
@@ -29,6 +32,10 @@ func Sync(options SyncOptions, out io.Writer) error {
 	}
 	return syncWorkspace(out, ws, options)
 }
+
+// syncNeedsRootTree explains why sync is refused in a worktree, which has
+// no state to converge on.
+const syncNeedsRootTree = "sync applies the schema to the root tree"
 
 func syncWorkspace(out io.Writer, ws *Workspace, options SyncOptions) error {
 	// A schema id rename leaves the old identity in state while the new one

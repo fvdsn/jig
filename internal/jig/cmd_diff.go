@@ -30,6 +30,9 @@ func Diff(options DiffOptions, out io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if err := ws.requireTree(); err != nil {
+		return err
+	}
 	selection, err := ws.Select(NodeQuery{})
 	if err != nil {
 		return err
@@ -51,7 +54,7 @@ func Diff(options DiffOptions, out io.Writer) error {
 	}
 	results := make([]result, len(repos))
 	forEachParallel(len(repos), func(i int) {
-		abs, ok := installedPath(ws.Root, &ws.Model, &ws.State, repos[i])
+		abs, ok := ws.checkout(repos[i])
 		if !ok {
 			return
 		}

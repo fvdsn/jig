@@ -13,16 +13,19 @@ type installedRepo struct {
 	Local string // absolute checkout path (the recorded path when a move is pending)
 }
 
-// selectInstalledRepos resolves a query to the matching repositories that
-// are installed, in schema order.
+// selectInstalledRepos returns the repositories under the current directory
+// that are checked out in the tree the command runs in, in schema order.
 func selectInstalledRepos(ws *Workspace) ([]installedRepo, error) {
+	if err := ws.requireTree(); err != nil {
+		return nil, err
+	}
 	selection, err := ws.Select(NodeQuery{})
 	if err != nil {
 		return nil, err
 	}
 	var repos []installedRepo
 	for _, entry := range selection.ofKind(EntryRepo) {
-		if local, ok := installedPath(ws.Root, &ws.Model, &ws.State, entry.Path); ok {
+		if local, ok := ws.checkout(entry.Path); ok {
 			repos = append(repos, installedRepo{entry.Path, local})
 		}
 	}

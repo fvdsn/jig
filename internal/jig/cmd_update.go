@@ -24,6 +24,11 @@ func Update(options UpdateOptions, out io.Writer) error {
 		return err
 	}
 	defer ws.Close()
+	if options.Sync {
+		if err := ws.requireRootTree(syncNeedsRootTree); err != nil {
+			return err
+		}
+	}
 	if err := updateSchema(ws, out); err != nil {
 		return err
 	}

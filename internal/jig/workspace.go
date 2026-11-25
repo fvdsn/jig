@@ -16,6 +16,10 @@ const (
 	stateFile         = ".jig/state.json"
 	sourceDir         = ".jig/source"
 	workspaceLockFile = ".jig/lock"
+
+	// worktreesDir holds the workspace's worktrees, one directory each. It
+	// is reserved: no schema entry may live under it.
+	worktreesDir = "worktrees"
 )
 
 // schemaCandidates are the schema file names probed at the root of a source
@@ -30,13 +34,16 @@ type Config struct {
 
 type Workspace struct {
 	Root          string
-	Subdir        string // where the command runs, relative to Root; "" at the root
+	Subdir        string // where the command runs, relative to the root of its tree; "" at that root
+	Worktree      string // directory under worktrees/ of the worktree the command runs in; "" in the root tree
 	Config        Config
 	Harnesses     []string // effective harness list: configured, or detected on this machine
 	HarnessSource string   // "configured" or "detected"
 	Def           Definition
 	Model         Model
 	State         State
+
+	betweenTrees bool // the command runs in worktrees/ itself, which belongs to no tree
 
 	unlock    func()          // releases the workspace lock; set when loaded with state
 	installed *InstalledNodes // memoized installedNodes scan; nil until asked
@@ -70,7 +77,68 @@ func loadWorkspace(withState bool) (*Workspace, error) {
 	if err != nil {
 		return nil, err
 	}
-	return loadWorkspaceAt(root, subdir, withState)
+	worktree, subdir, betweenTrees := splitWorktreeSubdir(subdir)
+	ws, err := loadWorkspaceAt(root, subdir, withState)
+	if err != nil {
+		return nil, err
+	}
+	ws.Worktree = worktree
+	ws.betweenTrees = betweenTrees
+	return ws, nil
+}
+
+// splitWorktreeSubdir tells which tree a directory of the workspace belongs
+// to: under worktrees/<dir>/ it is that worktree's, and the subdir is taken
+// from the worktree root, so every path means the same there as in the root
+// tree. worktrees/ itself belongs to no tree.
+func splitWorktreeSubdir(subdir string) (worktree string, rest string, betweenTrees bool) {
+	if subdir == worktreesDir {
+		return "", "", true
+	}
+	inside, ok := strings.CutPrefix(subdir, worktreesDir+"/")
+	if !ok {
+		return "", subdir, false
+	}
+	worktree, rest, _ = strings.Cut(inside, "/")
+	return worktree, rest, false
+}
+
+// TreeRoot is the root of the tree the command runs in: the worktree's
+// directory inside one, the workspace root otherwise.
+func (ws *Workspace) TreeRoot() string {
+	if ws.Worktree != "" {
+		return filepath.Join(ws.Root, worktreesDir, ws.Worktree)
+	}
+	return ws.Root
+}
+
+// requireTree fails the commands that act on a tree when run from
+// worktrees/ itself.
+func (ws *Workspace) requireTree() error {
+	if ws.betweenTrees {
+		return fmt.Errorf("%s/ holds the worktrees and is not one itself; enter a worktree (cd %s/<name>) or go back to the workspace root", worktreesDir, worktreesDir)
+	}
+	return nil
+}
+
+// requireRootTree fails the commands that only make sense in the root
+// tree; what names the command and what it does there.
+func (ws *Workspace) requireRootTree(what string) error {
+	if ws.Worktree != "" || ws.betweenTrees {
+		return fmt.Errorf("%s; run it from the root tree, outside %s/", what, worktreesDir)
+	}
+	return nil
+}
+
+// checkout returns where a repository is checked out in the tree the
+// command runs in. A worktree has no state: a repository is in it when a
+// git checkout exists at its schema path.
+func (ws *Workspace) checkout(repoPath string) (string, bool) {
+	if ws.Worktree != "" {
+		local := filepath.Join(ws.TreeRoot(), filepath.FromSlash(repoPath))
+		return local, isGitRepo(local)
+	}
+	return installedPath(ws.Root, &ws.Model, &ws.State, repoPath)
 }
 
 // loadWorkspaceAt loads the workspace rooted at root. Commands that do not
@@ -157,9 +225,10 @@ func workspaceSubdir(root string, cwd string) (string, error) {
 // ResolvePath interprets a CLI path argument relative to the directory the
 // command runs in: an empty path means the current subtree, "." and ".."
 // work like filesystem paths, and a leading "/" anchors to the workspace
-// root. A path below a repository or dir entry addresses that entry, the
-// way git finds its repository from any directory inside it. The result is
-// a workspace path ("" for the whole workspace).
+// root, or to the worktree's root inside one. A path below a repository or
+// dir entry addresses that entry, the way git finds its repository from any
+// directory inside it. The result is a workspace path ("" for the whole
+// workspace).
 func (ws *Workspace) ResolvePath(arg string) (string, error) {
 	var resolved string
 	if strings.HasPrefix(arg, "/") {
@@ -190,7 +259,8 @@ func (ws *Workspace) enclosingEntryPath(resolved string) string {
 			return dir
 		}
 		for identity, stateRepo := range ws.State.Repos {
-			if stateRepo.Path == dir {
+			// State records the root tree's checkouts only.
+			if ws.Worktree == "" && stateRepo.Path == dir {
 				if defined, ok := definedPath[identity]; ok {
 					return defined
 				}

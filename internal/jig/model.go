@@ -133,6 +133,9 @@ func insertTreeMap(node *treeNode, nodes map[string]json.RawMessage, prefix stri
 		if err != nil {
 			return err
 		}
+		if path == worktreesDir || strings.HasPrefix(path, worktreesDir+"/") {
+			return fmt.Errorf("tree path %s is reserved: %s/ holds the workspace's worktrees", path, worktreesDir)
+		}
 		child := node
 		for _, segment := range strings.Split(key, "/") {
 			next, ok := child.children[segment]
