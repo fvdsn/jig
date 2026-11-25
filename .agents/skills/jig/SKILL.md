@@ -714,6 +714,8 @@ jig pull
 cd platform && jig pull
 ```
 
+A branch with no upstream and no commits of its own follows the remote default branch on pull; one with its own commits is skipped.
+
 Fetch installed repositories without touching working trees:
 
 ```sh
@@ -727,7 +729,7 @@ jig push
 jig push -u
 ```
 
-Repositories with nothing to push report `up to date`. Branches with no upstream are skipped unless `-u` is passed, which pushes with `git push -u origin <branch>` and records the upstream — the natural follow-up to `jig switch -c feature-x` and committing across repos. Only the current branch is pushed.
+Repositories with nothing to push report `up to date`. Branches with no upstream are skipped unless `-u` is passed, which pushes with `git push -u origin <branch>` and records the upstream — the natural follow-up to `jig switch -c feature-x` and committing across repos. A branch with no upstream and no commits of its own has nothing to publish and reports `up to date` too, so `jig push -u` creates the remote branch only where you committed. Only the current branch is pushed.
 
 Switch installed repositories to a branch, mirroring `git checkout`:
 

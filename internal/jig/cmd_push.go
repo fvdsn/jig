@@ -33,7 +33,8 @@ func Push(options PushOptions, out io.Writer) error {
 // pushRepo pushes one repository's current branch and returns the report
 // verb. A branch without an upstream is pushed with -u when setUpstream is
 // set, so re-running is idempotent: the first push creates the upstream and
-// later runs report up to date.
+// later runs report up to date. A branch without an upstream whose tip a
+// remote-tracking branch contains is up to date as well.
 func pushRepo(local string, setUpstream bool) (string, error) {
 	branch := gitBranch(local)
 	if branch == "" || strings.HasPrefix(branch, "@") {
@@ -48,6 +49,12 @@ func pushRepo(local string, setUpstream bool) (string, error) {
 			return "", err
 		}
 		return "pushed", nil
+	}
+	// A branch with nothing of its own has nothing to publish: -u across a
+	// task's repositories creates the remote branch only where there are
+	// commits.
+	if tipIsPublished(local) {
+		return "up to date", nil
 	}
 	if !setUpstream {
 		return "", errors.New("no upstream branch (use -u to set one)")

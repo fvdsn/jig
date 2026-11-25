@@ -72,8 +72,10 @@ func TestPushAcrossInstalledRepos(t *testing.T) {
 		t.Fatalf("remote head = %q, want %q", remoteHead, localHead)
 	}
 
-	// A fresh branch has no upstream: skipped without -u, pushed with it,
-	// and a re-run is idempotent.
+	// A fresh branch has no upstream. With commits of its own it is
+	// skipped without -u and pushed with it; with none it has nothing to
+	// publish, so it is up to date either way and no remote branch is
+	// created. A re-run is idempotent.
 	var out bytes.Buffer
 	if err := Switch(SwitchOptions{Branches: []string{"feature"}, Create: true}, &out); err != nil {
 		t.Fatalf("checkout: %v\n%s", err, out.String())
@@ -81,17 +83,20 @@ func TestPushAcrossInstalledRepos(t *testing.T) {
 	commitIn(localA, "two\n")
 	out.Reset()
 	if err := Push(PushOptions{}, &out); err == nil {
-		t.Fatalf("expected no-upstream repositories to be skipped:\n%s", out.String())
+		t.Fatalf("expected the no-upstream repository to be skipped:\n%s", out.String())
 	}
-	if got := out.String(); !strings.Contains(got, "skipped:") || !strings.Contains(got, "use -u") {
-		t.Fatalf("no-upstream run = %q, want skipped with -u hint", got)
+	if got := out.String(); !strings.Contains(got, "skipped: services/a") || !strings.Contains(got, "use -u") || !strings.Contains(got, "up to date: services/b") {
+		t.Fatalf("no-upstream run = %q, want a skipped with -u hint and b up to date", got)
 	}
 	got = push(PushOptions{SetUpstream: true})
-	if strings.Count(got, "pushed: ") != 2 {
-		t.Fatalf("-u run = %q, want 2 pushed", got)
+	if !strings.Contains(got, "pushed: services/a") || !strings.Contains(got, "up to date: services/b") {
+		t.Fatalf("-u run = %q, want a pushed and b up to date", got)
 	}
 	if _, err := git(remoteA, "rev-parse", "--verify", "refs/heads/feature"); err != nil {
 		t.Fatalf("remote-a has no feature branch: %v", err)
+	}
+	if _, err := git(remoteB, "rev-parse", "--verify", "--quiet", "refs/heads/feature"); err == nil {
+		t.Fatal("an empty feature branch was published to remote-b")
 	}
 	got = push(PushOptions{})
 	if strings.Count(got, "up to date: ") != 2 {
@@ -123,5 +128,63 @@ func TestPushAcrossInstalledRepos(t *testing.T) {
 	}
 	if got := out.String(); !strings.Contains(got, "detached HEAD") {
 		t.Fatalf("detached run = %q, want detached HEAD skip", got)
+	}
+}
+
+// A branch with no upstream and no commits of its own follows the remote
+// default branch on pull; one with its own commits fails as git pull does.
+func TestPullFollowsTheDefaultBranchWithoutUpstream(t *testing.T) {
+	root := t.TempDir()
+	remoteA := testBareRemote(t, root, "remote-a")
+	remoteB := testBareRemote(t, root, "remote-b")
+	writeTestWorkspace(t, root, fmt.Sprintf(`{
+  "version": 3,
+  "tree": {
+    "services/a": { "$repo": { "git": %q } },
+    "services/b": { "$repo": { "git": %q } }
+  }
+}`, remoteA, remoteB))
+	localA := filepath.Join(root, "services", "a")
+	localB := filepath.Join(root, "services", "b")
+	gitIn(t, root, "clone", "-q", remoteA, localA)
+	gitIn(t, root, "clone", "-q", remoteB, localB)
+	gitIn(t, localA, "switch", "-q", "--no-track", "-c", "task", "origin/HEAD")
+	gitIn(t, localB, "switch", "-q", "--no-track", "-c", "task", "origin/HEAD")
+	if err := os.WriteFile(filepath.Join(localB, "own.txt"), []byte("own\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	testCommitAll(t, localB)
+
+	// Both remotes move on.
+	for _, remote := range []string{remoteA, remoteB} {
+		other := filepath.Join(root, filepath.Base(remote)+"-other")
+		gitIn(t, root, "clone", "-q", remote, other)
+		if err := os.WriteFile(filepath.Join(other, "new.txt"), []byte("new\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		testCommitAll(t, other)
+		gitIn(t, other, "push", "-q")
+	}
+
+	t.Chdir(root)
+	var out bytes.Buffer
+	if err := Pull(&out); err == nil {
+		t.Fatalf("expected the branch with its own commits to be skipped:\n%s", out.String())
+	}
+	got := out.String()
+	if !strings.Contains(got, "pulled: services/a") || !strings.Contains(got, "skipped: services/b") {
+		t.Fatalf("pull = %q, want a pulled and b skipped", got)
+	}
+	if !pathExists(filepath.Join(localA, "new.txt")) {
+		t.Fatal("the untouched branch did not follow the default branch")
+	}
+	if branch := gitBranch(localA); branch != "task" {
+		t.Fatalf("branch = %q, want task", branch)
+	}
+	if branchHasUpstream(localA, "task") {
+		t.Fatal("pull gave the branch an upstream")
+	}
+	if pathExists(filepath.Join(localB, "new.txt")) {
+		t.Fatal("the branch with its own commits was moved")
 	}
 }

@@ -1680,6 +1680,7 @@ Safety rules match `jig rm` without `--force`:
 
 - Repositories with uncommitted changes, unpushed commits, or a branch with no upstream are kept and reported under `kept`.
 - Repositories whose `origin` no longer matches the recorded URL are kept.
+- Repositories that have git worktrees are kept.
 - Files whose content differs from the recorded hash are kept.
 - Inside pruned dirs, only untouched manifest files are deleted; user-added and modified files are kept.
 - A path owned by a defined entry is never deleted; only the obsolete state record is dropped.
@@ -1700,6 +1701,8 @@ Run each installed repository's schema-declared lifecycle command. See [Reposito
 
 Pulls the locally installed Git repositories under the current directory: the whole workspace from the root, one subtree from a group directory, one repository from anywhere inside its checkout.
 
+Each repository is fast-forwarded as `git pull --ff-only` does. A branch with no upstream whose tip the remote default branch contains is fetched and fast-forwarded to that default branch instead: a branch with no commits of its own follows the mainline, and stays without an upstream. A branch with no upstream and commits of its own is skipped and reported, as git refuses it.
+
 Files are ignored by `jig pull`. Installed archived repositories are included.
 
 ### `jig fetch`
@@ -1712,7 +1715,8 @@ Publishes the current branch of the installed repositories, in parallel. Selecti
 
 - Pushes are never forced; there is no force flag. A push the remote rejects (for example a non-fast-forward) is reported under `skipped` and the remote is left untouched — escalate per repository with plain Git when needed.
 - Repositories whose branch is not ahead of its upstream report `up to date`, computed locally without network access.
-- A branch with no upstream is skipped and reported, unless `-u` is passed, which pushes with `git push -u origin <branch>` and records the upstream. Re-running is therefore idempotent: the first `-u` push creates the upstream and later runs report `up to date`. This pairs with `jig switch -c`, whose fresh branches have no upstream.
+- A branch with no upstream whose tip a remote-tracking branch contains has nothing to publish and reports `up to date`, with or without `-u`. `jig push -u` after `jig switch -c` therefore creates the remote branch only in the repositories that have commits.
+- Any other branch with no upstream is skipped and reported, unless `-u` is passed, which pushes with `git push -u origin <branch>` and records the upstream. Re-running is therefore idempotent: the first `-u` push creates the upstream and later runs report `up to date`. This pairs with `jig switch -c`, whose fresh branches have no upstream.
 - Repositories on a detached HEAD are skipped and reported: there is no branch to push.
 - The command exits non-zero when any repository was skipped.
 
@@ -1764,6 +1768,8 @@ Uninstalls repositories and files: deletes the checkout or file and drops it fro
 - Failing entries are reported and the rest proceed; the command exits non-zero if anything was not removed.
 
 Safety: removal is refused for repositories with uncommitted changes, with unpushed commits, or on a branch with no upstream, and for locally modified files. `-f` / `--force` overrides.
+
+A repository that has git worktrees is never removed, `--force` included: the worktrees would lose the repository behind them, with their branches and commits. The refusal names them. Worktrees whose directory is already gone do not count.
 
 Entries tracked in state whose directory is already gone can be removed too; this only drops the state entry.
 
