@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v6.0.0 — 2026-11-25
 
 - `jig worktree create <branch> <path>` checks part of the workspace
   out a second time for one task, under `worktrees/<branch>/`, with
