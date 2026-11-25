@@ -45,6 +45,11 @@ func ensureRepo(root string, entry Entry, stateRepo StateRepo, hasState bool, al
 				return result
 			}
 			result.Messages = append(result.Messages, message)
+			// Git worktrees point at the repository by absolute path;
+			// repair re-links them to its new place.
+			if pathExists(filepath.Join(expectedAbs, ".git", "worktrees")) {
+				_, _ = git(expectedAbs, "worktree", "repair")
+			}
 			stateRepo.Path = expectedRel
 			record := stateRepo
 			result.StateRepo = &record

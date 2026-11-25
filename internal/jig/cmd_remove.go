@@ -177,9 +177,10 @@ func removeDir(out io.Writer, ws *Workspace, entry Entry, force bool) error {
 	return nil
 }
 
-// isRemovalIOError tells a filesystem failure apart from a safety refusal:
-// only the latter is answered by --force.
+// isRemovalIOError tells a failure --force does not answer (the filesystem,
+// a repository with git worktrees) apart from a safety refusal.
 func isRemovalIOError(err error) bool {
 	var pathErr *os.PathError
-	return errors.As(err, &pathErr)
+	var worktreesErr *linkedWorktreesError
+	return errors.As(err, &pathErr) || errors.As(err, &worktreesErr)
 }

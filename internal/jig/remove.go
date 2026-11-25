@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // The delete helpers below are the one implementation of jig's data-safety
@@ -22,13 +23,69 @@ const (
 	deleteModified                        // delete regardless (jig rm --force)
 )
 
+// linkedWorktreesError refuses the deletion of a repository that git
+// worktrees hang off. It is not a safety check --force answers: the
+// worktrees keep their files but lose the repository behind them.
+type linkedWorktreesError struct {
+	paths []string
+}
+
+func (e *linkedWorktreesError) Error() string {
+	return fmt.Sprintf("has git worktrees, remove them first: %s", strings.Join(e.paths, ", "))
+}
+
+// linkedWorktrees returns the git worktrees linked to the repository at abs,
+// as paths relative to root where they lie inside it. Worktrees whose
+// directory is gone are left out: nothing remains there to lose.
+func linkedWorktrees(root string, abs string) []string {
+	// A repository without worktrees has no such directory, which spares
+	// a git process per checkout.
+	if !pathExists(filepath.Join(abs, ".git", "worktrees")) {
+		return nil
+	}
+	out, err := git(abs, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil
+	}
+	// Git reports resolved paths, so root is resolved to compare.
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	var paths []string
+	// The first block is the repository itself.
+	blocks := strings.Split(strings.TrimSpace(out), "\n\n")
+	for _, block := range blocks[1:] {
+		path, prunable := "", false
+		for _, line := range strings.Split(block, "\n") {
+			if value, ok := strings.CutPrefix(line, "worktree "); ok {
+				path = value
+			}
+			if line == "prunable" || strings.HasPrefix(line, "prunable ") {
+				prunable = true
+			}
+		}
+		if path == "" || prunable {
+			continue
+		}
+		if rel, err := filepath.Rel(root, path); err == nil && filepath.IsLocal(rel) {
+			path = filepath.ToSlash(rel)
+		}
+		paths = append(paths, path)
+	}
+	return paths
+}
+
 // deleteTrackedRepo removes a repository checkout. Unless forced, a checkout
 // with uncommitted changes, unpushed commits, or no upstream is refused: any
-// of those would lose work.
+// of those would lose work. A repository with git worktrees is refused
+// either way.
 func deleteTrackedRepo(root string, rel string, force bool) error {
 	abs := filepath.Join(root, rel)
 	if !isGitRepo(abs) {
 		return nil
+	}
+	if linked := linkedWorktrees(root, abs); len(linked) > 0 {
+		return &linkedWorktreesError{linked}
 	}
 	if !force {
 		if isDirty(abs) {
